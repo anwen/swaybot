@@ -238,6 +238,77 @@ def test_llm_brain_planning_fallback_on_invalid_json(mock_openai):
 
 
 @patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_system_prompt_includes_behavior_guidance(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_response(
+        '{"name": "done", "args": {}}'
+    )
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    brain.think(
+        {
+            "task": "test",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "behavior_guidance": "- Always verify the result.",
+        },
+        ["done"],
+    )
+    call_kwargs = client.chat.completions.create.call_args.kwargs
+    system_content = call_kwargs["messages"][0]["content"]
+    assert "Lessons learned" in system_content
+    assert "Always verify" in system_content
+
+
+@patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_retries_then_succeeds(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [
+        RuntimeError("timeout"),
+        RuntimeError("timeout"),
+        _mock_response('{"name": "done", "args": {}}'),
+    ]
+    mock_openai.return_value = client
+
+    brain = LLMBrain(
+        api_key="test-key",
+        base_url="http://localhost/v1",
+        model="test-model",
+        backoff=0.0,
+    )
+    action = brain.think(
+        {"task": "test", "step": 0, "max_steps": 3, "history": []},
+        ["done"],
+    )
+    assert action == {"name": "done", "args": {}}
+    assert client.chat.completions.create.call_count == 3
+
+
+@patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_fallback_after_retries_exhausted(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.side_effect = RuntimeError("timeout")
+    mock_openai.return_value = client
+
+    brain = LLMBrain(
+        api_key="test-key",
+        base_url="http://localhost/v1",
+        model="test-model",
+        max_retries=2,
+        backoff=0.0,
+    )
+    action = brain.think(
+        {"task": "test", "step": 0, "max_steps": 3, "history": []},
+        ["echo", "done"],
+    )
+    assert action["name"] == "echo"
+    assert "after retries" in action["args"]["message"]
+    assert client.chat.completions.create.call_count == 3
+
+
+@patch("swaybot.llm_brain.OpenAI")
 def test_llm_brain_uses_env_variables(mock_openai, monkeypatch):
     monkeypatch.setenv("SWAYBOT_API_KEY", "env-key")
     monkeypatch.setenv("SWAYBOT_API_BASE", "http://env/v1")

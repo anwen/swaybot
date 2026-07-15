@@ -56,17 +56,19 @@
 
 ## P2 — 自我进化
 
-### [ ] 反思结果反馈到行为
+### [x] 反思结果反馈到行为
 - **问题**：反思只生成 `theory` 记忆，不改变 Agent 行为。
-- **方案**：根据失败/意外经验，动态调整 system prompt、工具偏好或生成新工具。
-- **文件**：`swaybot/agent.py`, `swaybot/reflection.py`, 可能新增 `swaybot/self_improve.py`
-- **验收**：同一错误在后续运行中出现频率下降。
+- **方案**：`Agent` 在每次决策前从长期记忆中检索高可信度 `ReflectionStep`，将其内容作为 `behavior_guidance` 注入 system prompt，影响后续工具选择。
+- **文件**：`swaybot/agent.py`, `swaybot/prompts/system.j2`, `swaybot/llm_brain.py`
+- **验收**：高可信度反思内容会出现在 system prompt 的 "Lessons learned" 区块；低可信度或无关内容被过滤。
+- **状态**：已完成（2026-07-15）。67 个测试全部通过。
 
-### [ ] API 调用重试与退避
+### [x] API 调用重试与退避
 - **问题**：LLM 调用失败直接 fallback，没有重试。
-- **方案**：对临时网络错误做有限次指数退避重试。
+- **方案**：`LLMBrain._chat()` 对临时错误做最多 `max_retries` 次指数退避重试（`backoff * 2^attempt`），全部失败后返回 `None` 并由上层 fallback。
 - **文件**：`swaybot/llm_brain.py`
-- **验收**：模拟超时/断网时能够重试并最终成功或优雅失败。
+- **验收**：模拟连续失败后能重试并成功；全部重试耗尽后优雅 fallback。
+- **状态**：已完成（2026-07-15）。
 
 ## P3 — 体验增强
 
@@ -86,4 +88,4 @@
 
 ## 当前聚焦
 
-P1 已完成。下一步执行 **P2：反思结果反馈到行为**——让 `theory` 记忆不只是被检索，而是能影响工具选择或 system prompt，减少重复错误。
+P2 已完成。下一步执行 **P3：体验增强**——先实现空闲时主动探索，让 Agent 在没有外部任务时也能自主学习。

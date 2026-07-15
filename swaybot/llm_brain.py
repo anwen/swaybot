@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from typing import cast
 
 from .prompts import render_prompt
@@ -20,6 +21,8 @@ class LLMBrain:
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 1024,
+        max_retries: int = 3,
+        backoff: float = 1.0,
     ):
         if OpenAI is None:
             raise ImportError(
@@ -32,6 +35,8 @@ class LLMBrain:
         self.model = model or os.environ.get("SWAYBOT_MODEL")
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.max_retries = max_retries
+        self.backoff = backoff
 
         if not self.api_key:
             raise ValueError(
@@ -66,6 +71,7 @@ class LLMBrain:
                     "system",
                     tool_descriptions=perception.get("tool_descriptions"),
                     available_tools=available_tools,
+                    behavior_guidance=perception.get("behavior_guidance"),
                 ),
             }
         ]
@@ -76,17 +82,9 @@ class LLMBrain:
                 {"role": "user", "content": render_prompt("user", **perception)}
             )
 
-        try:
-            response = self._client.chat.completions.create(
-                model=cast(str, self.model),
-                messages=messages,  # type: ignore
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-            raw = response.choices[0].message.content or ""
-        except Exception as exc:
-            return _fallback(perception, f"LLM call failed: {exc}")
-
+        raw = self._chat(messages)
+        if raw is None:
+            return _fallback(perception, "LLM call failed after retries")
         return _parse_action(raw, perception)
 
     def _plan(self, perception: dict, available_tools: list[str]) -> dict:
@@ -97,6 +95,7 @@ class LLMBrain:
                     "system",
                     tool_descriptions=perception.get("tool_descriptions"),
                     available_tools=available_tools,
+                    behavior_guidance=perception.get("behavior_guidance"),
                 ),
             },
             {
@@ -111,18 +110,27 @@ class LLMBrain:
             },
         ]
 
-        try:
-            response = self._client.chat.completions.create(
-                model=cast(str, self.model),
-                messages=messages,  # type: ignore
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-            raw = response.choices[0].message.content or ""
-        except Exception as exc:
+        raw = self._chat(messages)
+        if raw is None:
             return {"name": "plan", "args": {"steps": []}}
-
         return _parse_plan(raw)
+
+    def _chat(self, messages: list[dict]) -> str | None:
+        last_error = ""
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self._client.chat.completions.create(
+                    model=cast(str, self.model),
+                    messages=messages,  # type: ignore
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+                return response.choices[0].message.content or ""
+            except Exception as exc:
+                last_error = str(exc)
+                if attempt < self.max_retries:
+                    time.sleep(self.backoff * (2 ** attempt))
+        return None
 
 
 def _parse_action(raw: str, perception: dict) -> dict:
