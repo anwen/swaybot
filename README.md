@@ -54,22 +54,29 @@ The minimal loop is `perceive → think → act → observe → loop`:
 
 ## Memory
 
-SwayBot can optionally keep a `MemoryStore` to record experiences, facts, theories, conjectures, and inspirations. Each memory carries source, evidence, credibility, surprise, and tags so the agent can later retrieve relevant context or search for counterexamples.
+SwayBot can optionally keep a `MemoryStore` to record experiences, facts, theories, conjectures, and inspirations. Memories are scoped as either `short_term` (raw per-run experiences) or `long_term` (validated knowledge produced by reflection). Each memory carries source, evidence, credibility, surprise, and tags so the agent can later retrieve relevant long-term context or search for counterexamples.
 
 ```python
 from swaybot import Agent, MemoryStore
 
-store = MemoryStore(path="memory.json")
+store = MemoryStore(path="~/.swaybot/memory.json")
 agent = Agent(memory=store)
 agent.run("explore a topic", max_steps=5)
 ```
 
 ## Reflection
 
-After a run, SwayBot can reflect on what happened: summarize the experience, flag surprising events, detect contradictions in memory, and verify claims against stored facts. Reflections are stored as `theory` memories, creating a self-improving loop where experience gradually turns into structured knowledge.
+After a run, SwayBot can reflect on what happened: summarize the experience, flag surprising events, detect contradictions in memory, and verify claims against stored facts. Reflections are stored as `long_term` `theory` memories, creating a self-improving loop where raw experience gradually turns into structured knowledge.
 
 ```bash
-python -m swaybot "explore colors" --max-steps 5 --memory /tmp/sway.json --reflect
+python -m swaybot "explore colors" --max-steps 5 --reflect
+```
+
+Output now reads as readable tool calls:
+
+```text
+Step 1: echo(message="thinking...") → thinking...
+Step 2: done() → finished
 ```
 
 ## LLM Brain
@@ -81,8 +88,10 @@ pip install -e ".[llm]"
 export SWAYBOT_API_KEY="your-key"
 export SWAYBOT_API_BASE="https://api.example.com/v1"
 export SWAYBOT_MODEL="your-model"
-python -m swaybot "What is 2+2?" --brain llm --max-steps 3 --memory /tmp/sway.json --reflect
+python -m swaybot "What is 2+2?" --brain llm --max-steps 3 --reflect
 ```
+
+Alternatively, create a `.env` file (see `.env.example`) in the project root. The CLI loads it automatically and reads `SWAYBOT_API_KEY`, `SWAYBOT_API_BASE`, and `SWAYBOT_MODEL` from there. By default, memory is persisted to `~/.swaybot/memory.json`; use `--data-dir` or `--memory` to customize the location, or `--no-memory` to disable persistence.
 
 The default brain remains `EchoBrain`, so the core package stays dependency-free.
 

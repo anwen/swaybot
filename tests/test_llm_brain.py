@@ -78,7 +78,10 @@ def test_llm_brain_fallback_on_api_error(mock_openai):
     assert "LLM call failed" in action["args"]["message"]
 
 
-def test_llm_brain_requires_api_key():
+def test_llm_brain_requires_api_key(monkeypatch):
+    monkeypatch.delenv("SWAYBOT_API_KEY", raising=False)
+    monkeypatch.delenv("SWAYBOT_API_BASE", raising=False)
+    monkeypatch.delenv("SWAYBOT_MODEL", raising=False)
     with pytest.raises(ValueError):
         LLMBrain(api_key=None, base_url="http://localhost/v1")
 

@@ -10,8 +10,19 @@ from swaybot.memory import Memory, MemoryStore
 def test_memory_defaults():
     m = Memory(content="test")
     assert m.kind == "experience"
+    assert m.scope == "long_term"
     assert 0.0 <= m.credibility <= 1.0
     assert m.created_at
+
+
+def test_memory_store_scope_filter():
+    store = MemoryStore()
+    store.add(Memory(content="short", scope="short_term", tags=["task-a"]))
+    store.add(Memory(content="long", scope="long_term", tags=["task-a"]))
+    assert len(store.query(tag="task-a", scope="short_term")) == 1
+    assert store.query(tag="task-a", scope="short_term")[0].content == "short"
+    assert len(store.query(tag="task-a", scope="long_term")) == 1
+    assert store.query(tag="task-a", scope="long_term")[0].content == "long"
 
 
 def test_memory_store_add_and_query():
@@ -51,6 +62,16 @@ def test_find_counterexamples_no_overlap():
     store = MemoryStore()
     store.add(Memory(content=" unrelated ", credibility=0.9, surprise=0.9))
     assert store.find_counterexamples("completely different topic") == []
+
+
+def test_agent_records_short_term_memories():
+    store = MemoryStore()
+    agent = Agent(memory=store)
+    env = agent.run("demo", max_steps=3)
+    assert env.done
+    assert len(store.memories) == 3
+    assert all(m.scope == "short_term" for m in store.memories)
+    assert all("demo" in m.tags for m in store.memories)
 
 
 def test_agent_records_memories():

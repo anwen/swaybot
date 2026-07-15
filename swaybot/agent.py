@@ -36,6 +36,7 @@ class Agent:
                     Memory(
                         content=f"Step {env.step}: {action} -> {result}",
                         kind="experience",
+                        scope="short_term",
                         source="agent.run",
                         evidence=str(result),
                         tags=[task],
@@ -51,7 +52,7 @@ class Agent:
     def _memory_context(self, task: str) -> str:
         if self.memory is None:
             return ""
-        relevant = self.memory.query(tag=task, limit=5)
+        relevant = self.memory.query(tag=task, scope="long_term", limit=5)
         if not relevant:
             return ""
         return "\n".join(f"- {m.content}" for m in relevant)

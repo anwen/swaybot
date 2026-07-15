@@ -53,6 +53,14 @@ def done() -> str:
     return "finished"
 
 
+def format_action(action: dict) -> str:
+    """Render an action dict as a readable tool call."""
+    name = action.get("name", "unknown")
+    args = action.get("args", {})
+    args_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
+    return f"{name}({args_str})"
+
+
 def build_default_registry() -> ToolRegistry:
     registry = ToolRegistry()
     registry.register("echo", echo)

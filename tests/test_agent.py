@@ -39,6 +39,15 @@ def test_tool_registry_unknown_tool():
         registry.execute({"name": "missing", "args": {}})
 
 
+def test_format_action():
+    from swaybot.tools import format_action
+
+    assert format_action({"name": "add", "args": {"a": 2, "b": 2}}) == "add(a=2, b=2)"
+    assert format_action({"name": "echo", "args": {"message": "hi"}}) == "echo(message='hi')"
+    assert format_action({"name": "done", "args": {}}) == "done()"
+    assert format_action({"name": "unknown"}) == "unknown()"
+
+
 def test_agent_run():
     agent = Agent()
     env = agent.run("hello", max_steps=3)
@@ -56,3 +65,15 @@ def test_agent_run_ends_early_with_done_brain():
     env = agent.run("hello", max_steps=10)
     assert env.done
     assert len(env.history) == 1
+
+
+def test_agent_memory_context_uses_long_term_only():
+    from swaybot.memory import Memory, MemoryStore
+
+    store = MemoryStore()
+    store.add(Memory(content="short", scope="short_term", tags=["demo"]))
+    store.add(Memory(content="long", scope="long_term", tags=["demo"]))
+    agent = Agent(memory=store)
+    context = agent._memory_context("demo")
+    assert "long" in context
+    assert "short" not in context
