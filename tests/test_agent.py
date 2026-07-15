@@ -85,6 +85,19 @@ def test_agent_build_messages_includes_memory_context_and_short_term_steps():
     assert any(msg["content"] == "short" for msg in messages)
 
 
+def test_agent_run_with_plan_creates_planning_step():
+    from swaybot.memory import MemoryStore, PlanningStep
+
+    store = MemoryStore()
+    agent = Agent(memory=store)
+    env = agent.run("demo", max_steps=2, reflect=False, plan=True)
+    assert env.done
+    assert any(isinstance(m, PlanningStep) for m in store.memories)
+    plan_step = next(m for m in store.memories if isinstance(m, PlanningStep))
+    assert len(plan_step.plan) >= 1
+    assert "demo" in plan_step.tags
+
+
 def test_agent_memory_context_uses_long_term_only():
     from swaybot.memory import Memory, MemoryStore
 

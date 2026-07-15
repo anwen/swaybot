@@ -31,6 +31,18 @@ def test_cli_no_memory(tmp_path, capsys):
     assert not memory_path.exists()
 
 
+def test_cli_plan_flag_creates_planning_step(tmp_path, capsys):
+    from swaybot.memory import MemoryStore, PlanningStep
+
+    data_dir = tmp_path / "plan"
+    main(["hello", "--max-steps", "2", "--data-dir", str(data_dir), "--plan"])
+    captured = capsys.readouterr()
+    assert "Step 1:" in captured.out
+    memory_path = data_dir / "memory.json"
+    store = MemoryStore(path=memory_path)
+    assert any(isinstance(m, PlanningStep) for m in store.memories)
+
+
 def test_cli_verbose_output(tmp_path, capsys):
     main(["hello", "--max-steps", "1", "--data-dir", str(tmp_path / "verb"), "--verbose"])
     captured = capsys.readouterr()

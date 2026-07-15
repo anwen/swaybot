@@ -27,9 +27,15 @@
 
 ### [x] Phase 3：Typed Memory Steps
 - **问题**：`Memory` 是扁平结构，运行时步骤和长期知识混在一起，难以渲染成 LLM 上下文。
-- **方案**：引入 `MemoryStep` 基类与 `TaskStep`、`ActionStep`、`ObservationStep`、`ReflectionStep`、`PlanningStep`，每个子类实现 `to_messages()`；`MemoryStore` 通过 `step_kind` 反序列化；`Agent` 用步骤构建 messages 并注入 `LLMBrain`。
+- **方案**：引入 `MemoryStep` 基类与 `TaskStep`、`ActionStep`、`ObservationStep`、`ReflectionStep`，每个子类实现 `to_messages()`；`MemoryStore` 通过 `step_kind` 反序列化；`Agent` 用步骤构建 messages 并注入 `LLMBrain`。
 - **文件**：`swaybot/memory.py`, `swaybot/agent.py`, `swaybot/reflection.py`, `swaybot/llm_brain.py`, `tests/test_memory.py`, `tests/test_agent.py`, `tests/test_llm_brain.py`
-- **验收**：运行时存储为类型化步骤；LLM 收到 system + 相关长期记忆 + 短期步骤 messages；步骤可持久化并原样加载；56 个测试全部通过。
+- **验收**：运行时存储为类型化步骤；LLM 收到 system + 相关长期记忆 + 短期步骤 messages；步骤可持久化并原样加载。
+
+### [x] PlanningStep 支持
+- **问题**：Agent 直接开始执行，没有显式规划阶段。
+- **方案**：新增 `--plan` 标志；`Agent.run` 在任务开始时调用 `_create_plan()`；`EchoBrain` 与 `LLMBrain` 都支持 `planning` 模式并返回 `{"name": "plan", "args": {"steps": [...]}}`；新增 `swaybot/prompts/plan.j2`。
+- **文件**：`swaybot/agent.py`, `swaybot/brain.py`, `swaybot/llm_brain.py`, `swaybot/prompts/plan.j2`, `swaybot/cli.py`, `tests/test_agent.py`, `tests/test_llm_brain.py`, `tests/test_cli.py`
+- **验收**：`--plan` 产生 `PlanningStep`；`LLMBrain` 能解析 JSON 数组或 `{"steps": [...]}`；63 个测试全部通过。
 - **状态**：已完成（2026-07-15）。
 
 ## P1 — 记忆与可维护性

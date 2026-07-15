@@ -186,6 +186,58 @@ def test_llm_brain_uses_messages_when_present(mock_openai):
 
 
 @patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_parses_planning_response_as_list(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_response(
+        '["search", "summarize", "finish"]'
+    )
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    action = brain.think(
+        {
+            "task": "demo",
+            "max_steps": 3,
+            "step": 0,
+            "history": [],
+            "planning": True,
+        },
+        ["echo", "done"],
+    )
+    assert action == {"name": "plan", "args": {"steps": ["search", "summarize", "finish"]}}
+
+
+@patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_parses_planning_response_as_object(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_response(
+        '{"steps": ["a", "b"]}'
+    )
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    action = brain.think(
+        {"task": "demo", "max_steps": 3, "step": 0, "history": [], "planning": True},
+        ["echo"],
+    )
+    assert action == {"name": "plan", "args": {"steps": ["a", "b"]}}
+
+
+@patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_planning_fallback_on_invalid_json(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_response("not a plan")
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    action = brain.think(
+        {"task": "demo", "max_steps": 3, "step": 0, "history": [], "planning": True},
+        ["echo"],
+    )
+    assert action == {"name": "plan", "args": {"steps": []}}
+
+
+@patch("swaybot.llm_brain.OpenAI")
 def test_llm_brain_uses_env_variables(mock_openai, monkeypatch):
     monkeypatch.setenv("SWAYBOT_API_KEY", "env-key")
     monkeypatch.setenv("SWAYBOT_API_BASE", "http://env/v1")

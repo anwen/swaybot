@@ -56,6 +56,9 @@ class LLMBrain:
         self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
     def think(self, perception: dict, available_tools: list[str]) -> dict:
+        if perception.get("planning"):
+            return self._plan(perception, available_tools)
+
         messages = [
             {
                 "role": "system",
@@ -86,6 +89,41 @@ class LLMBrain:
 
         return _parse_action(raw, perception)
 
+    def _plan(self, perception: dict, available_tools: list[str]) -> dict:
+        messages = [
+            {
+                "role": "system",
+                "content": render_prompt(
+                    "system",
+                    tool_descriptions=perception.get("tool_descriptions"),
+                    available_tools=available_tools,
+                ),
+            },
+            {
+                "role": "user",
+                "content": render_prompt(
+                    "plan",
+                    task=perception["task"],
+                    max_steps=perception["max_steps"],
+                    tool_descriptions=perception.get("tool_descriptions"),
+                    available_tools=available_tools,
+                ),
+            },
+        ]
+
+        try:
+            response = self._client.chat.completions.create(
+                model=cast(str, self.model),
+                messages=messages,  # type: ignore
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
+            raw = response.choices[0].message.content or ""
+        except Exception as exc:
+            return {"name": "plan", "args": {"steps": []}}
+
+        return _parse_plan(raw)
+
 
 def _parse_action(raw: str, perception: dict) -> dict:
     raw = raw.strip()
@@ -106,6 +144,31 @@ def _parse_action(raw: str, perception: dict) -> dict:
         return _fallback(perception, raw)
 
     return action
+
+
+def _parse_plan(raw: str) -> dict:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+
+    try:
+        plan = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"name": "plan", "args": {"steps": []}}
+
+    if isinstance(plan, list) and all(isinstance(s, str) for s in plan):
+        return {"name": "plan", "args": {"steps": plan}}
+    if isinstance(plan, dict):
+        steps = plan.get("steps", plan.get("plan", []))
+        if isinstance(steps, list) and all(isinstance(s, str) for s in steps):
+            return {"name": "plan", "args": {"steps": steps}}
+
+    return {"name": "plan", "args": {"steps": []}}
 
 
 def _fallback(perception: dict, raw: str) -> dict:

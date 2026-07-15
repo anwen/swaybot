@@ -17,6 +17,18 @@ class EchoBrain:
         self.echo_text = echo_text
 
     def think(self, perception: dict, available_tools: list[str]) -> dict:
+        if perception.get("planning"):
+            return {
+                "name": "plan",
+                "args": {
+                    "steps": [
+                        "Understand the task",
+                        "Select the best tool",
+                        "Execute and observe",
+                        "Finish",
+                    ]
+                },
+            }
         if perception["step"] + 1 >= perception["max_steps"]:
             return {"name": "done", "args": {}}
         return {"name": "echo", "args": {"message": self.echo_text}}

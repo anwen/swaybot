@@ -69,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Reflect on the run and store insights",
     )
     parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="Ask the brain to produce a plan before acting",
+    )
+    parser.add_argument(
         "--api-key", type=str, default=None, help="LLM API key (or SWAYBOT_API_KEY)"
     )
     parser.add_argument(
@@ -102,7 +107,9 @@ def main(argv: list[str] | None = None) -> int:
     memory = MemoryStore(path=memory_path) if memory_path else None
     reflector = Reflector(memory) if memory and args.reflect else None
     agent = Agent(brain=brain, memory=memory, reflector=reflector)
-    env = agent.run(args.task, max_steps=args.max_steps, reflect=args.reflect)
+    env = agent.run(
+        args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
+    )
     for entry in env.history:
         action = entry["action"]
         result = entry["result"]
