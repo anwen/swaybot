@@ -11,6 +11,31 @@ except ImportError:  # pragma: no cover
     OpenAI = None  # type: ignore[misc, assignment]
 
 
+def _parse_exploration_response(raw: str) -> dict:
+    """Parse a JSON response expected to contain task and hypothesis."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return {
+        "task": data.get("task", data.get("explore", "")),
+        "hypothesis": data.get("hypothesis", ""),
+    }
+
+
 class LLMBrain:
     """Brain backed by an OpenAI-compatible chat completion API."""
 
@@ -63,6 +88,8 @@ class LLMBrain:
     def think(self, perception: dict, available_tools: list[str]) -> dict:
         if perception.get("planning"):
             return self._plan(perception, available_tools)
+        if perception.get("exploring"):
+            return self._explore(perception, available_tools)
 
         messages = [
             {
@@ -114,6 +141,33 @@ class LLMBrain:
         if raw is None:
             return {"name": "plan", "args": {"steps": []}}
         return _parse_plan(raw)
+
+    def _explore(self, perception: dict, available_tools: list[str]) -> dict:
+        messages = [
+            {
+                "role": "system",
+                "content": render_prompt(
+                    "system",
+                    tool_descriptions=perception.get("tool_descriptions"),
+                    available_tools=available_tools,
+                    behavior_guidance=perception.get("behavior_guidance"),
+                ),
+            },
+            {
+                "role": "user",
+                "content": render_prompt(
+                    "explore",
+                    memory_context=perception.get("memory_context", ""),
+                    tool_descriptions=perception.get("tool_descriptions"),
+                    available_tools=available_tools,
+                ),
+            },
+        ]
+
+        raw = self._chat(messages)
+        if raw is None:
+            return {"name": "explore", "args": {"task": "explore", "hypothesis": ""}}
+        return {"name": "explore", "args": _parse_exploration_response(raw)}
 
     def _chat(self, messages: list[dict]) -> str | None:
         last_error = ""

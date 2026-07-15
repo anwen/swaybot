@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .agent import Agent
 from .brain import EchoBrain
+from .explorer import Explorer
 from .memory import MemoryStore
 from .reflection import Reflector
 from .tools import format_action
@@ -38,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="SwayBot: a lightweight self-evolving agent"
     )
-    parser.add_argument("task", help="Task for the agent")
+    parser.add_argument("task", nargs="?", default="explore", help="Task for the agent")
     parser.add_argument("--max-steps", type=int, default=10, help="Maximum steps")
     parser.add_argument(
         "--brain",
@@ -74,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Ask the brain to produce a plan before acting",
     )
     parser.add_argument(
+        "--explore",
+        action="store_true",
+        help="Generate and run an exploratory task instead of using TASK",
+    )
+    parser.add_argument(
         "--api-key", type=str, default=None, help="LLM API key (or SWAYBOT_API_KEY)"
     )
     parser.add_argument(
@@ -105,11 +111,19 @@ def main(argv: list[str] | None = None) -> int:
         brain = LLMBrain(api_key=args.api_key, base_url=args.api_base, model=args.model)
 
     memory = MemoryStore(path=memory_path) if memory_path else None
-    reflector = Reflector(memory) if memory and args.reflect else None
+    reflector = Reflector(memory) if memory and (args.reflect or args.explore) else None
     agent = Agent(brain=brain, memory=memory, reflector=reflector)
-    env = agent.run(
-        args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
-    )
+
+    if args.explore:
+        explorer = Explorer(agent, max_steps=args.max_steps)
+        exploration, env = explorer.run()
+        print(f"Exploration: {exploration.task}")
+        if exploration.hypothesis:
+            print(f"Hypothesis: {exploration.hypothesis}")
+    else:
+        env = agent.run(
+            args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
+        )
     for entry in env.history:
         action = entry["action"]
         result = entry["result"]
