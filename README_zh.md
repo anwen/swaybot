@@ -22,17 +22,39 @@ SwayBot 就是一次让这种 Agent 成真的尝试。
 
 ## 快速开始
 
-本项目处于早期开发阶段。随着核心架构逐步成型，更多细节将陆续补充。
+SwayBot 基于 Python 3.10+ 构建，核心无运行时依赖。
 
 ```bash
 # 克隆仓库
 git clone https://github.com/askender/swaybot.git
 cd swaybot
+
+# 以可编辑模式安装
+pip install -e .
+
+# 运行 Agent
+python -m swaybot "count to 3" --max-steps 5
 ```
+
+### 运行测试
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+## 架构
+
+最小循环为 `感知 → 思考 → 行动 → 观察 → 循环`：
+
+- `Environment` 保存任务、步数计数器和观察历史。
+- `Brain` 决定下一步动作。默认的 `EchoBrain` 是确定性大脑，无需 API 密钥。
+- `ToolRegistry` 将动作分发给工具（`echo`、`add`、`done`）。
+- `Agent` 将它们串联起来，运行到任务完成或步数耗尽。
 
 ## 路线图
 
-- [ ] 定义最小 Agent 循环
+- [x] 定义最小 Agent 循环
 - [ ] 构建记忆与反思原语
 - [ ] 增加自我改进机制
 - [ ] 记录成长模式与示例
