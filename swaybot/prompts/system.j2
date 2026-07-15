@@ -14,5 +14,6 @@ Available tools (JSON schema):
 {% else %}
 Available tools: {{ available_tools | join(', ') if available_tools else 'none' }}
 {% endif %}
+Use 'final_answer' when you have the answer to the task, with argument 'answer'.
 Use 'done' when the task is complete or you cannot proceed.
 Do not include any explanation or markdown formatting outside the JSON.

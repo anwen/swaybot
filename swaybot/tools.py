@@ -153,6 +153,11 @@ def done() -> str:
     return "finished"
 
 
+def final_answer(answer: str) -> str:
+    """Provide the final answer and end the task."""
+    return answer
+
+
 def format_action(action: dict) -> str:
     """Render an action dict as a readable tool call."""
     name = action.get("name", "unknown")
@@ -166,4 +171,5 @@ def build_default_registry() -> ToolRegistry:
     registry.register("echo", echo)
     registry.register("add", add)
     registry.register("done", done)
+    registry.register("final_answer", final_answer)
     return registry
