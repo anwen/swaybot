@@ -44,6 +44,7 @@ class Agent:
             perception = env.perceive()
             if self.memory is not None:
                 perception["memory_context"] = self._memory_context(task)
+                perception["behavior_guidance"] = self._behavior_guidance(task)
                 perception["messages"] = self._build_messages(task)
             perception["tool_descriptions"] = self.tools.schemas()
             action = self.brain.think(perception, self.tools.names())
@@ -97,6 +98,21 @@ class Agent:
         return "\n".join(
             f"- {getattr(m, 'content', str(m))}" for m in relevant
         )
+
+    def _behavior_guidance(self, task: str) -> str:
+        if self.memory is None:
+            return ""
+        theories = self.memory.query_relevant(task, scope="long_term", limit=5)
+        if not theories:
+            return ""
+        lines: list[str] = []
+        for theory in theories:
+            if getattr(theory, "credibility", 0.0) < 0.5:
+                continue
+            content = getattr(theory, "content", str(theory))
+            if content:
+                lines.append(f"- {content}")
+        return "\n".join(lines)
 
     def _build_messages(self, task: str) -> list[dict]:
         if self.memory is None:

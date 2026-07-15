@@ -98,7 +98,30 @@ def test_agent_run_with_plan_creates_planning_step():
     assert "demo" in plan_step.tags
 
 
-def test_agent_memory_context_uses_relevance_and_long_term_only():
+def test_agent_behavior_guidance_pulls_high_credibility_theories():
+    from swaybot.memory import MemoryStore, ReflectionStep
+
+    store = MemoryStore()
+    store.add(
+        ReflectionStep(
+            content="avoid recursion in demo tasks",
+            scope="long_term",
+            tags=["demo"],
+            credibility=0.8,
+        )
+    )
+    store.add(
+        ReflectionStep(
+            content="low confidence tip for demo tasks",
+            scope="long_term",
+            tags=["demo"],
+            credibility=0.3,
+        )
+    )
+    agent = Agent(memory=store)
+    guidance = agent._behavior_guidance("demo")
+    assert "avoid recursion" in guidance
+    assert "low confidence" not in guidance
     from swaybot.memory import Memory, MemoryStore
 
     store = MemoryStore()
