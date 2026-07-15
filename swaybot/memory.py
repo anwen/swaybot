@@ -234,6 +234,33 @@ class MemoryStore:
             encoding="utf-8",
         )
 
+    def prune(
+        self,
+        scope: str | None = None,
+        tag: str | None = None,
+        keep_last: int = 0,
+    ) -> int:
+        """Remove matching steps, optionally preserving the last ``keep_last``.
+
+        Returns the number of removed steps.
+        """
+
+        def matches(step: MemoryStep) -> bool:
+            if scope and step.scope != scope:
+                return False
+            if tag and tag not in step.tags:
+                return False
+            return True
+
+        indices = [i for i, m in enumerate(self.memories) if matches(m)]
+        if keep_last > 0:
+            indices = indices[:-keep_last]
+        for i in reversed(indices):
+            del self.memories[i]
+        if self.path:
+            self.save()
+        return len(indices)
+
 
 def _load_step(item: dict) -> MemoryStep:
     data = dict(item)

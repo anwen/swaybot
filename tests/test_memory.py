@@ -134,3 +134,29 @@ def test_memory_store_persists_typed_steps(tmp_path: Path):
     assert isinstance(store2.memories[0], TaskStep)
     assert isinstance(store2.memories[1], ActionStep)
     assert isinstance(store2.memories[2], ObservationStep)
+
+
+def test_memory_store_prune_removes_matching_steps():
+    store = MemoryStore()
+    store.add(Memory(content="long", scope="long_term", tags=["demo"]))
+    store.add(TaskStep(task="demo", tags=["demo"]))
+    store.add(ActionStep(step=1, action={"name": "echo"}, tags=["demo"]))
+    store.add(ObservationStep(step=1, observation="ok", tags=["demo"]))
+
+    removed = store.prune(scope="short_term", tag="demo")
+    assert removed == 3
+    assert len(store.memories) == 1
+    assert store.memories[0].scope == "long_term"
+
+
+def test_agent_prunes_short_term_after_reflection():
+    from swaybot.reflection import Reflector
+
+    store = MemoryStore()
+    reflector = Reflector(store)
+    agent = Agent(memory=store, reflector=reflector)
+    agent.run("demo", max_steps=2)
+    theories = store.query(kind="theory")
+    short_term = store.query(scope="short_term")
+    assert len(theories) >= 1
+    assert len(short_term) == 0

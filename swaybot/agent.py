@@ -56,6 +56,7 @@ class Agent:
         if reflect and self.memory is not None and self.reflector is not None:
             for reflection in self.reflector.reflect_on_run(task, env.history):
                 self.memory.add(reflection_to_memory(reflection))
+            self.memory.prune(scope="short_term", tag=task)
 
         return env
 
