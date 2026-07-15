@@ -28,6 +28,10 @@ class ToolRegistry:
                 params.append(f"{param.name}={param.default!r}")
         return f"{name}({', '.join(params)})"
 
+    def descriptions(self) -> list[str]:
+        """Return signature descriptions for all registered tools."""
+        return [self.describe(name) for name in self.names()]
+
     def execute(self, action: dict) -> object:
         name = action.get("name")
         args = action.get("args", {})

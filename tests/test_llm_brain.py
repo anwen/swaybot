@@ -17,6 +17,32 @@ def _mock_response(content: str):
 
 
 @patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_system_prompt_includes_tool_descriptions(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_response(
+        '{"name": "done", "args": {}}'
+    )
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    brain.think(
+        {
+            "task": "test",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "tool_descriptions": ["add(a, b)", "done()"],
+        },
+        ["add", "done"],
+    )
+    call_kwargs = client.chat.completions.create.call_args.kwargs
+    messages = call_kwargs["messages"]
+    system_content = messages[0]["content"]
+    assert "add(a, b)" in system_content
+    assert "done()" in system_content
+
+
+@patch("swaybot.llm_brain.OpenAI")
 def test_llm_brain_parses_json_action(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(

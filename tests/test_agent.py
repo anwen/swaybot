@@ -48,6 +48,12 @@ def test_format_action():
     assert format_action({"name": "unknown"}) == "unknown()"
 
 
+def test_tool_registry_descriptions():
+    registry = build_default_registry()
+    descriptions = registry.descriptions()
+    assert set(descriptions) == {"add(a, b)", "echo(message='')", "done()"}
+
+
 def test_agent_run():
     agent = Agent()
     env = agent.run("hello", max_steps=3)
