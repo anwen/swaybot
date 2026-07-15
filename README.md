@@ -22,17 +22,39 @@ SwayBot is an experiment in making that kind of agent real.
 
 ## Getting Started
 
-This project is in early development. More details will be added as the core takes shape.
+SwayBot is built with Python 3.10+ and has no required runtime dependencies.
 
 ```bash
 # Clone the repository
 git clone https://github.com/askender/swaybot.git
 cd swaybot
+
+# Install in editable mode
+pip install -e .
+
+# Run the agent
+python -m swaybot "count to 3" --max-steps 5
 ```
+
+### Running tests
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+## Architecture
+
+The minimal loop is `perceive → think → act → observe → loop`:
+
+- `Environment` holds the task, step counter, and observation history.
+- `Brain` decides the next action. `EchoBrain` is the default deterministic brain and requires no API key.
+- `ToolRegistry` dispatches actions to tools (`echo`, `add`, `done`).
+- `Agent` wires them together and runs until the task signals completion or the step budget is exhausted.
 
 ## Roadmap
 
-- [ ] Define the minimal agent loop
+- [x] Define the minimal agent loop
 - [ ] Build memory and reflection primitives
 - [ ] Add self-improvement mechanisms
 - [ ] Document growth patterns and examples
