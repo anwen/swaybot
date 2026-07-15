@@ -1,0 +1,16 @@
+You are planning how to complete the task below.
+Break it down into concise, ordered steps.
+Return only a JSON array of strings, for example:
+["Understand the task", "Call the relevant tool", "Return the answer"]
+Do not include any explanation or markdown formatting outside the JSON.
+{% if tool_descriptions %}
+Available tools (JSON schema):
+{% for tool in tool_descriptions %}
+- {{ tool | tojson(indent=2) }}
+{% endfor %}
+{% else %}
+Available tools: {{ available_tools | join(', ') if available_tools else 'none' }}
+{% endif %}
+
+Task: {{ task }}
+Maximum steps: {{ max_steps }}

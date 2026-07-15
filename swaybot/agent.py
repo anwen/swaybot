@@ -1,6 +1,12 @@
 from .brain import Brain, EchoBrain
 from .environment import Environment
-from .memory import ActionStep, MemoryStore, ObservationStep, TaskStep
+from .memory import (
+    ActionStep,
+    MemoryStore,
+    ObservationStep,
+    PlanningStep,
+    TaskStep,
+)
 from .reflection import Reflector, reflection_to_memory
 from .tools import ToolRegistry, build_default_registry
 
@@ -21,13 +27,19 @@ class Agent:
         self.reflector = reflector
 
     def run(
-        self, task: str, max_steps: int = 10, reflect: bool = True
+        self,
+        task: str,
+        max_steps: int = 10,
+        reflect: bool = True,
+        plan: bool = False,
     ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
         if self.memory is not None:
             self.memory.add(
                 TaskStep(task=task, max_steps=max_steps, tags=[task])
             )
+        if plan and self.memory is not None:
+            self._create_plan(task, max_steps)
         while not env.done:
             perception = env.perceive()
             if self.memory is not None:
@@ -59,6 +71,22 @@ class Agent:
             self.memory.prune(scope="short_term", tag=task)
 
         return env
+
+    def _create_plan(self, task: str, max_steps: int) -> None:
+        """Ask the brain for a plan and store it as a PlanningStep."""
+        assert self.memory is not None
+        perception = {
+            "task": task,
+            "max_steps": max_steps,
+            "step": 0,
+            "planning": True,
+            "tool_descriptions": self.tools.schemas(),
+        }
+        action = self.brain.think(perception, self.tools.names())
+        if action.get("name") == "plan":
+            steps = action.get("args", {}).get("steps", [])
+            if steps:
+                self.memory.add(PlanningStep(plan=steps, tags=[task]))
 
     def _memory_context(self, task: str) -> str:
         if self.memory is None:
