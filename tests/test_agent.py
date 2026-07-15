@@ -77,12 +77,12 @@ def test_agent_build_messages_includes_memory_context_and_short_term_steps():
     from swaybot.memory import Memory, MemoryStore
 
     store = MemoryStore()
-    store.add(Memory(content="long", scope="long_term", tags=["demo"]))
-    store.add(Memory(content="short", scope="short_term", tags=["demo"]))
+    store.add(Memory(content="demo context long", scope="long_term", tags=["demo"]))
+    store.add(Memory(content="demo short note", scope="short_term", tags=["demo"]))
     agent = Agent(memory=store)
     messages = agent._build_messages("demo")
-    assert any("Relevant memories" in msg["content"] and "long" in msg["content"] for msg in messages)
-    assert any(msg["content"] == "short" for msg in messages)
+    assert any("Relevant memories" in msg["content"] and "demo context long" in msg["content"] for msg in messages)
+    assert any(msg["content"] == "demo short note" for msg in messages)
 
 
 def test_agent_run_with_plan_creates_planning_step():
@@ -98,13 +98,15 @@ def test_agent_run_with_plan_creates_planning_step():
     assert "demo" in plan_step.tags
 
 
-def test_agent_memory_context_uses_long_term_only():
+def test_agent_memory_context_uses_relevance_and_long_term_only():
     from swaybot.memory import Memory, MemoryStore
 
     store = MemoryStore()
-    store.add(Memory(content="short", scope="short_term", tags=["demo"]))
-    store.add(Memory(content="long", scope="long_term", tags=["demo"]))
+    store.add(Memory(content="short demo note", scope="short_term", tags=["demo"]))
+    store.add(Memory(content="long demo fact", scope="long_term", tags=["demo"]))
+    store.add(Memory(content="unrelated", scope="long_term", tags=["other"]))
     agent = Agent(memory=store)
     context = agent._memory_context("demo")
-    assert "long" in context
-    assert "short" not in context
+    assert "long demo fact" in context
+    assert "short demo note" not in context
+    assert "unrelated" not in context

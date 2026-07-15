@@ -178,6 +178,41 @@ class MemoryStore:
             ]
         return results[-limit:]
 
+    def query_relevant(
+        self,
+        query: str,
+        scope: str | None = "long_term",
+        limit: int = 5,
+    ) -> list[MemoryStep]:
+        """Return the most relevant steps for ``query`` using keyword overlap.
+
+        Scoring is a simple Jaccard-style overlap over content words, with a
+        boost when the query matches one of the step's tags. This keeps the
+        core stdlib-only; embeddings can be swapped in later.
+        """
+        query_tokens = set(_tokenize(query)) - _STOP_WORDS
+        if not query_tokens:
+            return []
+
+        scored: list[tuple[float, MemoryStep]] = []
+        for m in self.memories:
+            if scope and m.scope != scope:
+                continue
+            content = getattr(m, "content", "")
+            memory_tokens = set(_tokenize(content)) - _STOP_WORDS
+            if not memory_tokens:
+                continue
+            overlap = query_tokens & memory_tokens
+            if not overlap:
+                continue
+            score = len(overlap) / len(query_tokens | memory_tokens)
+            if query in m.tags:
+                score += 1.0
+            scored.append((score, m))
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [m for _, m in scored[:limit]]
+
     def find_counterexamples(self, claim: str) -> list[MemoryStep]:
         """Return memories that may contradict the claim.
 
@@ -271,6 +306,18 @@ def _load_step(item: dict) -> MemoryStep:
     except TypeError:
         # Legacy or corrupted entry: keep what we can as a plain Memory.
         return Memory(content=json.dumps(data, ensure_ascii=False))
+
+
+_STOP_WORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "to", "of", "and", "or", "for", "in", "on", "at", "by", "with", "from",
+    "as", "it", "its", "this", "that", "these", "those", "i", "you", "he",
+    "she", "we", "they", "me", "him", "her", "us", "them", "my", "your",
+    "his", "her", "our", "their", "what", "which", "who", "when", "where",
+    "why", "how", "all", "any", "both", "each", "few", "more", "most", "other",
+    "some", "such", "no", "not", "only", "own", "same", "so", "than", "too",
+    "very", "can", "will", "just", "should", "now", "do", "does", "did",
+}
 
 
 def _tokenize(text: str) -> list[str]:
