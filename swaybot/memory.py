@@ -54,20 +54,41 @@ class MemoryStore:
         return results[-limit:]
 
     def find_counterexamples(self, claim: str) -> list[Memory]:
-        """Return memories whose content overlaps with the claim but may contradict it.
+        """Return memories that may contradict the claim.
 
-        This is a deliberately simple keyword heuristic; later versions may use
-        embeddings or an LLM judge.
+        A memory counts as a counterexample when it shares topical keywords
+        with the claim and is either explicitly marked as surprising or
+        contains negation/contradiction markers. This is a deliberately
+        simple heuristic; later versions may use embeddings or an LLM judge.
         """
         claim_words = set(_tokenize(claim))
         if not claim_words:
             return []
-        return [
-            m
-            for m in self.memories
-            if claim_words & set(_tokenize(m.content))
-            and (m.surprise > 0.3 or m.credibility > 0.7)
-        ]
+
+        negation_markers = {
+            "not", "no", "never", "none", "nobody", "nothing", "nowhere",
+            "neither", "nor", "hardly", "barely", "scarcely",
+        }
+        contradiction_markers = {
+            "but", "however", "yet", "although", "though", "except", "unless",
+            "instead", "rather", "contradict", "disprove", "refute", "deny",
+            "false", "wrong",
+        }
+
+        results = []
+        for m in self.memories:
+            memory_words = set(_tokenize(m.content))
+            if not (claim_words & memory_words):
+                continue
+            if m.surprise > 0.5:
+                results.append(m)
+                continue
+            if m.credibility <= 0.7:
+                continue
+            markers = memory_words & (negation_markers | contradiction_markers)
+            if markers:
+                results.append(m)
+        return results
 
     def to_dicts(self) -> list[dict]:
         return [asdict(m) for m in self.memories]

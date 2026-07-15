@@ -1,23 +1,28 @@
 from .brain import Brain, EchoBrain
 from .environment import Environment
 from .memory import Memory, MemoryStore
+from .reflection import Reflector, reflection_to_memory
 from .tools import ToolRegistry, build_default_registry
 
 
 class Agent:
-    """Minimal agent: perceive, think, act, observe, loop."""
+    """Minimal agent: perceive, think, act, observe, loop, reflect."""
 
     def __init__(
         self,
         brain: Brain | None = None,
         tools: ToolRegistry | None = None,
         memory: MemoryStore | None = None,
+        reflector: Reflector | None = None,
     ):
         self.brain = brain or EchoBrain()
         self.tools = tools or build_default_registry()
         self.memory = memory
+        self.reflector = reflector
 
-    def run(self, task: str, max_steps: int = 10) -> Environment:
+    def run(
+        self, task: str, max_steps: int = 10, reflect: bool = True
+    ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
         while not env.done:
             perception = env.perceive()
@@ -36,6 +41,11 @@ class Agent:
                         tags=[task],
                     )
                 )
+
+        if reflect and self.memory is not None and self.reflector is not None:
+            for reflection in self.reflector.reflect_on_run(task, env.history):
+                self.memory.add(reflection_to_memory(reflection))
+
         return env
 
     def _memory_context(self, task: str) -> str:
