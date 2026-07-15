@@ -72,11 +72,12 @@
 
 ## P3 — 体验增强
 
-### [ ] 空闲时主动探索
+### [x] 空闲时主动探索
 - **问题**：无人对话时 Agent 什么都不做（SOUL.md 提到应主动探索）。
-- **方案**：提供一个 `explore` 模式，让 Agent 自己生成假设、设计实验、记录结果。
-- **文件**：新增 `swaybot/explorer.py`, `swaybot/cli.py`
-- **验收**：运行 `python -m swaybot --explore` 能自主产生任务并执行。
+- **方案**：新增 `Explorer` 模块与 `--explore` CLI 标志。`Explorer` 让 brain 自己生成假设/任务（LLM 或 EchoBrain 的默认题库），然后调用 `Agent.run()` 执行并记录反思；长期记忆中会留下新的 reflection。
+- **文件**：新增 `swaybot/explorer.py`、`swaybot/prompts/explore.j2`；修改 `swaybot/brain.py`、`swaybot/llm_brain.py`、`swaybot/cli.py`、`tests/test_explorer.py`、`tests/test_cli.py`
+- **验收**：`python -m swaybot --explore` 能自主产生任务、执行、打印结果，并生成长期 reflection；74 个测试全部通过。
+- **状态**：已完成（2026-07-15）。
 
 ### [ ] 流式响应支持
 - **问题**：LLM 必须等完整响应返回。
@@ -88,4 +89,4 @@
 
 ## 当前聚焦
 
-P2 已完成。下一步执行 **P3：体验增强**——先实现空闲时主动探索，让 Agent 在没有外部任务时也能自主学习。
+P3 的第一项已完成。下一步可选择 **流式响应支持**，或继续扩展探索策略（例如从记忆矛盾/问题中生成假设）。

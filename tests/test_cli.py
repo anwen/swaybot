@@ -43,6 +43,19 @@ def test_cli_plan_flag_creates_planning_step(tmp_path, capsys):
     assert any(isinstance(m, PlanningStep) for m in store.memories)
 
 
+def test_cli_explore_flag_generates_and_runs_task(tmp_path, capsys):
+    from swaybot.memory import MemoryStore
+
+    data_dir = tmp_path / "explore"
+    main(["--explore", "--max-steps", "2", "--data-dir", str(data_dir)])
+    captured = capsys.readouterr()
+    assert "Exploration:" in captured.out
+    assert "Step 1:" in captured.out
+    memory_path = data_dir / "memory.json"
+    store = MemoryStore(path=memory_path)
+    assert any(m.scope == "long_term" for m in store.memories)
+
+
 def test_cli_verbose_output(tmp_path, capsys):
     main(["hello", "--max-steps", "1", "--data-dir", str(tmp_path / "verb"), "--verbose"])
     captured = capsys.readouterr()
