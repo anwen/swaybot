@@ -52,10 +52,23 @@ pytest
 - `ToolRegistry` 将动作分发给工具（`echo`、`add`、`done`）。
 - `Agent` 将它们串联起来，运行到任务完成或步数耗尽。
 
+## 记忆
+
+SwayBot 可选地使用 `MemoryStore` 来记录经验、事实、理论、猜想和灵感。每条记忆都携带来源、证据、可信度、意外程度和标签，以便 Agent 后续检索相关上下文或寻找反例。
+
+```python
+from swaybot import Agent, MemoryStore
+
+store = MemoryStore(path="memory.json")
+agent = Agent(memory=store)
+agent.run("explore a topic", max_steps=5)
+```
+
 ## 路线图
 
 - [x] 定义最小 Agent 循环
-- [ ] 构建记忆与反思原语
+- [x] 构建记忆原语
+- [ ] 构建反思原语
 - [ ] 增加自我改进机制
 - [ ] 记录成长模式与示例
 

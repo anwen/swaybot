@@ -52,10 +52,23 @@ The minimal loop is `perceive → think → act → observe → loop`:
 - `ToolRegistry` dispatches actions to tools (`echo`, `add`, `done`).
 - `Agent` wires them together and runs until the task signals completion or the step budget is exhausted.
 
+## Memory
+
+SwayBot can optionally keep a `MemoryStore` to record experiences, facts, theories, conjectures, and inspirations. Each memory carries source, evidence, credibility, surprise, and tags so the agent can later retrieve relevant context or search for counterexamples.
+
+```python
+from swaybot import Agent, MemoryStore
+
+store = MemoryStore(path="memory.json")
+agent = Agent(memory=store)
+agent.run("explore a topic", max_steps=5)
+```
+
 ## Roadmap
 
 - [x] Define the minimal agent loop
-- [ ] Build memory and reflection primitives
+- [x] Build memory primitives
+- [ ] Build reflection primitives
 - [ ] Add self-improvement mechanisms
 - [ ] Document growth patterns and examples
 
