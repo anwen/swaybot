@@ -41,8 +41,11 @@ def test_explorer_produces_reflection_after_run():
     store = MemoryStore()
     agent = Agent(brain=EchoBrain(), memory=store)
     explorer = Explorer(agent, max_steps=2)
-    explorer.run()
-    assert any(m.scope == "long_term" for m in store.memories)
+    task, env = explorer.run()
+    long_term = [m for m in store.memories if m.scope == "long_term"]
+    assert long_term
+    contents = " ".join(getattr(m, "content", "") for m in long_term)
+    assert task.hypothesis in contents or "Run" in contents
 
 
 def test_parse_exploration_response_strips_fences():

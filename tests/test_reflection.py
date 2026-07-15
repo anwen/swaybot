@@ -78,6 +78,22 @@ def test_verify_claim_insufficient_evidence():
     assert "insufficient evidence" in result.content
 
 
+def test_reflect_on_run_records_hypothesis():
+    store = MemoryStore()
+    reflector = Reflector(store)
+    history = [
+        {"action": {"name": "add", "args": {"a": 1, "b": 2}}, "result": 3},
+        {"action": {"name": "done", "args": {}}, "result": "finished"},
+    ]
+    reflections = reflector.reflect_on_run(
+        "Add 1 and 2", history, hypothesis="add can handle two numbers"
+    )
+    verification = [r for r in reflections if r.kind == "verification"]
+    assert verification
+    assert "add can handle two numbers" in verification[0].content
+    assert any("add" in e and "3" in e for e in verification[0].evidence)
+
+
 def test_agent_records_reflection_memories():
     store = MemoryStore()
     reflector = Reflector(store)

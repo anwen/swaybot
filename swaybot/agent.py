@@ -32,6 +32,7 @@ class Agent:
         max_steps: int = 10,
         reflect: bool = True,
         plan: bool = False,
+        hypothesis: str | None = None,
     ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
         if self.memory is not None:
@@ -67,7 +68,9 @@ class Agent:
                 )
 
         if reflect and self.memory is not None and self.reflector is not None:
-            for reflection in self.reflector.reflect_on_run(task, env.history):
+            for reflection in self.reflector.reflect_on_run(
+                task, env.history, hypothesis=hypothesis
+            ):
                 self.memory.add(reflection_to_memory(reflection))
             self.memory.prune(scope="short_term", tag=task)
 

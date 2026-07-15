@@ -24,7 +24,12 @@ class Reflector:
     def __init__(self, memory: MemoryStore) -> None:
         self.memory = memory
 
-    def reflect_on_run(self, task: str, history: list[dict]) -> list[Reflection]:
+    def reflect_on_run(
+        self,
+        task: str,
+        history: list[dict],
+        hypothesis: str | None = None,
+    ) -> list[Reflection]:
         """Generate reflections after a completed run."""
         reflections: list[Reflection] = []
 
@@ -36,6 +41,24 @@ class Reflector:
                 tags=[task],
             )
         )
+
+        if hypothesis:
+            evidence = [
+                f"{entry['action']} -> {entry['result']}" for entry in history
+            ]
+            verdict = self._verify_hypothesis(history)
+            reflections.append(
+                Reflection(
+                    content=(
+                        f"Hypothesis for '{task}': {hypothesis} "
+                        f"-> verdict: {verdict}."
+                    ),
+                    kind="verification",
+                    confidence=0.7,
+                    evidence=evidence,
+                    tags=[task],
+                )
+            )
 
         surprising = self.memory.query(tag=task, min_surprise=0.5, limit=5)
         if surprising:
@@ -73,6 +96,17 @@ class Reflector:
                 )
 
         return reflections
+
+    def _verify_hypothesis(self, history: list[dict]) -> str:
+        """Simple heuristic: did any step report an error or fallback?"""
+        for entry in history:
+            result = str(entry.get("result", "")).lower()
+            action = entry.get("action", {})
+            if action.get("name") == "echo" and "failed" in result:
+                return "refuted"
+            if "error" in result or "exception" in result:
+                return "refuted"
+        return "supported"
 
     def verify_claim(self, claim: str, tag: str | None = None) -> Reflection:
         """Check a claim against stored memories and return a verdict."""
