@@ -87,11 +87,12 @@
 
 ## P4 — 借鉴 smolagents 补齐关键能力
 
-### [ ] Final answer 机制
+### [x] Final answer 机制
 - **问题**：当前 Agent 靠 `done` 工具结束任务，小模型常在 max_steps 边界忘记收尾（如 LLM explore 跑了两步 `add` 都没调 `done`）。
-- **方案**：引入 `final_answer` 工具/概念，system prompt 明确说明任务完成后必须调用 `final_answer(answer=...)`；`Agent.run()` 识别该动作并提前结束，不再占用后续步骤。
-- **文件**：`swaybot/prompts/system.j2`, `swaybot/agent.py`, `swaybot/environment.py`, `swaybot/tools.py`
-- **验收**：任务完成后 Agent 能稳定收尾；测试覆盖 `final_answer` 提前结束和未收尾时的兜底。
+- **方案**：新增 `final_answer` 工具；`Environment.observe()` 将其与 `done` 同样视为终止动作；system prompt 明确 instruct 模型在得到答案时调用 `final_answer(answer=...)`。
+- **文件**：`swaybot/prompts/system.j2`, `swaybot/environment.py`, `swaybot/tools.py`, `tests/test_agent.py`, `tests/test_tools.py`
+- **验收**：调用 `final_answer` 后 Agent 提前结束并保留答案；`done` 保持兼容；78 个测试全部通过。
+- **状态**：已完成（2026-07-16）。
 
 ### [ ] 工具输入校验
 - **问题**：`ToolRegistry.execute()` 直接执行，不检查参数类型、必填项，LLM 传错参数时可能报错或行为异常。
@@ -135,4 +136,4 @@
 
 ## 当前聚焦
 
-P3 的流式响应可先放一放。下一步建议做 **P4 的 Final answer 机制**，它能立刻提升小模型的收尾稳定性；随后做 **工具输入校验**，让错误参数可被优雅处理。这两项是 SwayBot 从“能跑”到“稳跑”的关键。
+P3 的流式响应可先放一放。P4 的 Final answer 机制已完成。下一步做 **工具输入校验**，让错误参数可被优雅处理而不是抛异常退出。

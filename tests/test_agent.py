@@ -19,6 +19,12 @@ def test_environment_done_after_done_tool():
     assert env.done
 
 
+def test_environment_done_after_final_answer_tool():
+    env = Environment(task="test", max_steps=10)
+    env.observe({"name": "final_answer", "args": {"answer": "42"}}, "42")
+    assert env.done
+
+
 def test_environment_done_after_max_steps():
     env = Environment(task="test", max_steps=2)
     env.observe({"name": "echo", "args": {"message": "x"}}, "x")
@@ -51,7 +57,12 @@ def test_format_action():
 def test_tool_registry_descriptions():
     registry = build_default_registry()
     descriptions = registry.descriptions()
-    assert set(descriptions) == {"add(a, b)", "echo(message='')", "done()"}
+    assert set(descriptions) == {
+        "add(a, b)",
+        "echo(message='')",
+        "done()",
+        "final_answer(answer)",
+    }
 
 
 def test_agent_run():
@@ -71,6 +82,19 @@ def test_agent_run_ends_early_with_done_brain():
     env = agent.run("hello", max_steps=10)
     assert env.done
     assert len(env.history) == 1
+
+
+def test_agent_run_ends_early_with_final_answer_brain():
+    class FinalAnswerBrain:
+        def think(self, perception, available_tools):
+            return {"name": "final_answer", "args": {"answer": "done early"}}
+
+    agent = Agent(brain=FinalAnswerBrain())
+    env = agent.run("hello", max_steps=10)
+    assert env.done
+    assert len(env.history) == 1
+    assert env.history[0]["action"]["name"] == "final_answer"
+    assert env.history[0]["result"] == "done early"
 
 
 def test_agent_build_messages_includes_memory_context_and_short_term_steps():
@@ -122,6 +146,9 @@ def test_agent_behavior_guidance_pulls_high_credibility_theories():
     guidance = agent._behavior_guidance("demo")
     assert "avoid recursion" in guidance
     assert "low confidence" not in guidance
+
+
+def test_agent_memory_context_uses_relevance_and_long_term_only():
     from swaybot.memory import Memory, MemoryStore
 
     store = MemoryStore()

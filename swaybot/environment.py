@@ -25,5 +25,8 @@ class Environment:
         """Record an action and its result, then update termination state."""
         self.step += 1
         self.history.append({"step": self.step, "action": action, "result": result})
-        if action.get("name") == "done" or self.step >= self.max_steps:
+        if (
+            action.get("name") in {"done", "final_answer"}
+            or self.step >= self.max_steps
+        ):
             self.done = True
