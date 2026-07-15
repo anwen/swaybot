@@ -72,11 +72,26 @@ agent.run("explore a topic", max_steps=5)
 python -m swaybot "explore colors" --max-steps 5 --memory /tmp/sway.json --reflect
 ```
 
+## 大模型大脑
+
+SwayBot 可以将 OpenAI 兼容的聊天模型作为大脑。安装可选依赖后使用 `--brain llm` 运行：
+
+```bash
+pip install -e ".[llm]"
+export SWAYBOT_API_KEY="your-key"
+export SWAYBOT_API_BASE="https://api.example.com/v1"
+export SWAYBOT_MODEL="your-model"
+python -m swaybot "2+2 等于多少？" --brain llm --max-steps 3 --memory /tmp/sway.json --reflect
+```
+
+默认大脑仍是 `EchoBrain`，因此核心包保持无额外依赖。
+
 ## 路线图
 
 - [x] 定义最小 Agent 循环
 - [x] 构建记忆原语
 - [x] 构建反思原语
+- [x] 接入大模型推理
 - [ ] 增加自我改进机制
 - [ ] 记录成长模式与示例
 

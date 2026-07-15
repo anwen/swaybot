@@ -72,11 +72,26 @@ After a run, SwayBot can reflect on what happened: summarize the experience, fla
 python -m swaybot "explore colors" --max-steps 5 --memory /tmp/sway.json --reflect
 ```
 
+## LLM Brain
+
+SwayBot can use an OpenAI-compatible chat model as its brain. Install the optional dependency and run with `--brain llm`:
+
+```bash
+pip install -e ".[llm]"
+export SWAYBOT_API_KEY="your-key"
+export SWAYBOT_API_BASE="https://api.example.com/v1"
+export SWAYBOT_MODEL="your-model"
+python -m swaybot "What is 2+2?" --brain llm --max-steps 3 --memory /tmp/sway.json --reflect
+```
+
+The default brain remains `EchoBrain`, so the core package stays dependency-free.
+
 ## Roadmap
 
 - [x] Define the minimal agent loop
 - [x] Build memory primitives
 - [x] Build reflection primitives
+- [x] Add LLM-powered reasoning
 - [ ] Add self-improvement mechanisms
 - [ ] Document growth patterns and examples
 
