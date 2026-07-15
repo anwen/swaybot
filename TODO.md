@@ -11,6 +11,13 @@
 - **验收**：LLM 调用准确率提升，fallback 减少；测试覆盖 describe 拼接。
 - **状态**：已完成（2026-07-15）。`Agent` 把 `tool_descriptions` 注入 perception；`LLMBrain` 优先使用签名描述生成 system prompt。
 
+### [x] 增加 `@tool` 装饰器与 JSON Schema 描述
+- **问题**：手写工具 schema 容易错，且无法从函数签名/docstring 自动推导。
+- **方案**：参考 smolagents，新增 `@tool` 装饰器、`Tool` 数据类、`ToolRegistry.schemas()`，自动从类型注解和 docstring 生成 JSON schema。
+- **文件**：`swaybot/tools.py`, `swaybot/agent.py`, `swaybot/llm_brain.py`, `tests/test_tools.py`, `pyproject.toml`
+- **验收**：`@tool` 能推断参数类型、默认值和描述；LLM system prompt 包含 JSON schema；pytest 只收集 `tests/` 目录。
+- **状态**：已完成（2026-07-15）。46 个测试全部通过。
+
 ## P1 — 记忆与可维护性
 
 ### [ ] 短期记忆自动归档/遗忘
@@ -57,4 +64,6 @@
 
 ## 当前聚焦
 
-下一步执行 **P1：短期记忆自动归档/遗忘**。
+下一步执行 **Phase 2：YAML/Jinja 提示词模板**（来自 smolagents 学习计划）。
+
+同时继续推进 **P1：短期记忆自动归档/遗忘**。

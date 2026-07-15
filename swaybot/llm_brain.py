@@ -76,8 +76,15 @@ class LLMBrain:
 def _system_prompt(perception: dict, available_tools: list[str]) -> str:
     tool_descriptions = perception.get("tool_descriptions")
     if tool_descriptions:
-        tools_str = "\n".join(f"- {d}" for d in tool_descriptions)
-        tools_section = f"Available tools (with signatures):\n{tools_str}"
+        # tool_descriptions may be structured schemas (dicts) or legacy strings.
+        rendered = []
+        for desc in tool_descriptions:
+            if isinstance(desc, dict):
+                rendered.append(json.dumps(desc, ensure_ascii=False, indent=2))
+            else:
+                rendered.append(str(desc))
+        tools_str = "\n".join(f"- {d}" for d in rendered)
+        tools_section = f"Available tools (JSON schema):\n{tools_str}"
     else:
         tools_str = ", ".join(available_tools) if available_tools else "none"
         tools_section = f"Available tools: {tools_str}"
