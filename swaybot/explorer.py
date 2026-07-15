@@ -69,6 +69,7 @@ class Explorer:
             max_steps=max_steps or self.max_steps,
             reflect=True,
             plan=False,
+            hypothesis=task.hypothesis,
         )
         return task, env
 
