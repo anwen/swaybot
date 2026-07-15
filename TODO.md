@@ -25,6 +25,13 @@
 - **验收**：`LLMBrain` 使用模板渲染 system/user prompt；测试覆盖变量渲染、条件循环、默认模板存在性；52 个测试全部通过。
 - **状态**：已完成（2026-07-15）。
 
+### [x] Phase 3：Typed Memory Steps
+- **问题**：`Memory` 是扁平结构，运行时步骤和长期知识混在一起，难以渲染成 LLM 上下文。
+- **方案**：引入 `MemoryStep` 基类与 `TaskStep`、`ActionStep`、`ObservationStep`、`ReflectionStep`、`PlanningStep`，每个子类实现 `to_messages()`；`MemoryStore` 通过 `step_kind` 反序列化；`Agent` 用步骤构建 messages 并注入 `LLMBrain`。
+- **文件**：`swaybot/memory.py`, `swaybot/agent.py`, `swaybot/reflection.py`, `swaybot/llm_brain.py`, `tests/test_memory.py`, `tests/test_agent.py`, `tests/test_llm_brain.py`
+- **验收**：运行时存储为类型化步骤；LLM 收到 system + 相关长期记忆 + 短期步骤 messages；步骤可持久化并原样加载；56 个测试全部通过。
+- **状态**：已完成（2026-07-15）。
+
 ## P1 — 记忆与可维护性
 
 ### [ ] 短期记忆自动归档/遗忘
@@ -71,6 +78,4 @@
 
 ## 当前聚焦
 
-下一步执行 **Phase 3：Typed Memory Steps**（来自 smolagents 学习计划）——把 `Memory` 重构为带 `to_messages()` 的 step 类型，为后续 PlanningStep 和上下文管理做准备。
-
-同时继续推进 **P1：短期记忆自动归档/遗忘**。
+下一步执行 **P1：短期记忆自动归档/遗忘**——在 `--reflect` 后将已处理的短期步骤清理或只保留最近 N 条，避免 `~/.swaybot/memory.json` 无限增长，也让长期记忆保持精简。

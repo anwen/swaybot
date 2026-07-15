@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from .memory import Memory, MemoryStore
+from .memory import MemoryStore, ReflectionStep
 
 
 @dataclass
@@ -46,7 +46,9 @@ class Reflector:
                         f"during '{task}' that deserve deeper examination."
                     ),
                     kind="question",
-                    evidence=[m.content for m in surprising],
+                    evidence=[
+                        getattr(m, "content", str(m)) for m in surprising
+                    ],
                     tags=[task],
                 )
             )
@@ -54,17 +56,18 @@ class Reflector:
         recent = self.memory.query(tag=task, limit=20)
         seen: set[str] = set()
         for mem in recent:
-            if mem.content in seen:
+            content = getattr(mem, "content", "")
+            if not content or content in seen:
                 continue
-            seen.add(mem.content)
-            counters = self.memory.find_counterexamples(mem.content)
+            seen.add(content)
+            counters = self.memory.find_counterexamples(content)
             if counters:
                 reflections.append(
                     Reflection(
-                        content=f"Possible contradiction to: {mem.content}",
+                        content=f"Possible contradiction to: {content}",
                         kind="contradiction",
                         confidence=0.5,
-                        evidence=[c.content for c in counters],
+                        evidence=[getattr(c, "content", str(c)) for c in counters],
                         tags=[task],
                     )
                 )
@@ -79,7 +82,7 @@ class Reflector:
                 content=f"Claim '{claim}' has possible counterexamples.",
                 kind="verification",
                 confidence=0.3,
-                evidence=[c.content for c in counters],
+                evidence=[getattr(c, "content", str(c)) for c in counters],
                 tags=[tag] if tag else [],
             )
 
@@ -89,7 +92,7 @@ class Reflector:
                 content=f"Claim '{claim}' is supported by existing facts.",
                 kind="verification",
                 confidence=0.8,
-                evidence=[m.content for m in support],
+                evidence=[getattr(s, "content", str(s)) for s in support],
                 tags=[tag] if tag else [],
             )
 
@@ -101,14 +104,14 @@ class Reflector:
         )
 
 
-def reflection_to_memory(reflection: Reflection) -> Memory:
+def reflection_to_memory(reflection: Reflection) -> ReflectionStep:
     """Convert a reflection into a memory suitable for long-term storage."""
-    return Memory(
+    return ReflectionStep(
         content=reflection.content,
         kind="theory",
         scope="long_term",
         source="reflector",
-        evidence="\n".join(reflection.evidence),
+        evidence=reflection.evidence,
         credibility=reflection.confidence,
         tags=reflection.tags,
     )
