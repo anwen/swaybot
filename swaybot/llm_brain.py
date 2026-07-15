@@ -2,6 +2,8 @@ import json
 import os
 from typing import cast
 
+from .prompts import render_prompt
+
 try:
     from openai import OpenAI
 except ImportError:  # pragma: no cover
@@ -55,8 +57,15 @@ class LLMBrain:
 
     def think(self, perception: dict, available_tools: list[str]) -> dict:
         messages = [
-            {"role": "system", "content": _system_prompt(perception, available_tools)},
-            {"role": "user", "content": _user_prompt(perception)},
+            {
+                "role": "system",
+                "content": render_prompt(
+                    "system",
+                    tool_descriptions=perception.get("tool_descriptions"),
+                    available_tools=available_tools,
+                ),
+            },
+            {"role": "user", "content": render_prompt("user", **perception)},
         ]
 
         try:
@@ -71,47 +80,6 @@ class LLMBrain:
             return _fallback(perception, f"LLM call failed: {exc}")
 
         return _parse_action(raw, perception)
-
-
-def _system_prompt(perception: dict, available_tools: list[str]) -> str:
-    tool_descriptions = perception.get("tool_descriptions")
-    if tool_descriptions:
-        # tool_descriptions may be structured schemas (dicts) or legacy strings.
-        rendered = []
-        for desc in tool_descriptions:
-            if isinstance(desc, dict):
-                rendered.append(json.dumps(desc, ensure_ascii=False, indent=2))
-            else:
-                rendered.append(str(desc))
-        tools_str = "\n".join(f"- {d}" for d in rendered)
-        tools_section = f"Available tools (JSON schema):\n{tools_str}"
-    else:
-        tools_str = ", ".join(available_tools) if available_tools else "none"
-        tools_section = f"Available tools: {tools_str}"
-    return (
-        "You are the decision-making brain of a lightweight agent named SwayBot. "
-        "You observe the world, choose one tool to execute, and receive the result. "
-        "Reply with a single JSON object of the form "
-        '{"name": "<tool_name>", "args": {<tool_arguments>}}. '
-        f"{tools_section} "
-        "Use 'done' when the task is complete or you cannot proceed. "
-        "Do not include any explanation or markdown formatting outside the JSON."
-    )
-
-
-def _user_prompt(perception: dict) -> str:
-    parts = [
-        f"Task: {perception['task']}",
-        f"Step: {perception['step']} / {perception['max_steps']}",
-    ]
-    if perception.get("history"):
-        parts.append("History:")
-        for entry in perception["history"]:
-            parts.append(f"  [{entry['step']}] {entry['action']} -> {entry['result']}")
-    if perception.get("memory_context"):
-        parts.append("Relevant memories:")
-        parts.append(perception["memory_context"])
-    return "\n".join(parts)
 
 
 def _parse_action(raw: str, perception: dict) -> dict:

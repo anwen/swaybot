@@ -18,6 +18,13 @@
 - **验收**：`@tool` 能推断参数类型、默认值和描述；LLM system prompt 包含 JSON schema；pytest 只收集 `tests/` 目录。
 - **状态**：已完成（2026-07-15）。46 个测试全部通过。
 
+### [x] Phase 2：YAML/Jinja 提示词模板
+- **问题**：系统提示和用户提示硬编码在 Python 中，调试和迭代不直观。
+- **方案**：把 prompt 拆成 `swaybot/prompts/*.j2`，用 Jinja2 渲染；`jinja2` 作为 `[llm]` optional dependency；`pyproject.toml` 打包模板文件。
+- **文件**：`swaybot/prompts.py`, `swaybot/prompts/system.j2`, `swaybot/prompts/user.j2`, `swaybot/llm_brain.py`, `tests/test_prompts.py`, `pyproject.toml`
+- **验收**：`LLMBrain` 使用模板渲染 system/user prompt；测试覆盖变量渲染、条件循环、默认模板存在性；52 个测试全部通过。
+- **状态**：已完成（2026-07-15）。
+
 ## P1 — 记忆与可维护性
 
 ### [ ] 短期记忆自动归档/遗忘
@@ -64,6 +71,6 @@
 
 ## 当前聚焦
 
-下一步执行 **Phase 2：YAML/Jinja 提示词模板**（来自 smolagents 学习计划）。
+下一步执行 **Phase 3：Typed Memory Steps**（来自 smolagents 学习计划）——把 `Memory` 重构为带 `to_messages()` 的 step 类型，为后续 PlanningStep 和上下文管理做准备。
 
 同时继续推进 **P1：短期记忆自动归档/遗忘**。

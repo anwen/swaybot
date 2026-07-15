@@ -1,0 +1,12 @@
+Task: {{ task }}
+Step: {{ step }} / {{ max_steps }}
+{% if history %}
+History:
+{% for entry in history %}
+  [{{ entry['step'] }}] {{ entry['action'] }} -> {{ entry['result'] }}
+{% endfor %}
+{% endif %}
+{% if memory_context %}
+Relevant memories:
+{{ memory_context }}
+{% endif %}
