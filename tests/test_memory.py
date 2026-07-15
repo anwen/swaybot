@@ -69,9 +69,10 @@ def test_agent_records_short_term_memories():
     agent = Agent(memory=store)
     env = agent.run("demo", max_steps=3)
     assert env.done
-    assert len(store.memories) == 3
+    assert len(store.memories) == 4  # task + 3 steps
     assert all(m.scope == "short_term" for m in store.memories)
     assert all("demo" in m.tags for m in store.memories)
+    assert any(m.source == "user" and "demo" in m.content for m in store.memories)
 
 
 def test_agent_records_memories():
@@ -79,7 +80,7 @@ def test_agent_records_memories():
     agent = Agent(memory=store)
     env = agent.run("demo", max_steps=3)
     assert env.done
-    assert len(store.memories) == 3
+    assert len(store.memories) == 4  # task + 3 steps
     assert all("demo" in m.tags for m in store.memories)
 
 

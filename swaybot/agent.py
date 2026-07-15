@@ -24,6 +24,17 @@ class Agent:
         self, task: str, max_steps: int = 10, reflect: bool = True
     ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
+        if self.memory is not None:
+            self.memory.add(
+                Memory(
+                    content=f"User task: {task}",
+                    kind="experience",
+                    scope="short_term",
+                    source="user",
+                    evidence=task,
+                    tags=[task],
+                )
+            )
         while not env.done:
             perception = env.perceive()
             if self.memory is not None:
