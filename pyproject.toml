@@ -10,7 +10,7 @@ authors = [
 ]
 
 [project.optional-dependencies]
-llm = ["openai"]
+llm = ["openai", "jinja2"]
 dev = ["pytest"]
 
 [project.scripts]
@@ -22,6 +22,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["swaybot*"]
+
+[tool.setuptools.package-data]
+swaybot = ["prompts/*.j2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
