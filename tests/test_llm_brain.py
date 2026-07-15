@@ -157,6 +157,35 @@ def test_llm_brain_requires_openai_package():
 
 
 @patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_uses_messages_when_present(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_response(
+        '{"name": "done", "args": {}}'
+    )
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    brain.think(
+        {
+            "task": "test",
+            "step": 1,
+            "max_steps": 3,
+            "history": [],
+            "messages": [
+                {"role": "user", "content": "Task: test"},
+                {"role": "assistant", "content": '{"name":"echo"}'},
+            ],
+        },
+        ["echo", "done"],
+    )
+    call_kwargs = client.chat.completions.create.call_args.kwargs
+    messages = call_kwargs["messages"]
+    assert messages[0]["role"] == "system"
+    assert messages[1]["content"] == "Task: test"
+    assert messages[2]["role"] == "assistant"
+
+
+@patch("swaybot.llm_brain.OpenAI")
 def test_llm_brain_uses_env_variables(mock_openai, monkeypatch):
     monkeypatch.setenv("SWAYBOT_API_KEY", "env-key")
     monkeypatch.setenv("SWAYBOT_API_BASE", "http://env/v1")

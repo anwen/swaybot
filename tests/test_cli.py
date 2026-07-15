@@ -18,7 +18,7 @@ def test_cli_default_memory_path(tmp_path, monkeypatch, capsys):
     memory_path = data_dir / "memory.json"
     assert memory_path.exists()
     store = MemoryStore(path=memory_path)
-    assert len(store.memories) == 3  # task + 2 steps
+    assert len(store.memories) == 5  # task + 2 actions + 2 observations
     assert all(m.scope == "short_term" for m in store.memories)
     assert any(m.source == "user" for m in store.memories)
 

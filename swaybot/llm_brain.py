@@ -64,9 +64,14 @@ class LLMBrain:
                     tool_descriptions=perception.get("tool_descriptions"),
                     available_tools=available_tools,
                 ),
-            },
-            {"role": "user", "content": render_prompt("user", **perception)},
+            }
         ]
+        if perception.get("messages"):
+            messages.extend(perception["messages"])
+        else:
+            messages.append(
+                {"role": "user", "content": render_prompt("user", **perception)}
+            )
 
         try:
             response = self._client.chat.completions.create(

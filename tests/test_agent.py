@@ -73,6 +73,18 @@ def test_agent_run_ends_early_with_done_brain():
     assert len(env.history) == 1
 
 
+def test_agent_build_messages_includes_memory_context_and_short_term_steps():
+    from swaybot.memory import Memory, MemoryStore
+
+    store = MemoryStore()
+    store.add(Memory(content="long", scope="long_term", tags=["demo"]))
+    store.add(Memory(content="short", scope="short_term", tags=["demo"]))
+    agent = Agent(memory=store)
+    messages = agent._build_messages("demo")
+    assert any("Relevant memories" in msg["content"] and "long" in msg["content"] for msg in messages)
+    assert any(msg["content"] == "short" for msg in messages)
+
+
 def test_agent_memory_context_uses_long_term_only():
     from swaybot.memory import Memory, MemoryStore
 

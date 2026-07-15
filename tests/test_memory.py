@@ -4,7 +4,15 @@ from pathlib import Path
 import pytest
 
 from swaybot.agent import Agent
-from swaybot.memory import Memory, MemoryStore
+from swaybot.memory import (
+    ActionStep,
+    Memory,
+    MemoryStore,
+    ObservationStep,
+    PlanningStep,
+    ReflectionStep,
+    TaskStep,
+)
 
 
 def test_memory_defaults():
@@ -69,10 +77,10 @@ def test_agent_records_short_term_memories():
     agent = Agent(memory=store)
     env = agent.run("demo", max_steps=3)
     assert env.done
-    assert len(store.memories) == 4  # task + 3 steps
+    assert len(store.memories) == 7  # task + 3 actions + 3 observations
     assert all(m.scope == "short_term" for m in store.memories)
     assert all("demo" in m.tags for m in store.memories)
-    assert any(m.source == "user" and "demo" in m.content for m in store.memories)
+    assert any(m.source == "user" for m in store.memories)
 
 
 def test_agent_records_memories():
@@ -80,7 +88,7 @@ def test_agent_records_memories():
     agent = Agent(memory=store)
     env = agent.run("demo", max_steps=3)
     assert env.done
-    assert len(store.memories) == 4  # task + 3 steps
+    assert len(store.memories) == 7  # task + 3 actions + 3 observations
     assert all("demo" in m.tags for m in store.memories)
 
 
@@ -89,3 +97,40 @@ def test_agent_without_memory_unchanged():
     env = agent.run("demo", max_steps=2)
     assert env.done
     assert len(env.history) == 2
+
+
+def test_typed_steps_to_messages():
+    task = TaskStep(task="demo", max_steps=3, tags=["demo"])
+    assert task.to_messages()[0]["role"] == "user"
+    assert "Task: demo" in task.to_messages()[0]["content"]
+
+    action = ActionStep(step=1, action={"name": "echo"}, tags=["demo"])
+    assert action.to_messages()[0]["role"] == "assistant"
+    assert '"name": "echo"' in action.to_messages()[0]["content"]
+
+    obs = ObservationStep(step=1, observation="result", tags=["demo"])
+    assert obs.to_messages()[0]["role"] == "user"
+    assert "result" in obs.to_messages()[0]["content"]
+
+    plan = PlanningStep(plan=["search", "summarize"], tags=["demo"])
+    assert plan.to_messages()[0]["role"] == "user"
+    assert "1. search" in plan.to_messages()[0]["content"]
+
+    reflection = ReflectionStep(content="theory", credibility=0.9, tags=["demo"])
+    assert reflection.to_messages()[0]["role"] == "user"
+    assert reflection.scope == "long_term"
+    assert reflection.kind == "theory"
+
+
+def test_memory_store_persists_typed_steps(tmp_path: Path):
+    path = tmp_path / "memory.json"
+    store = MemoryStore(path=path)
+    store.add(TaskStep(task="demo", max_steps=3, tags=["demo"]))
+    store.add(ActionStep(step=1, action={"name": "echo"}, tags=["demo"]))
+    store.add(ObservationStep(step=1, observation="ok", tags=["demo"]))
+
+    store2 = MemoryStore(path=path)
+    assert len(store2.memories) == 3
+    assert isinstance(store2.memories[0], TaskStep)
+    assert isinstance(store2.memories[1], ActionStep)
+    assert isinstance(store2.memories[2], ObservationStep)
