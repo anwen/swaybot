@@ -39,6 +39,7 @@ class Agent:
             perception = env.perceive()
             if self.memory is not None:
                 perception["memory_context"] = self._memory_context(task)
+            perception["tool_descriptions"] = self.tools.descriptions()
             action = self.brain.think(perception, self.tools.names())
             result = self.tools.execute(action)
             env.observe(action, result)

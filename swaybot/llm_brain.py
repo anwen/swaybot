@@ -55,7 +55,7 @@ class LLMBrain:
 
     def think(self, perception: dict, available_tools: list[str]) -> dict:
         messages = [
-            {"role": "system", "content": _system_prompt(available_tools)},
+            {"role": "system", "content": _system_prompt(perception, available_tools)},
             {"role": "user", "content": _user_prompt(perception)},
         ]
 
@@ -73,14 +73,20 @@ class LLMBrain:
         return _parse_action(raw, perception)
 
 
-def _system_prompt(available_tools: list[str]) -> str:
-    tools_str = ", ".join(available_tools) if available_tools else "none"
+def _system_prompt(perception: dict, available_tools: list[str]) -> str:
+    tool_descriptions = perception.get("tool_descriptions")
+    if tool_descriptions:
+        tools_str = "\n".join(f"- {d}" for d in tool_descriptions)
+        tools_section = f"Available tools (with signatures):\n{tools_str}"
+    else:
+        tools_str = ", ".join(available_tools) if available_tools else "none"
+        tools_section = f"Available tools: {tools_str}"
     return (
         "You are the decision-making brain of a lightweight agent named SwayBot. "
         "You observe the world, choose one tool to execute, and receive the result. "
         "Reply with a single JSON object of the form "
         '{"name": "<tool_name>", "args": {<tool_arguments>}}. '
-        f"Available tools: {tools_str}. "
+        f"{tools_section} "
         "Use 'done' when the task is complete or you cannot proceed. "
         "Do not include any explanation or markdown formatting outside the JSON."
     )
