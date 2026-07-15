@@ -54,22 +54,29 @@ pytest
 
 ## 记忆
 
-SwayBot 可选地使用 `MemoryStore` 来记录经验、事实、理论、猜想和灵感。每条记忆都携带来源、证据、可信度、意外程度和标签，以便 Agent 后续检索相关上下文或寻找反例。
+SwayBot 可选地使用 `MemoryStore` 来记录经验、事实、理论、猜想和灵感。记忆按 `scope` 区分为 `short_term`（单次运行的原始经验）和 `long_term`（经过反思验证的长期知识）。每条记忆都携带来源、证据、可信度、意外程度和标签，以便 Agent 后续检索相关的长期上下文或寻找反例。
 
 ```python
 from swaybot import Agent, MemoryStore
 
-store = MemoryStore(path="memory.json")
+store = MemoryStore(path="~/.swaybot/memory.json")
 agent = Agent(memory=store)
 agent.run("explore a topic", max_steps=5)
 ```
 
 ## 反思
 
-一次运行结束后，SwayBot 可以对发生的事情进行反思：总结经历、标记意外事件、检测记忆中的矛盾，并根据已存储的事实验证主张。反思结果会被存为 `theory` 记忆，形成一个自我改进的循环——经验逐渐转化为结构化知识。
+一次运行结束后，SwayBot 可以对发生的事情进行反思：总结经历、标记意外事件、检测记忆中的矛盾，并根据已存储的事实验证主张。反思结果会被存为 `long_term` 的 `theory` 记忆，形成一个自我改进的循环——原始经验逐渐转化为结构化知识。
 
 ```bash
-python -m swaybot "explore colors" --max-steps 5 --memory /tmp/sway.json --reflect
+python -m swaybot "explore colors" --max-steps 5 --reflect
+```
+
+输出现在以可读的工具调用形式呈现：
+
+```text
+Step 1: echo(message="thinking...") → thinking...
+Step 2: done() → finished
 ```
 
 ## 大模型大脑
@@ -81,8 +88,10 @@ pip install -e ".[llm]"
 export SWAYBOT_API_KEY="your-key"
 export SWAYBOT_API_BASE="https://api.example.com/v1"
 export SWAYBOT_MODEL="your-model"
-python -m swaybot "2+2 等于多少？" --brain llm --max-steps 3 --memory /tmp/sway.json --reflect
+python -m swaybot "2+2 等于多少？" --brain llm --max-steps 3 --reflect
 ```
+
+或者在项目根目录创建 `.env` 文件（参考 `.env.example`），CLI 会自动加载其中的 `SWAYBOT_API_KEY`、`SWAYBOT_API_BASE` 和 `SWAYBOT_MODEL`。默认情况下，记忆会持久化到 `~/.swaybot/memory.json`；可使用 `--data-dir` 或 `--memory` 自定义位置，或使用 `--no-memory` 禁用持久化。
 
 默认大脑仍是 `EchoBrain`，因此核心包保持无额外依赖。
 

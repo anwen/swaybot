@@ -106,6 +106,7 @@ def reflection_to_memory(reflection: Reflection) -> Memory:
     return Memory(
         content=reflection.content,
         kind="theory",
+        scope="long_term",
         source="reflector",
         evidence="\n".join(reflection.evidence),
         credibility=reflection.confidence,

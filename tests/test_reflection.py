@@ -9,6 +9,7 @@ def test_reflection_to_memory():
     r = Reflection(content="test", kind="summary", confidence=0.9)
     m = reflection_to_memory(r)
     assert m.kind == "theory"
+    assert m.scope == "long_term"
     assert m.source == "reflector"
     assert m.credibility == 0.9
 

@@ -10,6 +10,7 @@ class Memory:
 
     content: str
     kind: str = "experience"  # fact, experience, theory, conjecture, inspiration
+    scope: str = "long_term"  # short_term (raw experience) or long_term (validated knowledge)
     source: str = ""
     evidence: str = ""
     credibility: float = 0.5
@@ -40,6 +41,7 @@ class MemoryStore:
         self,
         tag: str | None = None,
         kind: str | None = None,
+        scope: str | None = None,
         min_surprise: float = 0.0,
         limit: int = 10,
     ) -> list[Memory]:
@@ -47,6 +49,8 @@ class MemoryStore:
         results = self.memories
         if kind:
             results = [m for m in results if m.kind == kind]
+        if scope:
+            results = [m for m in results if m.scope == scope]
         if tag:
             results = [m for m in results if tag in m.tags]
         if min_surprise:
