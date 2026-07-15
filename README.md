@@ -64,11 +64,19 @@ agent = Agent(memory=store)
 agent.run("explore a topic", max_steps=5)
 ```
 
+## Reflection
+
+After a run, SwayBot can reflect on what happened: summarize the experience, flag surprising events, detect contradictions in memory, and verify claims against stored facts. Reflections are stored as `theory` memories, creating a self-improving loop where experience gradually turns into structured knowledge.
+
+```bash
+python -m swaybot "explore colors" --max-steps 5 --memory /tmp/sway.json --reflect
+```
+
 ## Roadmap
 
 - [x] Define the minimal agent loop
 - [x] Build memory primitives
-- [ ] Build reflection primitives
+- [x] Build reflection primitives
 - [ ] Add self-improvement mechanisms
 - [ ] Document growth patterns and examples
 

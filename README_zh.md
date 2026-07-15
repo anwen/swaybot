@@ -64,11 +64,19 @@ agent = Agent(memory=store)
 agent.run("explore a topic", max_steps=5)
 ```
 
+## 反思
+
+一次运行结束后，SwayBot 可以对发生的事情进行反思：总结经历、标记意外事件、检测记忆中的矛盾，并根据已存储的事实验证主张。反思结果会被存为 `theory` 记忆，形成一个自我改进的循环——经验逐渐转化为结构化知识。
+
+```bash
+python -m swaybot "explore colors" --max-steps 5 --memory /tmp/sway.json --reflect
+```
+
 ## 路线图
 
 - [x] 定义最小 Agent 循环
 - [x] 构建记忆原语
-- [ ] 构建反思原语
+- [x] 构建反思原语
 - [ ] 增加自我改进机制
 - [ ] 记录成长模式与示例
 
