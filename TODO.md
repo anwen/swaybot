@@ -85,8 +85,54 @@
 - **文件**：`swaybot/llm_brain.py`
 - **验收**：思考过程可实时打印。
 
+## P4 — 借鉴 smolagents 补齐关键能力
+
+### [ ] Final answer 机制
+- **问题**：当前 Agent 靠 `done` 工具结束任务，小模型常在 max_steps 边界忘记收尾（如 LLM explore 跑了两步 `add` 都没调 `done`）。
+- **方案**：引入 `final_answer` 工具/概念，system prompt 明确说明任务完成后必须调用 `final_answer(answer=...)`；`Agent.run()` 识别该动作并提前结束，不再占用后续步骤。
+- **文件**：`swaybot/prompts/system.j2`, `swaybot/agent.py`, `swaybot/environment.py`, `swaybot/tools.py`
+- **验收**：任务完成后 Agent 能稳定收尾；测试覆盖 `final_answer` 提前结束和未收尾时的兜底。
+
+### [ ] 工具输入校验
+- **问题**：`ToolRegistry.execute()` 直接执行，不检查参数类型、必填项，LLM 传错参数时可能报错或行为异常。
+- **方案**：在 `Tool` / `ToolRegistry` 中加入 `validate_arguments()`，根据 JSON schema 检查类型和 required；失败时返回结构化错误让 LLM 重试。
+- **文件**：`swaybot/tools.py`, `swaybot/agent.py`, `tests/test_tools.py`
+- **验收**：参数错误时返回可理解的错误信息，而不是抛异常退出。
+
+### [ ] 更详细的 ActionStep 与基础监控
+- **问题**：`ActionStep` 只记录动作本身，没有原始模型输入、token 用量、耗时，难以复盘和优化。
+- **方案**：扩展 `ActionStep`（或新增 `ModelStep`）记录 `model_input_messages`、`raw_output`、`token_usage`、`duration_ms`；在 `LLMBrain` 中采集这些字段。
+- **文件**：`swaybot/memory.py`, `swaybot/llm_brain.py`, `tests/test_memory.py`, `tests/test_llm_brain.py`
+- **验收**：每个 action 能追溯到原始 LLM 输出和耗时。
+
+### [ ] 多模型 backend 抽象
+- **问题**：`LLMBrain` 直接依赖 `openai` 包，换本地模型或其他 API 时需要重写。
+- **方案**：提取 `Model` 基类，把 `LLMBrain` 改名为 `OpenAIModel` 或拆出 `OpenAIModel`；后续可添加 `TransformersModel` / `MockModel` 等。
+- **文件**：`swaybot/models.py`（新）、`swaybot/llm_brain.py`（重构）、`tests/test_models.py`（新）
+- **验收**：`Agent` 接收任意 `Model` 实现，核心逻辑不依赖 `openai`。
+
+### [ ] 可选的 CodeAgent / 本地 Python 沙箱
+- **问题**：JSON action 一次只能调用一个工具，复杂多步组合需要多次 LLM 调用。
+- **方案**：参考 smolagents `CodeAgent`，让 LLM 生成 Python 代码块，在受限的 `LocalPythonExecutor` 中执行；默认关闭，通过 `--code-agent` 开启。
+- **文件**：新增 `swaybot/code_agent.py`、`swaybot/local_python_executor.py`、`swaybot/prompts/code_agent.j2`
+- **验收**：开启后 Agent 能用代码一次组合多个工具，且危险操作被沙箱拦截。
+
+## P5 — 长期进化方向
+
+### [ ] 语义检索（embedding）
+- **问题**：关键词检索对同义词、改写不敏感。
+- **方案**：可选引入 sentence-transformers 或 openai embedding，把记忆内容编码为向量，按余弦相似度召回。
+- **文件**：`swaybot/memory.py`
+- **验收**：语义相关但用词不同的记忆能被召回。
+
+### [ ] 从记忆矛盾/问题生成探索假设
+- **问题**：`Explorer` 目前靠 LLM 或固定题库生成假设，没有利用已有反思中的矛盾和未解问题。
+- **方案**：在 `Reflector` 中把 `question` / `contradiction` 类 reflection 作为候选假设来源；`Explorer` 优先选择这些高价值问题去验证。
+- **文件**：`swaybot/explorer.py`, `swaybot/reflection.py`
+- **验收**：Agent 会主动验证自己之前提出的疑问或矛盾。
+
 ---
 
 ## 当前聚焦
 
-P3 的第一项已完成。下一步可选择 **流式响应支持**，或继续扩展探索策略（例如从记忆矛盾/问题中生成假设）。
+P3 的流式响应可先放一放。下一步建议做 **P4 的 Final answer 机制**，它能立刻提升小模型的收尾稳定性；随后做 **工具输入校验**，让错误参数可被优雅处理。这两项是 SwayBot 从“能跑”到“稳跑”的关键。
