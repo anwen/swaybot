@@ -91,7 +91,7 @@ class Agent:
     def _memory_context(self, task: str) -> str:
         if self.memory is None:
             return ""
-        relevant = self.memory.query(tag=task, scope="long_term", limit=5)
+        relevant = self.memory.query_relevant(task, scope="long_term", limit=5)
         if not relevant:
             return ""
         return "\n".join(

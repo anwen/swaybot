@@ -149,6 +149,18 @@ def test_memory_store_prune_removes_matching_steps():
     assert store.memories[0].scope == "long_term"
 
 
+def test_memory_store_query_relevant_ranks_by_overlap():
+    store = MemoryStore()
+    store.add(Memory(content="sky is blue", scope="long_term", tags=["sky"]))
+    store.add(Memory(content="cats are mammals", scope="long_term", tags=["animals"]))
+    store.add(Memory(content="ocean is deep blue", scope="long_term", tags=["ocean"]))
+
+    results = store.query_relevant("blue sky", limit=2)
+    assert len(results) == 2
+    assert results[0].content == "sky is blue"
+    assert results[1].content == "ocean is deep blue"
+
+
 def test_agent_prunes_short_term_after_reflection():
     from swaybot.reflection import Reflector
 
