@@ -165,35 +165,47 @@
 
 ## 从 nanobot 借鉴的长期方向
 
-### [ ] 模型 preset 与 fallback 链
+### [x] 模型 preset 与 fallback 链
 - **问题**：单模型失败时无备用；不同任务需要不同模型，目前只能换环境变量或参数。
 - **方案**：参考 nanobot `model_runtime.py`，在多模型 backend 抽象上支持 `modelPresets` 与 `fallbackModels`，按名称切换与故障转移。
 - **文件**：`swaybot/models.py`
 - **验收**：配置中可定义多个 preset 和 fallback；某模型失败时自动切换并继续任务。
+- **状态**：已完成（2026-07-16）。
 
-### [ ] 统一 ContextBuilder
+### [x] 统一 ContextBuilder
 - **问题**：`Agent` 内部 `_memory_context`、`_behavior_guidance`、`_build_messages` 散落拼装，新增上下文来源时容易改动核心循环。
 - **方案**：提取 `ContextBuilder`，统一组装 system prompt、SOUL/identity、长期记忆、行为指导、短期历史、运行时上下文。
 - **文件**：新增 `swaybot/context.py`
 - **验收**：新增上下文来源只需修改 ContextBuilder，`Agent.run()` 保持不变。
+- **状态**：已完成（2026-07-16）。
 
-### [ ] AgentHook 生命周期
+### [x] AgentHook 生命周期
 - **问题**：缺乏迭代级/工具级/运行级回调，难以低侵入地实现日志、指标、审计、流式输出。
 - **方案**：参考 nanobot `hook.py`，定义 `AgentHook` 协议与 `CompositeHook`，在 before/after iteration、tool、run 等阶段触发。
 - **文件**：新增 `swaybot/hook.py`
 - **验收**：可编写独立 hook 记录每次迭代与工具调用，不影响核心逻辑。
+- **状态**：已完成（2026-07-16）。
 
-### [ ] MCP 动态工具接入
+### [x] MCP 动态工具接入
 - **问题**：每新增外部能力都要手写 wrapper，扩展成本高。
 - **方案**：实现轻量 MCP client（stdio/SSE），让 swaybot 动态发现并加载 MCP server 的工具。
 - **文件**：新增 `swaybot/mcp_client.py`、`swaybot/tools.py`
 - **验收**：配置 MCP server 后，其工具自动出现在 registry 中并可被调用。
+- **状态**：已完成（2026-07-16）。
 
-### [ ] WebSearch / WebFetch 工具
+### [x] WebSearch / WebFetch 工具
 - **问题**：Agent 无法联网，难以满足 SOUL.md 主动探索世界、搜索材料的要求。
 - **方案**：增加 `web_search` 与 `web_fetch` 工具，支持多 provider 适配与基础 SSRF 防护，供 `Explorer`/`Reflector` 调用。
 - **文件**：`swaybot/tools.py`（或新建 `swaybot/tools/web.py`）
 - **验收**：验证假设时能搜索网络并引用结果作为 evidence。
+- **状态**：已完成（2026-07-17）。
+
+### [x] 工具并发语义
+- **问题**：多个工具调用只能串行执行，读-only/安全工具无法并行，效率低。
+- **方案**：给 `Tool` 增加 `read_only`、`concurrency_safe`、`exclusive` 元数据；`ToolRegistry.execute_batch` 按语义分组并发执行。
+- **文件**：`swaybot/tools/__init__.py`
+- **验收**：可并发工具真正并行，exclusive 工具单独顺序执行，测试覆盖分组逻辑。
+- **状态**：已完成（2026-07-17）。
 
 ### [ ] 两阶段记忆（Consolidator + Dream）
 - **问题**：`memory.json` 增长后难以审阅、回滚与持续演化，长期知识与原始经历混在一起。
@@ -206,6 +218,18 @@
 - **方案**：后台 `SubagentManager` 支持并行子任务；cron/heartbeat 支持定时自动化任务。
 - **文件**：新增 `swaybot/subagent.py`、`swaybot/automation.py`
 - **验收**：空闲时可并发执行多个探索任务，定时触发心跳/反思。
+
+### [ ] 目标权限控制（Goal Permission）
+- **问题**：Agent 可能执行危险操作（文件删除、网络写、调用付费 API），缺少按风险分级校验。
+- **方案**：给 `Tool` 增加 `risk_level`/`requires_permission` 元数据；`Agent` 执行前检查当前 goal 的权限等级，必要时拒绝或要求显式授权；高风险工具默认禁止。
+- **文件**：`swaybot/tools/__init__.py`、`swaybot/agent.py`
+- **验收**：高风险工具在无授权时被拒绝；测试覆盖默认拒绝和显式授权通过。
+
+### [ ] AutoCompact 会话压缩
+- **问题**：长对话后上下文超出模型窗口，且历史未压缩，token 浪费。
+- **方案**：当短期历史长度或 token 估计超过阈值时，调用 LLM 将早期步骤压缩为摘要记忆，替换原始步骤。
+- **文件**：`swaybot/memory.py`、`swaybot/agent.py`
+- **验收**：长对话触发压缩后上下文长度下降；摘要保留关键决策和最终答案。
 
 ## 当前聚焦
 

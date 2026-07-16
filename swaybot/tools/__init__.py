@@ -1,4 +1,5 @@
 import inspect
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable, Union, get_origin, get_args
 
@@ -53,6 +54,9 @@ class Tool:
     inputs: dict
     output_type: str
     fn: Callable
+    read_only: bool = False
+    concurrency_safe: bool = True
+    exclusive: bool = False
 
     def __call__(self, **kwargs):
         return self.fn(**kwargs)
@@ -82,11 +86,29 @@ class Tool:
                     f"got {type(value).__name__}."
                 )
 
+    @property
+    def metadata(self) -> dict:
+        """Return concurrency/execution metadata for batch scheduling."""
+        return {
+            "read_only": self.read_only,
+            "concurrency_safe": self.concurrency_safe,
+            "exclusive": self.exclusive,
+        }
 
-def tool(fn: Callable | None = None, *, name: str | None = None) -> Tool:
+
+def tool(
+    fn: Callable | None = None,
+    *,
+    name: str | None = None,
+    read_only: bool = False,
+    concurrency_safe: bool = True,
+    exclusive: bool = False,
+) -> Tool:
     """Decorator that turns a plain function into a schema-aware Tool."""
     if fn is None:
-        return lambda f: tool(f, name=name)  # type: ignore[misc]
+        return lambda f: tool(  # type: ignore[misc]
+            f, name=name, read_only=read_only, concurrency_safe=concurrency_safe, exclusive=exclusive
+        )
 
     tool_name = name or fn.__name__
     description = (fn.__doc__ or "").strip()
@@ -118,6 +140,9 @@ def tool(fn: Callable | None = None, *, name: str | None = None) -> Tool:
         inputs=inputs,
         output_type=output_type,
         fn=fn,
+        read_only=read_only,
+        concurrency_safe=concurrency_safe,
+        exclusive=exclusive,
     )
 
 
@@ -127,12 +152,25 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
 
-    def register(self, name: str, fn: Callable | Tool) -> None:
+    def register(
+        self,
+        name: str,
+        fn: Callable | Tool,
+        *,
+        read_only: bool = False,
+        concurrency_safe: bool = True,
+        exclusive: bool = False,
+    ) -> None:
         """Register a callable or an existing Tool under the given name."""
         if isinstance(fn, Tool):
             self._tools[name] = fn
         else:
-            self._tools[name] = tool(fn)
+            self._tools[name] = tool(
+                fn,
+                read_only=read_only,
+                concurrency_safe=concurrency_safe,
+                exclusive=exclusive,
+            )
 
     def names(self) -> list[str]:
         return list(self._tools.keys())
@@ -184,22 +222,66 @@ class ToolRegistry:
         valid_args = {k: v for k, v in args.items() if k in sig.parameters}
         return t.fn(**valid_args)
 
+    def execute_batch(self, actions: list[dict]) -> list[object]:
+        """Execute a list of actions respecting concurrency metadata.
 
+        - Exclusive tools run alone.
+        - Non-concurrency-safe tools run sequentially.
+        - Otherwise tools run concurrently in a thread pool.
+        """
+        results: list[object] = [None] * len(actions)
+        i = 0
+        while i < len(actions):
+            action = actions[i]
+            tool_name = action.get("name")
+            t = self._tools.get(tool_name)
+            if t is None:
+                raise ValueError(f"Unknown tool: {tool_name}")
+
+            if t.exclusive or not t.concurrency_safe:
+                results[i] = self.execute(action)
+                i += 1
+                continue
+
+            group: list[tuple[int, dict]] = []
+            while i < len(actions):
+                action = actions[i]
+                tool_name = action.get("name")
+                t = self._tools.get(tool_name)
+                if t is None:
+                    raise ValueError(f"Unknown tool: {tool_name}")
+                if t.exclusive or not t.concurrency_safe:
+                    break
+                group.append((i, action))
+                i += 1
+
+            with ThreadPoolExecutor() as executor:
+                futures = [executor.submit(self.execute, a) for _, a in group]
+            for (idx, _), fut in zip(group, futures):
+                results[idx] = fut.result()
+
+        return results
+
+
+@tool(read_only=True)
 def echo(message: str = "") -> str:
     """Echo a message back unchanged."""
     return message
 
 
+@tool(read_only=True)
 def add(a: float, b: float) -> float:
     """Add two numbers."""
     return a + b
 
 
+@tool(exclusive=True)
 def done() -> str:
     """Signal that the task is complete."""
     return "finished"
 
 
+@tool(exclusive=True)
 def final_answer(answer: str) -> str:
     """Provide the final answer and end the task."""
     return answer
@@ -222,6 +304,6 @@ def build_default_registry() -> ToolRegistry:
     registry.register("add", add)
     registry.register("done", done)
     registry.register("final_answer", final_answer)
-    registry.register("web_fetch", web_fetch)
-    registry.register("web_search", web_search)
+    registry.register("web_fetch", web_fetch, read_only=True)
+    registry.register("web_search", web_search, read_only=True)
     return registry

@@ -78,3 +78,73 @@ def test_tool_registry_execute_rejects_wrong_type():
     registry = build_default_registry()
     with pytest.raises(ValueError, match="must be number"):
         registry.execute({"name": "add", "args": {"a": "one", "b": 2}})
+
+
+def test_tool_metadata_flags():
+    registry = build_default_registry()
+    assert registry.get("add").read_only
+    assert registry.get("add").concurrency_safe
+    assert registry.get("done").exclusive
+    assert registry.get("final_answer").exclusive
+
+
+def test_execute_batch_runs_read_only_tools_concurrently():
+    registry = ToolRegistry()
+    calls = []
+
+    def slow(x: int) -> int:
+        import time
+
+        time.sleep(0.05)
+        calls.append(x)
+        return x * 2
+
+    registry.register("slow", slow, read_only=True, concurrency_safe=True)
+    import time
+
+    start = time.time()
+    results = registry.execute_batch(
+        [{"name": "slow", "args": {"x": 1}}, {"name": "slow", "args": {"x": 2}}]
+    )
+    elapsed = time.time() - start
+    assert set(results) == {2, 4}
+    assert elapsed < 0.09
+
+
+def test_execute_batch_runs_exclusive_tools_sequentially():
+    registry = ToolRegistry()
+    state = []
+
+    @tool(exclusive=True)
+    def append(value: int) -> int:
+        state.append(value)
+        return value
+
+    registry.register("append", append)
+    results = registry.execute_batch(
+        [{"name": "append", "args": {"value": 1}}, {"name": "append", "args": {"value": 2}}]
+    )
+    assert results == [1, 2]
+    assert state == [1, 2]
+
+
+def test_execute_batch_mixed_grouping():
+    registry = ToolRegistry()
+
+    @tool(read_only=True, concurrency_safe=True)
+    def double(x: int) -> int:
+        return x * 2
+
+    @tool(exclusive=True)
+    def finalize() -> str:
+        return "done"
+
+    registry.register("double", double)
+    registry.register("finalize", finalize)
+
+    actions = [
+        {"name": "double", "args": {"x": 1}},
+        {"name": "finalize", "args": {}},
+        {"name": "double", "args": {"x": 2}},
+    ]
+    assert registry.execute_batch(actions) == [2, "done", 4]
