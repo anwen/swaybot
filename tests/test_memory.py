@@ -122,6 +122,28 @@ def test_typed_steps_to_messages():
     assert reflection.kind == "theory"
 
 
+def test_action_step_stores_metadata():
+    store = MemoryStore()
+    store.add(
+        ActionStep(
+            step=1,
+            action={"name": "add", "args": {"a": 1, "b": 2}},
+            tags=["demo"],
+            model_input_messages=[{"role": "user", "content": "hi"}],
+            raw_output='{"name": "add", "args": {"a": 1, "b": 2}}',
+            token_usage={"prompt_tokens": 3, "completion_tokens": 5},
+            duration_ms=12.5,
+        )
+    )
+    step = store.memories[0]
+    assert step.raw_output is not None
+    assert step.token_usage["prompt_tokens"] == 3
+    assert step.duration_ms == 12.5
+    data = step.to_dict()
+    assert data["raw_output"] == step.raw_output
+    assert data["token_usage"] == step.token_usage
+
+
 def test_memory_store_persists_typed_steps(tmp_path: Path):
     path = tmp_path / "memory.json"
     store = MemoryStore(path=path)

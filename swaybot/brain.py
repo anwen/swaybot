@@ -5,7 +5,12 @@ from typing import Protocol, runtime_checkable
 class Brain(Protocol):
     """Decision-making core of the agent."""
 
-    def think(self, perception: dict, available_tools: list[str]) -> dict:
+    def think(
+        self,
+        perception: dict,
+        available_tools: list[str],
+        metadata: dict | None = None,
+    ) -> dict:
         """Return the next action to execute."""
         ...
 
@@ -32,7 +37,12 @@ class EchoBrain:
         self.echo_text = echo_text
         self._explore_index = 0
 
-    def think(self, perception: dict, available_tools: list[str]) -> dict:
+    def think(
+        self,
+        perception: dict,
+        available_tools: list[str],
+        metadata: dict | None = None,
+    ) -> dict:
         if perception.get("planning"):
             return {
                 "name": "plan",
