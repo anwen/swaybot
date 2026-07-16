@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from .agent import Agent
@@ -7,6 +8,7 @@ from .brain import EchoBrain
 from .explorer import Explorer
 from .memory import MemoryStore
 from .reflection import Reflector
+from .run_log import format_run, load_runs, run_log_path_for_memory, select_runs
 from .tools import format_action
 
 
@@ -33,8 +35,64 @@ def _default_data_dir() -> Path:
     return Path.home() / ".swaybot"
 
 
+def _inspect_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="swaybot inspect",
+        description="Inspect recorded runs without calling the LLM",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Directory for SwayBot data (default: ~/.swaybot)",
+    )
+    parser.add_argument(
+        "--memory",
+        type=str,
+        default=None,
+        help="Path to persistent memory store (default: DATA_DIR/memory.json)",
+    )
+    parser.add_argument(
+        "--task",
+        type=str,
+        default=None,
+        help="Show runs whose task contains this text",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=1,
+        help="Number of matching runs to show (default: 1; 0 shows all)",
+    )
+    parser.add_argument(
+        "--last",
+        action="store_true",
+        help="Show only the latest matching run (default)",
+    )
+    args = parser.parse_args(argv)
+
+    data_dir = Path(args.data_dir) if args.data_dir else _default_data_dir()
+    memory_path = Path(args.memory) if args.memory else data_dir / "memory.json"
+    run_log_path = run_log_path_for_memory(memory_path)
+    runs = load_runs(run_log_path)
+    limit = 1 if args.last else args.limit
+    selected = select_runs(runs, task=args.task, limit=limit)
+    if not selected:
+        print(f"No runs found in {run_log_path}")
+        return 1
+
+    for index, record in enumerate(selected):
+        if index:
+            print("\n---")
+        print(format_run(record))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "inspect":
+        return _inspect_main(argv[1:])
 
     parser = argparse.ArgumentParser(
         description="SwayBot: a lightweight self-evolving agent"

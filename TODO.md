@@ -108,6 +108,13 @@
 - **验收**：每个 action 能追溯到原始 LLM 输出、token 用量和耗时；83 个测试全部通过。
 - **状态**：已完成（2026-07-16）。
 
+### [x] 运行复盘与 inspect 命令
+- **问题**：`ActionStep` 已记录原始输出、token 和耗时，但反思后会清理短期记忆，且 CLI 没有离线查看入口，监控数据无法形成复盘闭环。
+- **方案**：新增与 `memory.json` 同级的 `runs.jsonl` 运行日志；`Agent.run()` 在结束时写入任务、假设、final answer、每步 action/result/raw_output/token/duration/error 和反思摘要；新增 `python -m swaybot inspect --last/--task` 离线查看。
+- **文件**：`swaybot/run_log.py`, `swaybot/agent.py`, `swaybot/cli.py`, `tests/test_run_log.py`, `tests/test_cli.py`
+- **验收**：`--reflect` 清理短期记忆后仍能 inspect；输出包含 raw output、token、耗时和错误；87 个测试全部通过。
+- **状态**：已完成（2026-07-16）。
+
 ### [ ] 多模型 backend 抽象
 - **问题**：`LLMBrain` 直接依赖 `openai` 包，换本地模型或其他 API 时需要重写。
 - **方案**：提取 `Model` 基类，把 `LLMBrain` 改名为 `OpenAIModel` 或拆出 `OpenAIModel`；后续可添加 `TransformersModel` / `MockModel` 等。
@@ -138,4 +145,4 @@
 
 ## 当前聚焦
 
-P3 的流式响应可先放一放。P4 的 Final answer、工具输入校验、ActionStep 监控已完成。下一步做 **多模型 backend 抽象**，把 `LLMBrain` 拆成通用的 `Model` 基类与 `OpenAIModel` 实现，让 Agent 能接入本地模型或其他 API。
+P3 的流式响应可先放一放。P4 的 Final answer、工具输入校验、ActionStep 监控和 `inspect` 复盘已完成。下一步优先做 **从记忆矛盾/问题生成探索假设**，让 `Explorer` 主动验证之前反射出的疑问；多模型 backend 抽象放到有明确第二个后端需求时再做。
