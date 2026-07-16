@@ -1,6 +1,7 @@
 from .brain import Brain, EchoBrain
 from .context import ContextBuilder
 from .environment import Environment
+from .hook import AgentHook, CompositeHook
 from .memory import (
     ActionStep,
     MemoryStore,
@@ -22,11 +23,13 @@ class Agent:
         tools: ToolRegistry | None = None,
         memory: MemoryStore | None = None,
         reflector: Reflector | None = None,
+        hooks: list[AgentHook] | None = None,
     ):
         self.brain = brain or EchoBrain()
         self.tools = tools or build_default_registry()
         self.memory = memory
         self.reflector = reflector
+        self.hooks = CompositeHook(hooks)
         self.context_builder = ContextBuilder(self.memory, self.tools)
 
     def run(
@@ -49,6 +52,7 @@ class Agent:
             perception = self.context_builder.build(
                 task, env.step, max_steps, env.history
             )
+            self.hooks.before_iteration(task, env.step, perception)
             call_info: dict = {}
             try:
                 action = self.brain.think(
@@ -66,6 +70,9 @@ class Agent:
             if error is None and call_info.get("error"):
                 error = str(call_info["error"])
             env.observe(action, result)
+            self.hooks.after_iteration(
+                task, env.step, action, result, metadata=call_info
+            )
             step_record = {
                 "step": env.step,
                 "action": action,
@@ -128,6 +135,7 @@ class Agent:
                     ),
                 )
 
+        self.hooks.after_run(task, env, reflections)
         return env
 
     def _create_plan(self, task: str, max_steps: int) -> None:
