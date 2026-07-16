@@ -309,6 +309,30 @@ def test_llm_brain_fallback_after_retries_exhausted(mock_openai):
 
 
 @patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_populates_metadata(mock_openai):
+    client = MagicMock()
+    response = _mock_response('{"name": "done", "args": {}}')
+    response.usage.prompt_tokens = 10
+    response.usage.completion_tokens = 5
+    response.usage.total_tokens = 15
+    client.chat.completions.create.return_value = response
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    metadata: dict = {}
+    brain.think(
+        {"task": "test", "step": 0, "max_steps": 3, "history": []},
+        ["done"],
+        metadata=metadata,
+    )
+    assert metadata["raw_output"] == '{"name": "done", "args": {}}'
+    assert metadata["token_usage"]["prompt_tokens"] == 10
+    assert metadata["token_usage"]["completion_tokens"] == 5
+    assert metadata["token_usage"]["total_tokens"] == 15
+    assert metadata["duration_ms"] >= 0
+
+
+@patch("swaybot.llm_brain.OpenAI")
 def test_llm_brain_uses_env_variables(mock_openai, monkeypatch):
     monkeypatch.setenv("SWAYBOT_API_KEY", "env-key")
     monkeypatch.setenv("SWAYBOT_API_BASE", "http://env/v1")

@@ -85,11 +85,23 @@ class LLMBrain:
 
         self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
-    def think(self, perception: dict, available_tools: list[str]) -> dict:
+    def think(
+        self,
+        perception: dict,
+        available_tools: list[str],
+        metadata: dict | None = None,
+    ) -> dict:
+        call_info: dict = {}
         if perception.get("planning"):
-            return self._plan(perception, available_tools)
+            plan = self._plan(perception, available_tools, metadata=call_info)
+            _merge_metadata(metadata, call_info)
+            return plan
         if perception.get("exploring"):
-            return self._explore(perception, available_tools)
+            exploration = self._explore(
+                perception, available_tools, metadata=call_info
+            )
+            _merge_metadata(metadata, call_info)
+            return exploration
 
         messages = [
             {
@@ -109,12 +121,18 @@ class LLMBrain:
                 {"role": "user", "content": render_prompt("user", **perception)}
             )
 
-        raw = self._chat(messages)
+        raw = self._chat(messages, metadata=call_info)
+        _merge_metadata(metadata, call_info)
         if raw is None:
             return _fallback(perception, "LLM call failed after retries")
         return _parse_action(raw, perception)
 
-    def _plan(self, perception: dict, available_tools: list[str]) -> dict:
+    def _plan(
+        self,
+        perception: dict,
+        available_tools: list[str],
+        metadata: dict | None = None,
+    ) -> dict:
         messages = [
             {
                 "role": "system",
@@ -137,12 +155,17 @@ class LLMBrain:
             },
         ]
 
-        raw = self._chat(messages)
+        raw = self._chat(messages, metadata=metadata)
         if raw is None:
             return {"name": "plan", "args": {"steps": []}}
         return _parse_plan(raw)
 
-    def _explore(self, perception: dict, available_tools: list[str]) -> dict:
+    def _explore(
+        self,
+        perception: dict,
+        available_tools: list[str],
+        metadata: dict | None = None,
+    ) -> dict:
         messages = [
             {
                 "role": "system",
@@ -164,14 +187,19 @@ class LLMBrain:
             },
         ]
 
-        raw = self._chat(messages)
+        raw = self._chat(messages, metadata=metadata)
         if raw is None:
             return {"name": "explore", "args": {"task": "explore", "hypothesis": ""}}
         return {"name": "explore", "args": _parse_exploration_response(raw)}
 
-    def _chat(self, messages: list[dict]) -> str | None:
+    def _chat(
+        self,
+        messages: list[dict],
+        metadata: dict | None = None,
+    ) -> str | None:
         last_error = ""
         for attempt in range(self.max_retries + 1):
+            start = time.perf_counter()
             try:
                 response = self._client.chat.completions.create(
                     model=cast(str, self.model),
@@ -179,12 +207,33 @@ class LLMBrain:
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
                 )
-                return response.choices[0].message.content or ""
+                content = response.choices[0].message.content or ""
+                if metadata is not None:
+                    metadata["model_input_messages"] = list(messages)
+                    metadata["raw_output"] = content
+                    metadata["duration_ms"] = (time.perf_counter() - start) * 1000
+                    usage = response.usage
+                    if usage:
+                        metadata["token_usage"] = {
+                            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                            "completion_tokens": getattr(
+                                usage, "completion_tokens", None
+                            ),
+                            "total_tokens": getattr(usage, "total_tokens", None),
+                        }
+                return content
             except Exception as exc:
                 last_error = str(exc)
+                if metadata is not None:
+                    metadata["error"] = last_error
                 if attempt < self.max_retries:
                     time.sleep(self.backoff * (2 ** attempt))
         return None
+
+
+def _merge_metadata(target: dict | None, source: dict) -> None:
+    if target is not None:
+        target.update(source)
 
 
 def _parse_action(raw: str, perception: dict) -> dict:

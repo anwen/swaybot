@@ -101,11 +101,12 @@
 - **验收**：缺失必填参数或类型错误时返回可理解的错误信息，Agent 不崩溃；81 个测试全部通过。
 - **状态**：已完成（2026-07-16）。
 
-### [ ] 更详细的 ActionStep 与基础监控
+### [x] 更详细的 ActionStep 与基础监控
 - **问题**：`ActionStep` 只记录动作本身，没有原始模型输入、token 用量、耗时，难以复盘和优化。
-- **方案**：扩展 `ActionStep`（或新增 `ModelStep`）记录 `model_input_messages`、`raw_output`、`token_usage`、`duration_ms`；在 `LLMBrain` 中采集这些字段。
-- **文件**：`swaybot/memory.py`, `swaybot/llm_brain.py`, `tests/test_memory.py`, `tests/test_llm_brain.py`
-- **验收**：每个 action 能追溯到原始 LLM 输出和耗时。
+- **方案**：扩展 `ActionStep` 记录 `model_input_messages`、`raw_output`、`token_usage`、`duration_ms`；`LLMBrain._chat()` 在每次调用中采集这些字段；`Agent.run()` 通过 `metadata` 字典接收并写入 `ActionStep`。
+- **文件**：`swaybot/memory.py`, `swaybot/llm_brain.py`, `swaybot/agent.py`, `swaybot/brain.py`, `tests/test_memory.py`, `tests/test_llm_brain.py`
+- **验收**：每个 action 能追溯到原始 LLM 输出、token 用量和耗时；83 个测试全部通过。
+- **状态**：已完成（2026-07-16）。
 
 ### [ ] 多模型 backend 抽象
 - **问题**：`LLMBrain` 直接依赖 `openai` 包，换本地模型或其他 API 时需要重写。
@@ -137,4 +138,4 @@
 
 ## 当前聚焦
 
-P3 的流式响应可先放一放。P4 的 Final answer 和工具输入校验已完成。下一步做 **更详细的 ActionStep 与基础监控**，记录每次 LLM 调用的原始输入、输出、token 用量和耗时，便于复盘和优化。
+P3 的流式响应可先放一放。P4 的 Final answer、工具输入校验、ActionStep 监控已完成。下一步做 **多模型 backend 抽象**，把 `LLMBrain` 拆成通用的 `Model` 基类与 `OpenAIModel` 实现，让 Agent 能接入本地模型或其他 API。

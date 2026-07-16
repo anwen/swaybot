@@ -85,6 +85,10 @@ class ActionStep(MemoryStep):
     action: dict = field(default_factory=dict)
     source: str = "brain"
     step_kind: ClassVar[str] = "action"
+    model_input_messages: list[dict] | None = None
+    raw_output: str | None = None
+    token_usage: dict | None = None
+    duration_ms: float | None = None
 
     def to_messages(self) -> list[dict]:
         return [

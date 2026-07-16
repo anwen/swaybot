@@ -48,7 +48,14 @@ class Agent:
                 perception["behavior_guidance"] = self._behavior_guidance(task)
                 perception["messages"] = self._build_messages(task)
             perception["tool_descriptions"] = self.tools.schemas()
-            action = self.brain.think(perception, self.tools.names())
+            call_info: dict = {}
+            try:
+                action = self.brain.think(
+                    perception, self.tools.names(), metadata=call_info
+                )
+            except TypeError:
+                action = self.brain.think(perception, self.tools.names())
+                call_info = {}
             try:
                 result = self.tools.execute(action)
             except Exception as exc:
@@ -60,6 +67,10 @@ class Agent:
                         step=env.step,
                         action=action,
                         tags=[task],
+                        model_input_messages=call_info.get("model_input_messages"),
+                        raw_output=call_info.get("raw_output"),
+                        token_usage=call_info.get("token_usage"),
+                        duration_ms=call_info.get("duration_ms"),
                     )
                 )
                 self.memory.add(
