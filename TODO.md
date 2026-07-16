@@ -223,11 +223,14 @@
 
 ### [ ] 目标权限控制（Goal Permission）
 
-### [ ] 目标权限控制（Goal Permission）
+### [x] 目标权限控制（Goal Permission）
 - **问题**：Agent 可能执行危险操作（文件删除、网络写、调用付费 API），缺少按风险分级校验。
-- **方案**：给 `Tool` 增加 `risk_level`/`requires_permission` 元数据；`Agent` 执行前检查当前 goal 的权限等级，必要时拒绝或要求显式授权；高风险工具默认禁止。
+- **方案**：给 `Tool` 增加 `risk_level` 元数据；`Agent` 通过 `permission_level` 在执行前检查，不足时返回权限错误。
 - **文件**：`swaybot/tools/__init__.py`、`swaybot/agent.py`
-- **验收**：高风险工具在无授权时被拒绝；测试覆盖默认拒绝和显式授权通过。
+- **验收**：高风险工具在无授权时被拒绝；显式授权后可执行；测试覆盖默认拒绝与授权通过。
+- **状态**：已完成（2026-07-17）。
+
+### [ ] AutoCompact 会话压缩
 
 ### [ ] AutoCompact 会话压缩
 - **问题**：长对话后上下文超出模型窗口，且历史未压缩，token 浪费。
