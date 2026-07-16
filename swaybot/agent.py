@@ -1,4 +1,5 @@
 from .brain import Brain, EchoBrain
+from .context import ContextBuilder
 from .environment import Environment
 from .memory import (
     ActionStep,
@@ -26,6 +27,7 @@ class Agent:
         self.tools = tools or build_default_registry()
         self.memory = memory
         self.reflector = reflector
+        self.context_builder = ContextBuilder(self.memory, self.tools)
 
     def run(
         self,
@@ -44,12 +46,9 @@ class Agent:
         if plan and self.memory is not None:
             self._create_plan(task, max_steps)
         while not env.done:
-            perception = env.perceive()
-            if self.memory is not None:
-                perception["memory_context"] = self._memory_context(task)
-                perception["behavior_guidance"] = self._behavior_guidance(task)
-                perception["messages"] = self._build_messages(task)
-            perception["tool_descriptions"] = self.tools.schemas()
+            perception = self.context_builder.build(
+                task, env.step, max_steps, env.history
+            )
             call_info: dict = {}
             try:
                 action = self.brain.think(
@@ -146,43 +145,3 @@ class Agent:
             steps = action.get("args", {}).get("steps", [])
             if steps:
                 self.memory.add(PlanningStep(plan=steps, tags=[task]))
-
-    def _memory_context(self, task: str) -> str:
-        if self.memory is None:
-            return ""
-        relevant = self.memory.query_relevant(task, scope="long_term", limit=5)
-        if not relevant:
-            return ""
-        return "\n".join(
-            f"- {getattr(m, 'content', str(m))}" for m in relevant
-        )
-
-    def _behavior_guidance(self, task: str) -> str:
-        if self.memory is None:
-            return ""
-        theories = self.memory.query_relevant(task, scope="long_term", limit=5)
-        if not theories:
-            return ""
-        lines: list[str] = []
-        for theory in theories:
-            if getattr(theory, "credibility", 0.0) < 0.5:
-                continue
-            content = getattr(theory, "content", str(theory))
-            if content:
-                lines.append(f"- {content}")
-        return "\n".join(lines)
-
-    def _build_messages(self, task: str) -> list[dict]:
-        if self.memory is None:
-            return []
-        messages: list[dict] = []
-        context = self._memory_context(task)
-        if context:
-            messages.append(
-                {"role": "user", "content": f"Relevant memories:\n{context}"}
-            )
-        for step in self.memory.memories:
-            if task not in step.tags or step.scope != "short_term":
-                continue
-            messages.extend(step.to_messages())
-        return messages
