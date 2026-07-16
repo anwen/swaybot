@@ -177,6 +177,10 @@ class ToolRegistry:
             raise ValueError(f"Unknown tool: {name}")
         t.validate_arguments(args)
         sig = inspect.signature(t.fn)
+        if any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        ):
+            return t.fn(**args)
         valid_args = {k: v for k, v in args.items() if k in sig.parameters}
         return t.fn(**valid_args)
 
