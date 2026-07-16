@@ -61,3 +61,35 @@ def test_cli_verbose_output(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "Step 1:" in captured.out
     assert "'name':" in captured.out or '"name":' in captured.out
+
+
+def test_cli_writes_run_log_and_inspect_last(tmp_path, capsys):
+    data_dir = tmp_path / "inspect"
+    main(["hello", "--max-steps", "1", "--data-dir", str(data_dir)])
+    capsys.readouterr()
+
+    run_log = data_dir / "runs.jsonl"
+    assert run_log.exists()
+
+    exit_code = main(["inspect", "--last", "--data-dir", str(data_dir)])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Task: hello" in captured.out
+    assert "Steps: 1" in captured.out
+    assert "Totals:" in captured.out
+    assert "Step 1:" in captured.out
+
+
+def test_cli_inspect_survives_reflection_pruning(tmp_path, capsys):
+    data_dir = tmp_path / "reflect-inspect"
+    main(["hello", "--max-steps", "1", "--data-dir", str(data_dir), "--reflect"])
+    capsys.readouterr()
+
+    store = MemoryStore(path=data_dir / "memory.json")
+    assert store.query(scope="short_term", tag="hello") == []
+
+    exit_code = main(["inspect", "--task", "hell", "--data-dir", str(data_dir)])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Task: hello" in captured.out
+    assert "Reflections:" in captured.out
