@@ -14,6 +14,9 @@ from .run_log import append_run, build_run_record, run_log_path_for_memory
 from .tools import ToolRegistry, build_default_registry
 
 
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
 class Agent:
     """Minimal agent: perceive, think, act, observe, loop, reflect."""
 
@@ -24,13 +27,27 @@ class Agent:
         memory: MemoryStore | None = None,
         reflector: Reflector | None = None,
         hooks: list[AgentHook] | None = None,
+        permission_level: str = "medium",
     ):
         self.brain = brain or EchoBrain()
         self.tools = tools or build_default_registry()
         self.memory = memory
         self.reflector = reflector
         self.hooks = CompositeHook(hooks)
+        self.permission_level = permission_level
         self.context_builder = ContextBuilder(self.memory, self.tools)
+
+    def _allowed(self, action_name: str) -> tuple[bool, str]:
+        """Check whether the current permission level allows ``action_name``."""
+        tool = self.tools.get(action_name)
+        if tool is None:
+            return True, ""
+        if _RISK_ORDER[tool.risk_level] > _RISK_ORDER[self.permission_level]:
+            return False, (
+                f"Permission denied: '{action_name}' requires "
+                f"{tool.risk_level} permission (current: {self.permission_level})"
+            )
+        return True, ""
 
     def run(
         self,
@@ -62,11 +79,16 @@ class Agent:
                 action = self.brain.think(perception, self.tools.names())
                 call_info = {}
             error = None
-            try:
-                result = self.tools.execute(action)
-            except Exception as exc:
-                error = str(exc)
-                result = f"Error: {exc}"
+            allowed, permission_msg = self._allowed(action.get("name", ""))
+            if allowed:
+                try:
+                    result = self.tools.execute(action)
+                except Exception as exc:
+                    error = str(exc)
+                    result = f"Error: {exc}"
+            else:
+                error = permission_msg
+                result = f"Error: {permission_msg}"
             if error is None and call_info.get("error"):
                 error = str(call_info["error"])
             env.observe(action, result)

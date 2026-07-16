@@ -57,6 +57,7 @@ class Tool:
     read_only: bool = False
     concurrency_safe: bool = True
     exclusive: bool = False
+    risk_level: str = "low"
 
     def __call__(self, **kwargs):
         return self.fn(**kwargs)
@@ -88,11 +89,12 @@ class Tool:
 
     @property
     def metadata(self) -> dict:
-        """Return concurrency/execution metadata for batch scheduling."""
+        """Return execution metadata including risk level."""
         return {
             "read_only": self.read_only,
             "concurrency_safe": self.concurrency_safe,
             "exclusive": self.exclusive,
+            "risk_level": self.risk_level,
         }
 
 
@@ -103,11 +105,17 @@ def tool(
     read_only: bool = False,
     concurrency_safe: bool = True,
     exclusive: bool = False,
+    risk_level: str = "low",
 ) -> Tool:
     """Decorator that turns a plain function into a schema-aware Tool."""
     if fn is None:
         return lambda f: tool(  # type: ignore[misc]
-            f, name=name, read_only=read_only, concurrency_safe=concurrency_safe, exclusive=exclusive
+            f,
+            name=name,
+            read_only=read_only,
+            concurrency_safe=concurrency_safe,
+            exclusive=exclusive,
+            risk_level=risk_level,
         )
 
     tool_name = name or fn.__name__
@@ -143,6 +151,7 @@ def tool(
         read_only=read_only,
         concurrency_safe=concurrency_safe,
         exclusive=exclusive,
+        risk_level=risk_level,
     )
 
 
@@ -160,6 +169,7 @@ class ToolRegistry:
         read_only: bool = False,
         concurrency_safe: bool = True,
         exclusive: bool = False,
+        risk_level: str = "low",
     ) -> None:
         """Register a callable or an existing Tool under the given name."""
         if isinstance(fn, Tool):
@@ -170,6 +180,7 @@ class ToolRegistry:
                 read_only=read_only,
                 concurrency_safe=concurrency_safe,
                 exclusive=exclusive,
+                risk_level=risk_level,
             )
 
     def names(self) -> list[str]:
@@ -304,6 +315,6 @@ def build_default_registry() -> ToolRegistry:
     registry.register("add", add)
     registry.register("done", done)
     registry.register("final_answer", final_answer)
-    registry.register("web_fetch", web_fetch, read_only=True)
-    registry.register("web_search", web_search, read_only=True)
+    registry.register("web_fetch", web_fetch, read_only=True, risk_level="medium")
+    registry.register("web_search", web_search, read_only=True, risk_level="medium")
     return registry

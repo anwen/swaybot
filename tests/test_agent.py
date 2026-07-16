@@ -2,7 +2,7 @@ import pytest
 
 from swaybot.agent import Agent
 from swaybot.environment import Environment
-from swaybot.tools import ToolRegistry, build_default_registry
+from swaybot.tools import ToolRegistry, build_default_registry, tool
 
 
 def test_environment_perceive():
@@ -180,3 +180,41 @@ def test_agent_memory_context_uses_relevance_and_long_term_only():
     assert "long demo fact" in context
     assert "short demo note" not in context
     assert "unrelated" not in context
+
+
+def test_agent_permission_level_blocks_high_risk_tools():
+    registry = ToolRegistry()
+
+    @tool(risk_level="high")
+    def dangerous() -> str:
+        """Do something risky."""
+        return "done"
+
+    registry.register("dangerous", dangerous)
+
+    class DangerBrain:
+        def think(self, perception, available_tools):
+            return {"name": "dangerous", "args": {}}
+
+    agent = Agent(brain=DangerBrain(), tools=registry, permission_level="low")
+    env = agent.run("test", max_steps=2)
+    assert any("Permission denied" in str(h.get("result", "")) for h in env.history)
+
+
+def test_agent_permission_level_allows_authorized_high_risk_tools():
+    registry = ToolRegistry()
+
+    @tool(risk_level="high")
+    def dangerous() -> str:
+        """Do something risky."""
+        return "done"
+
+    registry.register("dangerous", dangerous)
+
+    class DangerBrain:
+        def think(self, perception, available_tools):
+            return {"name": "dangerous", "args": {}}
+
+    agent = Agent(brain=DangerBrain(), tools=registry, permission_level="high")
+    env = agent.run("test", max_steps=2)
+    assert any(h.get("result") == "done" for h in env.history)
