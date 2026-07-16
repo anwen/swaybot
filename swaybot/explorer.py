@@ -115,10 +115,15 @@ class Explorer:
             return []
         seen: set[str] = set()
         candidates: list[str] = []
+        verified_tags: set[str] = set()
+        for mem in self.agent.memory.query(
+            kind="verification", scope="long_term", limit=999
+        ):
+            verified_tags.update(mem.tags)
         for kind in ("question", "contradiction"):
             for mem in self.agent.memory.query(kind=kind, scope="long_term", limit=20):
                 content = getattr(mem, "content", "")
-                if content and content not in seen:
+                if content and content not in seen and content not in verified_tags:
                     seen.add(content)
                     candidates.append(content)
         return candidates
