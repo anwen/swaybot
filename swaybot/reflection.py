@@ -142,7 +142,7 @@ def reflection_to_memory(reflection: Reflection) -> ReflectionStep:
     """Convert a reflection into a memory suitable for long-term storage."""
     return ReflectionStep(
         content=reflection.content,
-        kind="theory",
+        kind=reflection.kind if reflection.kind != "summary" else "theory",
         scope="long_term",
         source="reflector",
         evidence=reflection.evidence,

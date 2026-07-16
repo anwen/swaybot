@@ -15,6 +15,13 @@ Memories:
 {{ memory_context }}
 
 {% endif %}
+{% if candidate_hypotheses %}
+Open questions and contradictions from past runs:
+{% for hypothesis in candidate_hypotheses %}
+- {{ hypothesis }}
+{% endfor %}
+
+{% endif %}
 Reply with a single JSON object of the form:
 {"task": "<one-sentence task>", "hypothesis": "<what you expect to learn>"}
 Do not include any explanation or markdown formatting outside the JSON.

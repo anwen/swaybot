@@ -14,6 +14,13 @@ def test_reflection_to_memory():
     assert m.credibility == 0.9
 
 
+def test_reflection_to_memory_preserves_question_and_contradiction():
+    question = Reflection(content="q", kind="question")
+    contradiction = Reflection(content="c", kind="contradiction")
+    assert reflection_to_memory(question).kind == "question"
+    assert reflection_to_memory(contradiction).kind == "contradiction"
+
+
 def test_reflect_on_run_summary():
     store = MemoryStore()
     reflector = Reflector(store)

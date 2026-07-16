@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 
 from .agent import Agent
+from .brain import EchoBrain
 from .environment import Environment
 from .reflection import Reflector
 
@@ -44,19 +45,36 @@ class Explorer:
     def generate_task(self) -> ExplorationTask:
         """Ask the brain for a curiosity-driven task, or pick a default."""
         memory_context = self._memory_summary()
+        candidate_hypotheses = self._candidate_hypotheses_from_memory()
         perception = {
             "task": "Generate an exploratory task",
             "exploring": True,
             "memory_context": memory_context,
+            "candidate_hypotheses": candidate_hypotheses,
             "tool_descriptions": self.agent.tools.schemas(),
             "available_tools": self.agent.tools.names(),
         }
+
+        # EchoBrain ignores the prompt, so short-circuit if we already have
+        # concrete questions or contradictions to investigate.
+        if candidate_hypotheses and isinstance(self.agent.brain, EchoBrain):
+            return ExplorationTask(
+                task=str(candidate_hypotheses[0]),
+                hypothesis="Investigate this open question or contradiction.",
+            )
+
         action = self.agent.brain.think(perception, self.agent.tools.names())
         args = action.get("args", {}) if isinstance(action, dict) else {}
         task_text = args.get("task") if isinstance(args, dict) else None
         hypothesis = args.get("hypothesis", "") if isinstance(args, dict) else ""
         if task_text:
             return ExplorationTask(task=str(task_text), hypothesis=str(hypothesis))
+
+        if candidate_hypotheses:
+            return ExplorationTask(
+                task=str(candidate_hypotheses[0]),
+                hypothesis="Investigate this open question or contradiction.",
+            )
         return self._default_task()
 
     def run(self, max_steps: int | None = None) -> tuple[ExplorationTask, Environment]:
@@ -90,6 +108,20 @@ class Explorer:
             if content:
                 lines.append(f"- {content}")
         return "\n".join(lines)
+
+    def _candidate_hypotheses_from_memory(self) -> list[str]:
+        """Pull unresolved questions and contradictions from long-term memory."""
+        if self.agent.memory is None:
+            return []
+        seen: set[str] = set()
+        candidates: list[str] = []
+        for kind in ("question", "contradiction"):
+            for mem in self.agent.memory.query(kind=kind, scope="long_term", limit=20):
+                content = getattr(mem, "content", "")
+                if content and content not in seen:
+                    seen.add(content)
+                    candidates.append(content)
+        return candidates
 
 
 def parse_exploration_response(raw: str) -> dict:
