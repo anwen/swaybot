@@ -213,10 +213,15 @@ def format_action(action: dict) -> str:
     return f"{name}({args_str})"
 
 
+from .web import web_fetch, web_search
+
+
 def build_default_registry() -> ToolRegistry:
     registry = ToolRegistry()
     registry.register("echo", echo)
     registry.register("add", add)
     registry.register("done", done)
     registry.register("final_answer", final_answer)
+    registry.register("web_fetch", web_fetch)
+    registry.register("web_search", web_search)
     return registry

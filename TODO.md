@@ -143,12 +143,69 @@
 - **验收**：语义相关但用词不同的记忆能被召回。
 - **备注**：当前关键词检索已覆盖主要场景，embedding 属于锦上添花；待多模型 backend 抽象和 CodeAgent 等更核心能力稳定后再考虑。
 
+### [ ] 主动搜索外部信息
+- **问题**：Agent 只能依赖已有记忆和内置工具，无法主动搜索互联网、本地文件或 API 获取新证据，难以满足 SOUL.md 中“主动探索世界、搜索材料”的要求。
+- **方案**：新增通用 `search` 工具族（如 `web_search`、`file_search`、`api_search`）或 MCP/搜索工具接口；`Explorer` 在生成假设时、`Reflector` 在验证假设时均可自动调用。
+- **文件**：`swaybot/tools.py`（新增工具）、`swaybot/explorer.py`、`swaybot/reflection.py`
+- **验收**：`--explore` 或验证阶段能主动搜索外部信息，并将搜索结果作为 evidence 写入记忆。
+
+### [ ] 主动寻找反例
+- **问题**：当前 `find_counterexamples` 只在已有记忆中匹配否定词/惊喜标记，不能主动设计查询或搜索去发现反例。
+- **方案**：在 `Reflector` 验证高置信度信念后，触发 `_seek_counterexamples()`：优先使用外部搜索工具（若已实现）查询反例，再回退到现有记忆；`Explorer` 也可生成“寻找 X 的反例”类探索任务。
+- **文件**：`swaybot/reflection.py`、`swaybot/explorer.py`
+- **验收**：对高置信度命题能主动尝试发现反例，并生成 `contradiction` 或 `verification` 记忆。
+- **备注**：可与“主动搜索外部信息”一起实现；当前可先利用 `find_counterexamples` 做轻量版，待搜索工具就绪后再扩展。
+
 ### [x] 从记忆矛盾/问题生成探索假设
 - **问题**：`Explorer` 目前靠 LLM 或固定题库生成假设，没有利用已有反思中的矛盾和未解问题。
 - **方案**：`reflection_to_memory()` 保留 `question` / `contradiction` 等 kind；`Explorer._candidate_hypotheses_from_memory()` 从长期记忆中检索这些条目；生成探索任务时优先把它们作为候选假设传给 LLM 探索提示，EchoBrain 则直接选择第一个候选；无候选时才回退到默认题库或 LLM 自由生成。
 - **文件**：`swaybot/explorer.py`, `swaybot/reflection.py`, `swaybot/prompts/explore.j2`, `tests/test_explorer.py`, `tests/test_reflection.py`
 - **验收**：长期记忆中存在 question/contradiction 时，`--explore` 会生成对应的验证任务；LLM 探索提示包含候选假设列表；91 个测试全部通过。
 - **状态**：已完成（2026-07-16）。
+
+## 从 nanobot 借鉴的长期方向
+
+### [ ] 模型 preset 与 fallback 链
+- **问题**：单模型失败时无备用；不同任务需要不同模型，目前只能换环境变量或参数。
+- **方案**：参考 nanobot `model_runtime.py`，在多模型 backend 抽象上支持 `modelPresets` 与 `fallbackModels`，按名称切换与故障转移。
+- **文件**：`swaybot/models.py`
+- **验收**：配置中可定义多个 preset 和 fallback；某模型失败时自动切换并继续任务。
+
+### [ ] 统一 ContextBuilder
+- **问题**：`Agent` 内部 `_memory_context`、`_behavior_guidance`、`_build_messages` 散落拼装，新增上下文来源时容易改动核心循环。
+- **方案**：提取 `ContextBuilder`，统一组装 system prompt、SOUL/identity、长期记忆、行为指导、短期历史、运行时上下文。
+- **文件**：新增 `swaybot/context.py`
+- **验收**：新增上下文来源只需修改 ContextBuilder，`Agent.run()` 保持不变。
+
+### [ ] AgentHook 生命周期
+- **问题**：缺乏迭代级/工具级/运行级回调，难以低侵入地实现日志、指标、审计、流式输出。
+- **方案**：参考 nanobot `hook.py`，定义 `AgentHook` 协议与 `CompositeHook`，在 before/after iteration、tool、run 等阶段触发。
+- **文件**：新增 `swaybot/hook.py`
+- **验收**：可编写独立 hook 记录每次迭代与工具调用，不影响核心逻辑。
+
+### [ ] MCP 动态工具接入
+- **问题**：每新增外部能力都要手写 wrapper，扩展成本高。
+- **方案**：实现轻量 MCP client（stdio/SSE），让 swaybot 动态发现并加载 MCP server 的工具。
+- **文件**：新增 `swaybot/mcp_client.py`、`swaybot/tools.py`
+- **验收**：配置 MCP server 后，其工具自动出现在 registry 中并可被调用。
+
+### [ ] WebSearch / WebFetch 工具
+- **问题**：Agent 无法联网，难以满足 SOUL.md 主动探索世界、搜索材料的要求。
+- **方案**：增加 `web_search` 与 `web_fetch` 工具，支持多 provider 适配与基础 SSRF 防护，供 `Explorer`/`Reflector` 调用。
+- **文件**：`swaybot/tools.py`（或新建 `swaybot/tools/web.py`）
+- **验收**：验证假设时能搜索网络并引用结果作为 evidence。
+
+### [ ] 两阶段记忆（Consolidator + Dream）
+- **问题**：`memory.json` 增长后难以审阅、回滚与持续演化，长期知识与原始经历混在一起。
+- **方案**：参考 nanobot：短期 `history.jsonl` 自动压缩归档；定期用 LLM 编辑 durable memory 文件（如 `SOUL.md`/`MEMORY.md`）。
+- **文件**：`swaybot/memory.py`、`swaybot/reflection.py`
+- **验收**：长期记忆可版本化、可回滚、可人工审阅；运行历史与长期知识分离。
+
+### [ ] 子代理与后台自动化
+- **问题**：当前单线程顺序执行，空闲时无法并发探索，也缺少定时任务。
+- **方案**：后台 `SubagentManager` 支持并行子任务；cron/heartbeat 支持定时自动化任务。
+- **文件**：新增 `swaybot/subagent.py`、`swaybot/automation.py`
+- **验收**：空闲时可并发执行多个探索任务，定时触发心跳/反思。
 
 ## 当前聚焦
 

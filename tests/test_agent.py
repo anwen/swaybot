@@ -62,6 +62,8 @@ def test_tool_registry_descriptions():
         "echo(message='')",
         "done()",
         "final_answer(answer)",
+        "web_fetch(url, max_length=4000)",
+        "web_search(query, max_results=3)",
     }
 
 

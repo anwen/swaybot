@@ -49,7 +49,7 @@ def test_tool_registry_schemas():
     registry = build_default_registry()
     schemas = registry.schemas()
     names = {s["name"] for s in schemas}
-    assert names == {"echo", "add", "done", "final_answer"}
+    assert names == {"echo", "add", "done", "final_answer", "web_fetch", "web_search"}
     echo_schema = next(s for s in schemas if s["name"] == "echo")
     assert echo_schema["description"] == "Echo a message back unchanged."
     assert echo_schema["parameters"]["properties"]["message"] == {
