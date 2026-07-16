@@ -97,6 +97,24 @@ def test_agent_run_ends_early_with_final_answer_brain():
     assert env.history[0]["result"] == "done early"
 
 
+def test_agent_run_records_tool_error_and_continues():
+    class BadThenDoneBrain:
+        def __init__(self):
+            self.calls = 0
+
+        def think(self, perception, available_tools):
+            self.calls += 1
+            if self.calls == 1:
+                return {"name": "add", "args": {"a": 1}}  # missing 'b'
+            return {"name": "done", "args": {}}
+
+    agent = Agent(brain=BadThenDoneBrain())
+    env = agent.run("hello", max_steps=3)
+    assert env.done
+    assert env.history[0]["result"].startswith("Error:")
+    assert env.history[-1]["action"]["name"] == "done"
+
+
 def test_agent_build_messages_includes_memory_context_and_short_term_steps():
     from swaybot.memory import Memory, MemoryStore
 

@@ -49,7 +49,10 @@ class Agent:
                 perception["messages"] = self._build_messages(task)
             perception["tool_descriptions"] = self.tools.schemas()
             action = self.brain.think(perception, self.tools.names())
-            result = self.tools.execute(action)
+            try:
+                result = self.tools.execute(action)
+            except Exception as exc:
+                result = f"Error: {exc}"
             env.observe(action, result)
             if self.memory is not None:
                 self.memory.add(
