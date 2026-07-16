@@ -6,6 +6,8 @@ import pytest
 from swaybot.agent import Agent
 from swaybot.memory import (
     ActionStep,
+    Consolidator,
+    Dream,
     Memory,
     MemoryStore,
     ObservationStep,
@@ -194,3 +196,81 @@ def test_agent_prunes_short_term_after_reflection():
     short_term = store.query(scope="short_term")
     assert len(theories) >= 1
     assert len(short_term) == 0
+
+
+def test_consolidator_archives_short_term_to_history(tmp_path: Path):
+    history_path = tmp_path / "history.jsonl"
+    store = MemoryStore()
+    store.add(TaskStep(task="demo", tags=["demo"]))
+    store.add(ActionStep(step=1, action={"name": "echo"}, tags=["demo"]))
+    store.add(ObservationStep(step=1, observation="ok", tags=["demo"]))
+
+    consolidator = Consolidator(history_path=history_path)
+    archived = consolidator.archive(store, tag="demo")
+
+    assert len(archived) == 3
+    assert all(m.scope == "short_term" for m in archived)
+    assert len(store.query(scope="short_term", tag="demo")) == 0
+
+    lines = history_path.read_text(encoding="utf-8").strip().split("\n")
+    assert len(lines) == 3
+    assert json.loads(lines[0])["step_kind"] == "task"
+
+
+def test_consolidator_keeps_last_n(tmp_path: Path):
+    history_path = tmp_path / "history.jsonl"
+    store = MemoryStore()
+    for i in range(3):
+        store.add(ActionStep(step=i, action={"name": "echo"}, tags=["demo"]))
+
+    consolidator = Consolidator(history_path=history_path)
+    archived = consolidator.archive(store, tag="demo", keep_last=1)
+
+    assert len(archived) == 2
+    assert len(store.query(scope="short_term", tag="demo")) == 1
+    assert store.query(scope="short_term", tag="demo")[0].step == 2
+
+
+def test_consolidator_summarizes_with_brain(tmp_path: Path):
+    history_path = tmp_path / "history.jsonl"
+    store = MemoryStore()
+    store.add(ActionStep(step=1, action={"name": "echo"}, tags=["demo"]))
+
+    def summarize(steps):
+        return "summarized"
+
+    consolidator = Consolidator(history_path=history_path, brain=summarize)
+    consolidator.archive(store, tag="demo", summarize=True)
+
+    long_term = store.query(scope="long_term", tag="consolidated")
+    assert len(long_term) == 1
+    assert long_term[0].content == "summarized"
+
+
+def test_dream_appends_insights_to_durable_memory(tmp_path: Path):
+    durable_path = tmp_path / "SOUL.md"
+    store = MemoryStore()
+    store.add(ReflectionStep(content="always verify assumptions", tags=["demo"]))
+
+    dream = Dream(durable_path=durable_path)
+    content = dream.edit(store)
+
+    assert "Consolidated insights" in content
+    assert "always verify assumptions" in content
+    assert "always verify assumptions" in durable_path.read_text(encoding="utf-8")
+
+
+def test_dream_brain_can_rewrite_durable_memory(tmp_path: Path):
+    durable_path = tmp_path / "SOUL.md"
+    durable_path.write_text("# Old\n", encoding="utf-8")
+    store = MemoryStore()
+    store.add(ReflectionStep(content="new insight", tags=["demo"]))
+
+    def rewrite(content, insights):
+        return f"{content.strip()}\n\nnew: {insights[0].content}"
+
+    dream = Dream(durable_path=durable_path, brain=rewrite)
+    content = dream.edit(store)
+
+    assert content.startswith("# Old")
+    assert "new: new insight" in content
