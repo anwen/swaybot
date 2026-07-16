@@ -2,6 +2,7 @@ import pytest
 
 from swaybot.agent import Agent
 from swaybot.environment import Environment
+from swaybot.memory import MemoryStore
 from swaybot.tools import ToolRegistry, build_default_registry, tool
 
 
@@ -218,3 +219,20 @@ def test_agent_permission_level_allows_authorized_high_risk_tools():
     agent = Agent(brain=DangerBrain(), tools=registry, permission_level="high")
     env = agent.run("test", max_steps=2)
     assert any(h.get("result") == "done" for h in env.history)
+
+
+def test_agent_auto_compact_limits_short_term_memories():
+    from swaybot.memory import AutoCompact
+
+    def summarize(messages):
+        return "compact summary"
+
+    store = MemoryStore()
+    compactor = AutoCompact(brain=summarize, max_steps=3)
+    agent = Agent(memory=store, auto_compact=True, compactor=compactor)
+    agent.run("demo", max_steps=8)
+
+    short_term = store.query(scope="short_term", tag="demo")
+    assert len(short_term) <= 4  # task + up to max_steps retained
+    summaries = store.query(scope="long_term", tag="compact")
+    assert len(summaries) >= 1

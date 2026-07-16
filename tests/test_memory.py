@@ -6,6 +6,7 @@ import pytest
 from swaybot.agent import Agent
 from swaybot.memory import (
     ActionStep,
+    AutoCompact,
     Consolidator,
     Dream,
     Memory,
@@ -274,3 +275,48 @@ def test_dream_brain_can_rewrite_durable_memory(tmp_path: Path):
 
     assert content.startswith("# Old")
     assert "new: new insight" in content
+
+
+def test_autocompact_summarizes_excess_short_term_steps():
+    store = MemoryStore()
+    for i in range(8):
+        store.add(ActionStep(step=i, action={"name": "echo"}, tags=["demo"]))
+
+    def summarize(messages):
+        return "eight echo steps"
+
+    compactor = AutoCompact(brain=summarize, max_steps=4)
+    compacted = compactor.compact(store, tag="demo")
+
+    assert compacted
+    assert len(store.query(scope="short_term", tag="demo")) == 4
+    summaries = store.query(scope="long_term", tag="compact")
+    assert len(summaries) == 1
+    assert summaries[0].content == "eight echo steps"
+
+
+def test_autocompact_does_nothing_below_threshold():
+    store = MemoryStore()
+    for i in range(3):
+        store.add(ActionStep(step=i, action={"name": "echo"}, tags=["demo"]))
+
+    compactor = AutoCompact(max_steps=6)
+    assert not compactor.compact(store, tag="demo")
+    assert len(store.memories) == 3
+
+
+def test_autocompact_fallback_without_brain():
+    store = MemoryStore()
+    for i in range(5):
+        store.add(
+            ObservationStep(step=i, observation=f"saw {i}", tags=["demo"])
+        )
+
+    compactor = AutoCompact(max_steps=2)
+    compacted = compactor.compact(store, tag="demo")
+
+    assert compacted
+    assert len(store.query(scope="short_term", tag="demo")) == 2
+    summary = store.query(scope="long_term", tag="compact")[0]
+    assert "Compacted" in summary.content
+    assert "saw 0" in summary.content
