@@ -4,6 +4,7 @@ from .environment import Environment
 from .hook import AgentHook, CompositeHook
 from .memory import (
     ActionStep,
+    AutoCompact,
     MemoryStore,
     ObservationStep,
     PlanningStep,
@@ -28,6 +29,8 @@ class Agent:
         reflector: Reflector | None = None,
         hooks: list[AgentHook] | None = None,
         permission_level: str = "medium",
+        auto_compact: bool = False,
+        compactor: AutoCompact | None = None,
     ):
         self.brain = brain or EchoBrain()
         self.tools = tools or build_default_registry()
@@ -35,6 +38,8 @@ class Agent:
         self.reflector = reflector
         self.hooks = CompositeHook(hooks)
         self.permission_level = permission_level
+        self.auto_compact = auto_compact
+        self.compactor = compactor
         self.context_builder = ContextBuilder(self.memory, self.tools)
 
     def _allowed(self, action_name: str) -> tuple[bool, str]:
@@ -130,6 +135,8 @@ class Agent:
                         tags=[task],
                     )
                 )
+                if self.auto_compact and self.compactor is not None:
+                    self.compactor.compact(self.memory, tag=task)
 
         reflections: list[str] = []
         if reflect and self.memory is not None and self.reflector is not None:

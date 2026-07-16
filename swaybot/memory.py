@@ -417,6 +417,83 @@ class Dream:
         return "\n".join(lines)
 
 
+class AutoCompact:
+    """Compress excess short-term steps into a summary memory.
+
+    When the number of short-term steps for a tag exceeds ``max_steps``,
+    the oldest excess steps are summarized by a brain/model callable and
+    replaced with a single long-term memory.
+    """
+
+    def __init__(
+        self,
+        brain: Callable[[list[dict]], str] | None = None,
+        max_steps: int = 6,
+    ) -> None:
+        self.brain = brain
+        self.max_steps = max_steps
+
+    def compact(self, store: MemoryStore, tag: str | None = None) -> bool:
+        """Compact short-term steps if they exceed the threshold.
+
+        Returns ``True`` if compaction happened.
+        """
+        candidates = [
+            m
+            for m in store.memories
+            if m.scope == "short_term" and (tag is None or tag in m.tags)
+        ]
+        if len(candidates) <= self.max_steps:
+            return False
+
+        to_compact = candidates[: -self.max_steps]
+        if not to_compact:
+            return False
+
+        if self.brain:
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarize the following agent steps concisely. "
+                        "Preserve key decisions, surprises, and final outcomes."
+                    ),
+                }
+            ]
+            for step in to_compact:
+                messages.extend(step.to_messages())
+            summary = self.brain(messages)
+        else:
+            summary = self._fallback_summary(to_compact)
+
+        for step in to_compact:
+            store.memories.remove(step)
+        if summary:
+            store.add(
+                Memory(
+                    content=summary,
+                    scope="long_term",
+                    tags=[tag, "compact"] if tag else ["compact"],
+                )
+            )
+        else:
+            store.save()
+        return True
+
+    def _fallback_summary(self, steps: list[MemoryStep]) -> str:
+        snippets = []
+        for step in steps:
+            text = getattr(step, "content", "") or str(
+                getattr(step, "action", getattr(step, "observation", ""))
+            )
+            if text:
+                snippets.append(text)
+        joined = "; ".join(snippets)
+        if len(joined) > 200:
+            joined = joined[:197] + "..."
+        return f"Compacted: {joined}"
+
+
 def _load_step(item: dict) -> MemoryStep:
     data = dict(item)
     step_kind = data.pop("step_kind", None)
