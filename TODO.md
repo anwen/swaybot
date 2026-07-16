@@ -94,11 +94,12 @@
 - **验收**：调用 `final_answer` 后 Agent 提前结束并保留答案；`done` 保持兼容；78 个测试全部通过。
 - **状态**：已完成（2026-07-16）。
 
-### [ ] 工具输入校验
+### [x] 工具输入校验
 - **问题**：`ToolRegistry.execute()` 直接执行，不检查参数类型、必填项，LLM 传错参数时可能报错或行为异常。
-- **方案**：在 `Tool` / `ToolRegistry` 中加入 `validate_arguments()`，根据 JSON schema 检查类型和 required；失败时返回结构化错误让 LLM 重试。
-- **文件**：`swaybot/tools.py`, `swaybot/agent.py`, `tests/test_tools.py`
-- **验收**：参数错误时返回可理解的错误信息，而不是抛异常退出。
+- **方案**：在 `Tool` 中加入 `validate_arguments()`，根据 JSON schema 检查 required 和类型；`ToolRegistry.execute()` 先校验再执行；`Agent.run()` 用 try/except 捕获工具执行错误，把错误信息作为 observation 让 LLM 在下一步纠正。
+- **文件**：`swaybot/tools.py`, `swaybot/agent.py`, `tests/test_tools.py`, `tests/test_agent.py`
+- **验收**：缺失必填参数或类型错误时返回可理解的错误信息，Agent 不崩溃；81 个测试全部通过。
+- **状态**：已完成（2026-07-16）。
 
 ### [ ] 更详细的 ActionStep 与基础监控
 - **问题**：`ActionStep` 只记录动作本身，没有原始模型输入、token 用量、耗时，难以复盘和优化。
@@ -136,4 +137,4 @@
 
 ## 当前聚焦
 
-P3 的流式响应可先放一放。P4 的 Final answer 机制已完成。下一步做 **工具输入校验**，让错误参数可被优雅处理而不是抛异常退出。
+P3 的流式响应可先放一放。P4 的 Final answer 和工具输入校验已完成。下一步做 **更详细的 ActionStep 与基础监控**，记录每次 LLM 调用的原始输入、输出、token 用量和耗时，便于复盘和优化。

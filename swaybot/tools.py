@@ -27,6 +27,23 @@ def _type_to_json_schema(tp: type) -> dict:
     return {"type": "string"}
 
 
+def _check_type(value: object, schema_type: str) -> bool:
+    """Check whether a value matches a JSON schema type."""
+    if schema_type == "string":
+        return isinstance(value, str)
+    if schema_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if schema_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if schema_type == "boolean":
+        return isinstance(value, bool)
+    if schema_type == "array":
+        return isinstance(value, list)
+    if schema_type == "object":
+        return isinstance(value, dict)
+    return True
+
+
 @dataclass
 class Tool:
     """A tool with inferred name, description, and JSON schema."""
@@ -39,6 +56,31 @@ class Tool:
 
     def __call__(self, **kwargs):
         return self.fn(**kwargs)
+
+    def validate_arguments(self, args: dict) -> None:
+        """Validate args against the tool's JSON schema.
+
+        Raises ValueError with a descriptive message on mismatch.
+        """
+        properties = self.inputs.get("properties", {})
+        required = self.inputs.get("required", [])
+
+        for param_name in required:
+            if param_name not in args:
+                raise ValueError(
+                    f"Tool '{self.name}' is missing required argument '{param_name}'."
+                )
+
+        for param_name, value in args.items():
+            if param_name not in properties:
+                continue
+            schema = properties[param_name]
+            schema_type = schema.get("type")
+            if schema_type and not _check_type(value, schema_type):
+                raise ValueError(
+                    f"Tool '{self.name}' argument '{param_name}' must be {schema_type}, "
+                    f"got {type(value).__name__}."
+                )
 
 
 def tool(fn: Callable | None = None, *, name: str | None = None) -> Tool:
@@ -133,6 +175,7 @@ class ToolRegistry:
         t = self._tools.get(name)
         if t is None:
             raise ValueError(f"Unknown tool: {name}")
+        t.validate_arguments(args)
         sig = inspect.signature(t.fn)
         valid_args = {k: v for k, v in args.items() if k in sig.parameters}
         return t.fn(**valid_args)

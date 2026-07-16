@@ -1,3 +1,5 @@
+import pytest
+
 from swaybot.tools import Tool, ToolRegistry, build_default_registry, tool
 
 
@@ -64,3 +66,15 @@ def test_tool_registry_execute():
     assert (
         registry.execute({"name": "final_answer", "args": {"answer": "42"}}) == "42"
     )
+
+
+def test_tool_registry_execute_rejects_missing_required_argument():
+    registry = build_default_registry()
+    with pytest.raises(ValueError, match="missing required argument 'a'"):
+        registry.execute({"name": "add", "args": {"b": 2}})
+
+
+def test_tool_registry_execute_rejects_wrong_type():
+    registry = build_default_registry()
+    with pytest.raises(ValueError, match="must be number"):
+        registry.execute({"name": "add", "args": {"a": "one", "b": 2}})
