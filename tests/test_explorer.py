@@ -56,3 +56,68 @@ def test_parse_exploration_response_strips_fences():
 
 def test_parse_exploration_response_returns_empty_on_invalid_json():
     assert parse_exploration_response("not json") == {}
+
+
+def test_explorer_prefers_question_from_memory():
+    store = MemoryStore()
+    store.add(
+        ReflectionStep(
+            content="Why does echo return an empty string for None?",
+            kind="question",
+            scope="long_term",
+            tags=["explore"],
+            credibility=0.6,
+        )
+    )
+    agent = Agent(brain=EchoBrain(), memory=store)
+    explorer = Explorer(agent)
+    task = explorer.generate_task()
+    assert "empty string for None" in task.task
+
+
+def test_explorer_prefers_contradiction_from_memory():
+    store = MemoryStore()
+    store.add(
+        ReflectionStep(
+            content="Possible contradiction to: the sky is always blue",
+            kind="contradiction",
+            scope="long_term",
+            tags=["explore"],
+            credibility=0.5,
+        )
+    )
+    agent = Agent(brain=EchoBrain(), memory=store)
+    explorer = Explorer(agent)
+    task = explorer.generate_task()
+    assert "contradiction" in task.task.lower()
+
+
+def test_explorer_passes_candidate_hypotheses_to_brain():
+    class CapturingBrain:
+        def __init__(self):
+            self.perception = None
+
+        def think(self, perception, available_tools, metadata=None):
+            self.perception = perception
+            return {
+                "name": "explore",
+                "args": {"task": "investigate", "hypothesis": "probe"},
+            }
+
+    store = MemoryStore()
+    store.add(
+        ReflectionStep(
+            content="Why does add fail with strings?",
+            kind="question",
+            scope="long_term",
+            tags=["explore"],
+        )
+    )
+    brain = CapturingBrain()
+    agent = Agent(brain=brain, memory=store)
+    explorer = Explorer(agent)
+    explorer.generate_task()
+    assert brain.perception is not None
+    assert "Why does add fail with strings?" in brain.perception.get(
+        "candidate_hypotheses", []
+    )

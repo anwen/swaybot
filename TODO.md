@@ -135,14 +135,13 @@
 - **文件**：`swaybot/memory.py`
 - **验收**：语义相关但用词不同的记忆能被召回。
 
-### [ ] 从记忆矛盾/问题生成探索假设
+### [x] 从记忆矛盾/问题生成探索假设
 - **问题**：`Explorer` 目前靠 LLM 或固定题库生成假设，没有利用已有反思中的矛盾和未解问题。
-- **方案**：在 `Reflector` 中把 `question` / `contradiction` 类 reflection 作为候选假设来源；`Explorer` 优先选择这些高价值问题去验证。
-- **文件**：`swaybot/explorer.py`, `swaybot/reflection.py`
-- **验收**：Agent 会主动验证自己之前提出的疑问或矛盾。
-
----
+- **方案**：`reflection_to_memory()` 保留 `question` / `contradiction` 等 kind；`Explorer._candidate_hypotheses_from_memory()` 从长期记忆中检索这些条目；生成探索任务时优先把它们作为候选假设传给 LLM 探索提示，EchoBrain 则直接选择第一个候选；无候选时才回退到默认题库或 LLM 自由生成。
+- **文件**：`swaybot/explorer.py`, `swaybot/reflection.py`, `swaybot/prompts/explore.j2`, `tests/test_explorer.py`, `tests/test_reflection.py`
+- **验收**：长期记忆中存在 question/contradiction 时，`--explore` 会生成对应的验证任务；LLM 探索提示包含候选假设列表；91 个测试全部通过。
+- **状态**：已完成（2026-07-16）。
 
 ## 当前聚焦
 
-P3 的流式响应可先放一放。P4 的 Final answer、工具输入校验、ActionStep 监控和 `inspect` 复盘已完成。下一步优先做 **从记忆矛盾/问题生成探索假设**，让 `Explorer` 主动验证之前反射出的疑问；多模型 backend 抽象放到有明确第二个后端需求时再做。
+P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监控、inspect 复盘和矛盾驱动探索已完成。下一步做 **多模型 backend 抽象**，把 `LLMBrain` 拆成通用 `Model` 基类与 `OpenAIModel` 实现，让 Agent 能接入本地模型或其他 API。
