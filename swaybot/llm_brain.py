@@ -3,6 +3,7 @@ import os
 import time
 from typing import cast
 
+from .models import FallbackModel, Model
 from .prompts import render_prompt
 
 try:
@@ -36,8 +37,8 @@ def _parse_exploration_response(raw: str) -> dict:
     }
 
 
-class LLMBrain:
-    """Brain backed by an OpenAI-compatible chat completion API."""
+class OpenAIModel:
+    """OpenAI-compatible text generation backend."""
 
     def __init__(
         self,
@@ -51,7 +52,7 @@ class LLMBrain:
     ):
         if OpenAI is None:
             raise ImportError(
-                "LLMBrain requires the 'openai' package. "
+                "OpenAI model requires the 'openai' package. "
                 "Install it with: pip install 'swaybot[llm]'"
             )
 
@@ -65,25 +66,95 @@ class LLMBrain:
 
         if not self.api_key:
             raise ValueError(
-                "LLMBrain requires an API key. "
+                "OpenAI model requires an API key. "
                 "Set SWAYBOT_API_KEY or pass api_key."
             )
         if not self.base_url:
             raise ValueError(
-                "LLMBrain requires a base URL. "
+                "OpenAI model requires a base URL. "
                 "Set SWAYBOT_API_BASE or pass base_url."
             )
         if not self.model:
             raise ValueError(
-                "LLMBrain requires a model name. "
+                "OpenAI model requires a model name. "
                 "Set SWAYBOT_MODEL or pass model."
             )
 
-        assert self.api_key is not None
-        assert self.base_url is not None
-        assert self.model is not None
+        self._client = OpenAI(
+            api_key=cast(str, self.api_key),
+            base_url=cast(str, self.base_url),
+        )
 
-        self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+    def generate(
+        self,
+        messages: list[dict],
+        metadata: dict | None = None,
+    ) -> str | None:
+        last_error = ""
+        for attempt in range(self.max_retries + 1):
+            start = time.perf_counter()
+            try:
+                response = self._client.chat.completions.create(
+                    model=cast(str, self.model),
+                    messages=messages,  # type: ignore
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+                content = response.choices[0].message.content or ""
+                if metadata is not None:
+                    metadata["model_input_messages"] = list(messages)
+                    metadata["raw_output"] = content
+                    metadata["duration_ms"] = (time.perf_counter() - start) * 1000
+                    usage = response.usage
+                    if usage:
+                        metadata["token_usage"] = {
+                            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                            "completion_tokens": getattr(
+                                usage, "completion_tokens", None
+                            ),
+                            "total_tokens": getattr(usage, "total_tokens", None),
+                        }
+                return content
+            except Exception as exc:
+                last_error = str(exc)
+                if metadata is not None:
+                    metadata["error"] = last_error
+                if attempt < self.max_retries:
+                    time.sleep(self.backoff * (2 ** attempt))
+        return None
+
+
+class LLMBrain:
+    """Brain backed by a Model text-generation backend."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        max_retries: int = 3,
+        backoff: float = 1.0,
+        backend: Model | None = None,
+        fallback_models: list[Model] | None = None,
+    ):
+        if backend is None:
+            backend = OpenAIModel(
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                max_retries=max_retries,
+                backoff=backoff,
+            )
+        if fallback_models:
+            backend = FallbackModel([backend] + fallback_models)
+        self._model = backend
+        self.api_key = getattr(backend, "api_key", None)
+        self.base_url = getattr(backend, "base_url", None)
+        self.model = getattr(backend, "model", None)
 
     def think(
         self,
@@ -121,7 +192,7 @@ class LLMBrain:
                 {"role": "user", "content": render_prompt("user", **perception)}
             )
 
-        raw = self._chat(messages, metadata=call_info)
+        raw = self._model.generate(messages, metadata=call_info)
         _merge_metadata(metadata, call_info)
         if raw is None:
             return _fallback(perception, "LLM call failed after retries")
@@ -155,7 +226,7 @@ class LLMBrain:
             },
         ]
 
-        raw = self._chat(messages, metadata=metadata)
+        raw = self._model.generate(messages, metadata=metadata)
         if raw is None:
             return {"name": "plan", "args": {"steps": []}}
         return _parse_plan(raw)
@@ -187,48 +258,10 @@ class LLMBrain:
             },
         ]
 
-        raw = self._chat(messages, metadata=metadata)
+        raw = self._model.generate(messages, metadata=metadata)
         if raw is None:
             return {"name": "explore", "args": {"task": "explore", "hypothesis": ""}}
         return {"name": "explore", "args": _parse_exploration_response(raw)}
-
-    def _chat(
-        self,
-        messages: list[dict],
-        metadata: dict | None = None,
-    ) -> str | None:
-        last_error = ""
-        for attempt in range(self.max_retries + 1):
-            start = time.perf_counter()
-            try:
-                response = self._client.chat.completions.create(
-                    model=cast(str, self.model),
-                    messages=messages,  # type: ignore
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                content = response.choices[0].message.content or ""
-                if metadata is not None:
-                    metadata["model_input_messages"] = list(messages)
-                    metadata["raw_output"] = content
-                    metadata["duration_ms"] = (time.perf_counter() - start) * 1000
-                    usage = response.usage
-                    if usage:
-                        metadata["token_usage"] = {
-                            "prompt_tokens": getattr(usage, "prompt_tokens", None),
-                            "completion_tokens": getattr(
-                                usage, "completion_tokens", None
-                            ),
-                            "total_tokens": getattr(usage, "total_tokens", None),
-                        }
-                return content
-            except Exception as exc:
-                last_error = str(exc)
-                if metadata is not None:
-                    metadata["error"] = last_error
-                if attempt < self.max_retries:
-                    time.sleep(self.backoff * (2 ** attempt))
-        return None
 
 
 def _merge_metadata(target: dict | None, source: dict) -> None:
