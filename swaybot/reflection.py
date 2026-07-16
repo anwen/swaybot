@@ -59,6 +59,9 @@ class Reflector:
                     tags=[task],
                 )
             )
+            reflections.extend(
+                self._update_beliefs(hypothesis, verdict, tag=task)
+            )
 
         surprising = self.memory.query(tag=task, min_surprise=0.5, limit=5)
         if surprising:
@@ -107,6 +110,46 @@ class Reflector:
             if "error" in result or "exception" in result:
                 return "refuted"
         return "supported"
+
+    def _update_beliefs(
+        self, claim: str, verdict: str, tag: str | None = None
+    ) -> list[Reflection]:
+        """Adjust credibility of related long-term memories after verification."""
+        if verdict not in {"supported", "refuted"} or self.memory is None:
+            return []
+
+        delta = 0.1 if verdict == "supported" else -0.2
+        related = self.memory.query_relevant(claim, scope="long_term", limit=10)
+        updated: list[str] = []
+        for mem in related:
+            # Skip other reflections; only adjust factual/empirical memories.
+            if getattr(mem, "step_kind", None) == "reflection":
+                continue
+            if not hasattr(mem, "credibility"):
+                continue
+            old = float(mem.credibility)
+            new = max(0.0, min(1.0, old + delta))
+            if new != old:
+                mem.credibility = new
+                content = getattr(mem, "content", str(mem))
+                if content:
+                    updated.append(content)
+
+        if updated:
+            self.memory.save()
+            return [
+                Reflection(
+                    content=(
+                        f"Belief update for '{claim}': verdict {verdict}. "
+                        f"Updated {len(updated)} related memory/memories."
+                    ),
+                    kind="belief_update",
+                    confidence=0.7,
+                    evidence=updated,
+                    tags=[tag] if tag else [],
+                )
+            ]
+        return []
 
     def verify_claim(self, claim: str, tag: str | None = None) -> Reflection:
         """Check a claim against stored memories and return a verdict."""

@@ -115,6 +115,13 @@
 - **验收**：`--reflect` 清理短期记忆后仍能 inspect；输出包含 raw output、token、耗时和错误；87 个测试全部通过。
 - **状态**：已完成（2026-07-16）。
 
+### [x] 验证后的信念更新闭环
+- **问题**：`Explorer` 验证了之前的疑问/矛盾后，只生成 `verification` reflection，不会更新原有记忆的置信度，Agent 可能反复验证同一问题。
+- **方案**：`Reflector._update_beliefs()` 在 hypothesis 被支持/反驳后，根据 `query_relevant()` 找到相关事实/经验记忆，提升或降低其 `credibility`；同时生成 `belief_update` reflection 进入长期记忆；`Explorer` 挑选候选假设时会跳过已有 `verification` 标签的已验证问题。
+- **文件**：`swaybot/reflection.py`, `swaybot/explorer.py`, `tests/test_reflection.py`, `tests/test_explorer.py`
+- **验收**：支持的假设让相关记忆置信度上升，反驳的下降；已验证问题不再被 `Explorer` 重复选中；95 个测试全部通过。
+- **状态**：已完成（2026-07-16）。
+
 ### [ ] 多模型 backend 抽象
 - **问题**：`LLMBrain` 直接依赖 `openai` 包，换本地模型或其他 API 时需要重写。
 - **方案**：提取 `Model` 基类，把 `LLMBrain` 改名为 `OpenAIModel` 或拆出 `OpenAIModel`；后续可添加 `TransformersModel` / `MockModel` 等。
@@ -144,4 +151,4 @@
 
 ## 当前聚焦
 
-P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监控、inspect 复盘和矛盾驱动探索已完成。下一步做 **多模型 backend 抽象**，把 `LLMBrain` 拆成通用 `Model` 基类与 `OpenAIModel` 实现，让 Agent 能接入本地模型或其他 API。
+P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监控、inspect、矛盾驱动探索和信念更新闭环已完成。下一步做 **多模型 backend 抽象**，把 `LLMBrain` 拆成通用 `Model` 基类与 `OpenAIModel` 实现，让 Agent 能接入本地模型或其他 API。

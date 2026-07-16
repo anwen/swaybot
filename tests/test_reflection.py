@@ -21,6 +21,69 @@ def test_reflection_to_memory_preserves_question_and_contradiction():
     assert reflection_to_memory(contradiction).kind == "contradiction"
 
 
+def test_reflector_raises_credibility_for_supported_hypothesis():
+    store = MemoryStore()
+    store.add(
+        Memory(
+            content="echo preserves punctuation",
+            kind="fact",
+            credibility=0.6,
+            tags=["echo"],
+        )
+    )
+    reflector = Reflector(store)
+    history = [
+        {"action": {"name": "echo", "args": {"message": "hi!"}}, "result": "hi!"}
+    ]
+    reflections = reflector.reflect_on_run(
+        "echo test", history, hypothesis="echo preserves punctuation"
+    )
+    assert any(r.kind == "belief_update" for r in reflections)
+    fact = store.query(kind="fact")[0]
+    assert fact.credibility > 0.6
+
+
+def test_reflector_lowers_credibility_for_refuted_hypothesis():
+    store = MemoryStore()
+    store.add(
+        Memory(
+            content="add always succeeds",
+            kind="fact",
+            credibility=0.8,
+            tags=["add"],
+        )
+    )
+    reflector = Reflector(store)
+    history = [
+        {
+            "action": {"name": "add", "args": {"a": 1, "b": "x"}},
+            "result": "Error: invalid input",
+        }
+    ]
+    reflections = reflector.reflect_on_run(
+        "add test", history, hypothesis="add always succeeds"
+    )
+    assert any(r.kind == "belief_update" for r in reflections)
+    fact = store.query(kind="fact")[0]
+    assert fact.credibility < 0.8
+
+
+def test_agent_stores_belief_update_after_hypothesis_verification():
+    store = MemoryStore()
+    store.add(
+        Memory(
+            content="add handles positive numbers",
+            kind="fact",
+            credibility=0.6,
+            tags=["math"],
+        )
+    )
+    reflector = Reflector(store)
+    agent = Agent(memory=store, reflector=reflector)
+    agent.run("math", max_steps=1, hypothesis="add handles positive numbers")
+    assert store.query(kind="belief_update")
+
+
 def test_reflect_on_run_summary():
     store = MemoryStore()
     reflector = Reflector(store)

@@ -121,3 +121,29 @@ def test_explorer_passes_candidate_hypotheses_to_brain():
     assert "Why does add fail with strings?" in brain.perception.get(
         "candidate_hypotheses", []
     )
+
+
+def test_explorer_skips_already_verified_question():
+    store = MemoryStore()
+    question = "Why does echo fail on empty input?"
+    store.add(
+        ReflectionStep(
+            content=question,
+            kind="question",
+            scope="long_term",
+            tags=["explore"],
+        )
+    )
+    store.add(
+        ReflectionStep(
+            content="Hypothesis verdict: supported",
+            kind="verification",
+            scope="long_term",
+            tags=[question],
+        )
+    )
+    agent = Agent(brain=EchoBrain(), memory=store)
+    explorer = Explorer(agent)
+    task = explorer.generate_task()
+    assert task.task != question
+    assert "Test whether" in task.task
