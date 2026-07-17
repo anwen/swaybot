@@ -3,6 +3,7 @@
 import subprocess
 from pathlib import Path
 
+from ..output_limits import truncate_text
 from ..security import CommandGuard, PathGuard, SecurityError
 from . import tool
 
@@ -59,4 +60,5 @@ _shell = Shell()
 @tool(read_only=True, risk_level="high")
 def run_shell_command(command: str, cwd: str = ".") -> str:
     """Run an allowed shell command inside the workspace."""
-    return _shell.run(command, cwd)
+    output = _shell.run(command, cwd)
+    return truncate_text(output, _shell.path_guard.root)

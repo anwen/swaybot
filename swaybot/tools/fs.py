@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..code_quality import run_quality_hooks
+from ..output_limits import truncate_lines, truncate_text
 from ..security import PathGuard, SecurityError
 from . import tool
 
@@ -39,9 +41,7 @@ def read_file(path: str, max_length: int = 10000) -> str:
         content = target.read_text(encoding="utf-8", errors="replace")
     except Exception as exc:
         return f"Error: {exc}"
-    if len(content) > max_length:
-        content = content[:max_length] + "\n... [truncated]"
-    return content
+    return truncate_text(content, _fs.root, max_chars=max_length, max_lines=200)
 
 
 @tool(read_only=False, risk_level="medium")
@@ -51,9 +51,13 @@ def write_file(path: str, content: str) -> str:
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        return f"Wrote {len(content)} characters to {path}"
     except Exception as exc:
         return f"Error: {exc}"
+    result = f"Wrote {len(content)} characters to {path}"
+    quality = run_quality_hooks(target)
+    if quality:
+        result += f"\n\n{quality}"
+    return result
 
 
 @tool(read_only=True)
@@ -118,7 +122,11 @@ def edit_file(
         target.write_text(new_content, encoding="utf-8")
     except Exception as exc:
         return f"Error: {exc}"
-    return f"Edited {path}: replaced {occurrences} occurrence(s)"
+    result = f"Edited {path}: replaced {occurrences} occurrence(s)"
+    quality = run_quality_hooks(target)
+    if quality:
+        result += f"\n\n{quality}"
+    return result
 
 
 @tool(read_only=True)
@@ -127,10 +135,14 @@ def grep(pattern: str, path: str = ".", max_results: int = 50) -> list[str]:
 
     Uses ripgrep (``rg --json``) when available, otherwise falls back to a
     stdlib recursive search. Results are formatted as ``file:line: text``.
+    Large result sets are truncated and the full set is saved to an overflow
+    file under ``.swaybot/overflows``.
     """
     target = _fs.resolve(path)
     if not target.exists():
         return [f"Error: {path} does not exist"]
+
+    collect_limit = max(max_results * 10, 500)
 
     if shutil.which("rg"):
         try:
@@ -139,7 +151,7 @@ def grep(pattern: str, path: str = ".", max_results: int = 50) -> list[str]:
                 "--json",
                 "-n",
                 "--max-count",
-                str(max_results),
+                str(collect_limit),
                 "--",
                 pattern,
             ]
@@ -170,9 +182,9 @@ def grep(pattern: str, path: str = ".", max_results: int = 50) -> list[str]:
                 line_no = data.get("line_number", 0)
                 text = data.get("lines", {}).get("text", "")
                 results.append(f"{file_text}:{line_no}: {text.rstrip(chr(10))}")
-                if len(results) >= max_results:
+                if len(results) >= collect_limit:
                     break
-            return results
+            return truncate_lines(results, _fs.root, max_results)
         except Exception:
             pass
 
@@ -188,6 +200,8 @@ def grep(pattern: str, path: str = ".", max_results: int = 50) -> list[str]:
         for i, line in enumerate(text.splitlines(), start=1):
             if regex.search(line):
                 results.append(f"{rel}:{i}: {line}")
-                if len(results) >= max_results:
-                    return results
-    return results
+                if len(results) >= collect_limit:
+                    break
+        if len(results) >= collect_limit:
+            break
+    return truncate_lines(results, _fs.root, max_results)
