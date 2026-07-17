@@ -1,5 +1,6 @@
 """Build the perception context fed to the brain each turn."""
 
+from .instructions import load_project_instructions
 from .memory import MemoryStore
 from .tools import ToolRegistry
 
@@ -35,6 +36,7 @@ class ContextBuilder:
             perception["messages"] = self._build_messages(task)
         perception["tool_descriptions"] = self.tools.schemas()
         perception["available_tools"] = self.tools.names()
+        perception["project_instructions"] = load_project_instructions()
         return perception
 
     def _memory_context(self, task: str) -> str:

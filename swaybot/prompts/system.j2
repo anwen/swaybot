@@ -6,6 +6,11 @@ Lessons learned from past runs:
 {{ behavior_guidance }}
 
 {% endif %}
+{% if project_instructions %}
+Project instructions:
+{{ project_instructions }}
+
+{% endif %}
 {% if tool_descriptions %}
 Available tools (JSON schema):
 {% for tool in tool_descriptions %}
