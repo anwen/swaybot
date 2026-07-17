@@ -2,6 +2,7 @@ from .brain import Brain, EchoBrain
 from .context import ContextBuilder
 from .environment import Environment
 from .hook import AgentHook, CompositeHook
+from .request_context import RequestContext, current_context, set_context
 from .memory import (
     ActionStep,
     AutoCompact,
@@ -61,6 +62,19 @@ class Agent:
         reflect: bool = True,
         plan: bool = False,
         hypothesis: str | None = None,
+        request_context: RequestContext | None = None,
+    ) -> Environment:
+        ctx = request_context or current_context()
+        with set_context(ctx):
+            return self._run(task, max_steps, reflect, plan, hypothesis)
+
+    def _run(
+        self,
+        task: str,
+        max_steps: int = 10,
+        reflect: bool = True,
+        plan: bool = False,
+        hypothesis: str | None = None,
     ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
         run_steps: list[dict] = []
@@ -98,7 +112,7 @@ class Agent:
             allowed, permission_msg = self._allowed(action.get("name", ""))
             if allowed:
                 try:
-                    result = self.tools.execute(action)
+                    result = self.tools.execute(action, current_context())
                 except Exception as exc:
                     error = str(exc)
                     result = f"Error: {exc}"

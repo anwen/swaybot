@@ -2,18 +2,21 @@
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Callable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .async_agent import AsyncAgent
 from .bus import InboundMessage, MessageBus, OutboundMessage
+from .request_context import RequestContext, current_context, set_context
 from .coordinator import GoalCoordinator
+from .logging import JSONFormatter, get_event_logger
 from .scheduler import Scheduler
 from .session import SessionManager
 
@@ -93,6 +96,46 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan)
 
+    # Configure structured event logging to stderr by default.
+    event_logger = get_event_logger()
+    if not event_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(JSONFormatter())
+        event_logger.addHandler(handler)
+        event_logger.setLevel(logging.INFO)
+
+    @app.middleware("http")
+    async def request_context_middleware(
+        request: Request, call_next: Callable[[Request], Any]
+    ):
+        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        api_key = request.headers.get("X-API-Key", "")
+        if api_key == "admin":
+            principal = "admin"
+            permission_level = "high"
+        else:
+            principal = "anonymous"
+            permission_level = "medium"
+        ctx = RequestContext(
+            request_id=request_id,
+            principal=principal,
+            permission_level=permission_level,
+        )
+        with set_context(ctx):
+            response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    def _session_context(session_id: str) -> RequestContext:
+        base = current_context()
+        return RequestContext(
+            session_id=session_id,
+            request_id=base.request_id,
+            principal=base.principal,
+            permission_level=base.permission_level,
+            metadata=base.metadata.copy(),
+        )
+
     @app.get("/health")
     async def health():
         return {"status": "ok"}
@@ -101,14 +144,15 @@ def create_app(
     async def chat_completions(body: ChatCompletionRequest):
         session_id = f"chatcmpl-{uuid.uuid4().hex}"
         content = body.messages[-1].content if body.messages else ""
-        if body.stream:
-            return StreamingResponse(
-                _stream_chat(bus, async_agent, session_id, content, body.model),
-                media_type="text/event-stream",
+        with set_context(_session_context(session_id)):
+            if body.stream:
+                return StreamingResponse(
+                    _stream_chat(bus, async_agent, session_id, content, body.model),
+                    media_type="text/event-stream",
+                )
+            answer = await _run_one_turn(
+                bus, async_agent, session_id, content, timeout=30.0
             )
-        answer = await _run_one_turn(
-            bus, async_agent, session_id, content, timeout=30.0
-        )
         created = int(time.time())
         return {
             "id": session_id,
@@ -131,18 +175,21 @@ def create_app(
 
     @app.post("/v1/sessions/{session_id}/messages")
     async def post_message(session_id: str, body: PostMessageRequest):
-        await async_agent.post(
-            InboundMessage(
-                role=body.role, content=body.content, session_id=session_id
+        with set_context(_session_context(session_id)):
+            await async_agent.post(
+                InboundMessage(
+                    role=body.role, content=body.content, session_id=session_id
+                )
             )
-        )
         return {"status": "accepted", "session_id": session_id}
 
     @app.get("/v1/sessions/{session_id}/history")
     async def get_history(session_id: str, limit: int | None = None):
+        with set_context(_session_context(session_id)):
+            messages = manager.load(session_id, limit=limit)
         return {
             "session_id": session_id,
-            "messages": manager.load(session_id, limit=limit),
+            "messages": messages,
         }
 
     @app.get("/", response_class=HTMLResponse)
@@ -151,7 +198,8 @@ def create_app(
 
     @app.post("/v1/goals")
     async def create_goal(body: CreateGoalRequest):
-        goal = await coordinator.arun(body.description, body.context)
+        with set_context(_session_context(f"goal-{uuid.uuid4().hex[:8]}")):
+            goal = await coordinator.arun(body.description, body.context)
         return GoalResponse(
             id=goal.id,
             description=goal.description,

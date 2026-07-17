@@ -5,6 +5,7 @@ from typing import Callable
 
 from .agent import Agent
 from .bus import InboundMessage, MessageBus, OutboundMessage
+from .request_context import RequestContext, current_context, set_context
 from .session import SessionManager
 
 
@@ -48,6 +49,7 @@ class AsyncAgent:
 
     async def run_session(self, session_id: str) -> None:
         """Consume inbound messages for ``session_id`` until the bus closes."""
+        request_ctx = current_context()
         agent = self.agent_factory(session_id)
         self.bus.create_session(session_id)
         while self._running:
@@ -73,14 +75,23 @@ class AsyncAgent:
                     continue
 
                 loop = asyncio.get_running_loop()
-                env = await loop.run_in_executor(
-                    None,
-                    lambda: agent.run(
-                        task_text,
-                        max_steps=self.max_steps,
-                        reflect=False,
-                    ),
+                ctx = RequestContext(
+                    session_id=session_id,
+                    request_id=request_ctx.request_id,
+                    principal=request_ctx.principal,
+                    permission_level=request_ctx.permission_level,
+                    metadata=request_ctx.metadata.copy(),
                 )
+                with set_context(ctx):
+                    env = await loop.run_in_executor(
+                        None,
+                        lambda: agent.run(
+                            task_text,
+                            max_steps=self.max_steps,
+                            reflect=False,
+                            request_context=ctx,
+                        ),
+                    )
                 for record in env.history:
                     outbound = OutboundMessage(
                         role="assistant",

@@ -1,7 +1,10 @@
 import inspect
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Callable, Union, get_origin, get_args
+from typing import Callable, Union, get_args, get_origin
+
+from ..logging import log_event
+from ..request_context import RequestContext, current_context
 
 
 def _type_to_json_schema(tp: type) -> dict:
@@ -218,9 +221,14 @@ class ToolRegistry:
             for name, t in self._tools.items()
         ]
 
-    def execute(self, action: dict) -> object:
+    def execute(
+        self,
+        action: dict,
+        request_context: RequestContext | None = None,
+    ) -> object:
         name = action.get("name")
         args = action.get("args", {})
+        ctx = request_context or current_context()
         t = self._tools.get(name)
         if t is None:
             raise ValueError(f"Unknown tool: {name}")
@@ -229,9 +237,20 @@ class ToolRegistry:
         if any(
             p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
         ):
-            return t.fn(**args)
-        valid_args = {k: v for k, v in args.items() if k in sig.parameters}
-        return t.fn(**valid_args)
+            result = t.fn(**args)
+        else:
+            valid_args = {k: v for k, v in args.items() if k in sig.parameters}
+            result = t.fn(**valid_args)
+        log_event(
+            "tool_call",
+            tool=name,
+            args=args,
+            result=str(result),
+            principal=ctx.principal,
+            session_id=ctx.session_id,
+            request_id=ctx.request_id,
+        )
+        return result
 
     def execute_batch(self, actions: list[dict]) -> list[object]:
         """Execute a list of actions respecting concurrency metadata.
