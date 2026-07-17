@@ -5,6 +5,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, ClassVar
 
+from .storage import (
+    JSONLBackend,
+    StorageBackend,
+    default_memory_backend,
+    InMemoryBackend,
+)
+
 _STEP_REGISTRY: dict[str, type["MemoryStep"]] = {}
 
 
@@ -148,17 +155,37 @@ class ReflectionStep(MemoryStep):
 class MemoryStore:
     """Simple store for memory steps with optional JSON persistence."""
 
-    def __init__(self, path: Path | str | None = None) -> None:
-        self.path = Path(path) if path else None
+    def __init__(
+        self,
+        path: Path | str | None = None,
+        backend: StorageBackend | None = None,
+        key: str | None = None,
+    ) -> None:
+        if backend is not None:
+            self.backend = backend
+            self._key = key or "memory"
+        elif path is not None:
+            p = Path(path)
+            self.backend = default_memory_backend(p)
+            self._key = p.stem
+        else:
+            # Default to in-memory storage for backward compatibility and
+            # to keep tests isolated.
+            self.backend = InMemoryBackend()
+            self._key = "memory"
+        self.path = (
+            getattr(self.backend, "_path", lambda _k: None)(self._key)
+            if hasattr(self.backend, "_path")
+            else None
+        )
         self.memories: list[MemoryStep] = []
-        if self.path and self.path.exists():
+        if self.backend.exists(self._key):
             self.load()
 
     def add(self, memory: MemoryStep) -> None:
-        """Append a step and persist if a path is configured."""
+        """Append a step and persist if a backend is configured."""
         self.memories.append(memory)
-        if self.path:
-            self.save()
+        self.save()
 
     def query(
         self,
@@ -259,19 +286,16 @@ class MemoryStore:
         return [m.to_dict() for m in self.memories]
 
     def load(self) -> None:
-        if not self.path:
+        data = self.backend.load(self._key)
+        if data is None:
             return
-        data = json.loads(self.path.read_text(encoding="utf-8"))
-        self.memories = [_load_step(item) for item in data]
+        if isinstance(data, list):
+            self.memories = [_load_step(item) for item in data]
+        else:
+            self.memories = [_load_step(data)]
 
     def save(self) -> None:
-        if not self.path:
-            return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(self.to_dicts(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        self.backend.save(self._key, self.to_dicts())
 
     def prune(
         self,
@@ -296,8 +320,7 @@ class MemoryStore:
             indices = indices[:-keep_last]
         for i in reversed(indices):
             del self.memories[i]
-        if self.path:
-            self.save()
+        self.save()
         return len(indices)
 
 
@@ -315,6 +338,8 @@ class Consolidator:
     ) -> None:
         self.history_path = Path(history_path)
         self.brain = brain
+        self._backend = JSONLBackend(self.history_path.parent)
+        self._key = self.history_path.stem
 
     def archive(
         self,
@@ -339,10 +364,8 @@ class Consolidator:
         if not archived:
             return []
 
-        self.history_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.history_path.open("a", encoding="utf-8") as f:
-            for step in archived:
-                f.write(json.dumps(step.to_dict(), ensure_ascii=False) + "\n")
+        for step in archived:
+            self._backend.append(self._key, step.to_dict())
 
         for step in archived:
             store.memories.remove(step)

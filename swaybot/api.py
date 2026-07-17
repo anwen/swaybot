@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from .async_agent import AsyncAgent
 from .bus import InboundMessage, MessageBus, OutboundMessage
+from .scheduler import Scheduler
 from .session import SessionManager
 
 
@@ -37,9 +38,11 @@ def create_app(
     session_manager: SessionManager | None = None,
     agent_factory=None,
     max_steps: int = 10,
+    scheduler: Scheduler | None = None,
 ) -> FastAPI:
     bus = bus or MessageBus()
     manager = session_manager or SessionManager()
+    scheduler = scheduler or Scheduler()
 
     if agent_factory is None:
         from .agent import Agent
@@ -58,9 +61,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        await scheduler.start()
         await async_agent.start()
         yield
         await async_agent.stop()
+        await scheduler.stop()
 
     app = FastAPI(lifespan=lifespan)
 
