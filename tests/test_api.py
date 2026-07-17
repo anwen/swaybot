@@ -1,11 +1,15 @@
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from swaybot.agent import Agent
 from swaybot.api import create_app
+from swaybot.brain import EchoBrain
 from swaybot.bus import MessageBus
+from swaybot.coordinator import GoalCoordinator
 from swaybot.session import SessionManager
+from swaybot.storage import InMemoryBackend
 
 
 def test_health():
@@ -110,3 +114,67 @@ def test_chat_completions_streaming(tmp_path):
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers.get("content-type", "")
         assert b"data:" in resp.content
+
+
+def test_create_goal_endpoint():
+    backend = InMemoryBackend()
+    coordinator = GoalCoordinator(
+        agent_factory=lambda: Agent(brain=EchoBrain()),
+        backend=backend,
+        max_subtask_steps=2,
+    )
+    app = create_app(goal_coordinator=coordinator)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/v1/goals",
+            json={"description": "test goal", "context": "ctx"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["state"] == "done"
+        assert data["description"] == "test goal"
+        assert len(data["subtasks"]) >= 1
+
+
+def test_get_and_retry_goal_endpoint():
+    backend = InMemoryBackend()
+    coordinator = GoalCoordinator(
+        agent_factory=lambda: Agent(brain=EchoBrain()),
+        backend=backend,
+        max_subtask_steps=2,
+    )
+    app = create_app(goal_coordinator=coordinator)
+    with TestClient(app) as client:
+        created = client.post(
+            "/v1/goals",
+            json={"description": "retry goal"},
+        ).json()
+        goal_id = created["id"]
+
+        resp = client.get(f"/v1/goals/{goal_id}")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == goal_id
+
+        retry_resp = client.post(f"/v1/goals/{goal_id}/retry")
+        assert retry_resp.status_code == 200
+        assert retry_resp.json()["state"] == "done"
+
+
+def test_cancel_goal_endpoint():
+    backend = InMemoryBackend()
+    coordinator = GoalCoordinator(
+        agent_factory=lambda: Agent(brain=EchoBrain()),
+        backend=backend,
+        max_subtask_steps=2,
+    )
+    app = create_app(goal_coordinator=coordinator)
+    with TestClient(app) as client:
+        created = client.post(
+            "/v1/goals",
+            json={"description": "cancel goal"},
+        ).json()
+        goal_id = created["id"]
+
+        resp = client.delete(f"/v1/goals/{goal_id}")
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "cancelled"

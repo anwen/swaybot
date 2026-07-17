@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from .async_agent import AsyncAgent
 from .bus import InboundMessage, MessageBus, OutboundMessage
+from .coordinator import GoalCoordinator
 from .scheduler import Scheduler
 from .session import SessionManager
 
@@ -33,24 +34,47 @@ class PostMessageRequest(BaseModel):
     content: str
 
 
+class CreateGoalRequest(BaseModel):
+    description: str
+    context: str = ""
+
+
+class GoalResponse(BaseModel):
+    id: str
+    description: str
+    context: str
+    state: str
+    subtasks: list[dict[str, Any]]
+    created_at: str
+    updated_at: str
+
+
 def create_app(
     bus: MessageBus | None = None,
     session_manager: SessionManager | None = None,
     agent_factory=None,
     max_steps: int = 10,
     scheduler: Scheduler | None = None,
+    goal_coordinator: GoalCoordinator | None = None,
 ) -> FastAPI:
     bus = bus or MessageBus()
     manager = session_manager or SessionManager()
-    scheduler = scheduler or Scheduler()
+    if scheduler is None:
+        scheduler = Scheduler()
+    assert scheduler is not None
 
     if agent_factory is None:
         from .agent import Agent
 
-        def _default_agent_factory(session_id: str) -> Agent:
+        def _default_agent_factory(session_id: str = "") -> Agent:
             return Agent()
 
         agent_factory = _default_agent_factory
+
+    coordinator = goal_coordinator or GoalCoordinator(
+        agent_factory=agent_factory,
+        max_subtask_steps=max_steps,
+    )
 
     async_agent = AsyncAgent(
         bus=bus,
@@ -124,6 +148,76 @@ def create_app(
     @app.get("/", response_class=HTMLResponse)
     async def webui():
         return HTMLResponse(content=_WEBUI_HTML)
+
+    @app.post("/v1/goals")
+    async def create_goal(body: CreateGoalRequest):
+        goal = await coordinator.arun(body.description, body.context)
+        return GoalResponse(
+            id=goal.id,
+            description=goal.description,
+            context=goal.context,
+            state=goal.state,
+            subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in goal.subtasks],
+            created_at=goal.created_at,
+            updated_at=goal.updated_at,
+        )
+
+    @app.get("/v1/goals")
+    async def list_goals():
+        return [
+            GoalResponse(
+                id=g.id,
+                description=g.description,
+                context=g.context,
+                state=g.state,
+                subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in g.subtasks],
+                created_at=g.created_at,
+                updated_at=g.updated_at,
+            )
+            for g in coordinator.state_machine.list_goals()
+        ]
+
+    @app.get("/v1/goals/{goal_id}")
+    async def get_goal(goal_id: str):
+        try:
+            goal = coordinator.state_machine.load(goal_id)
+        except KeyError:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return GoalResponse(
+            id=goal.id,
+            description=goal.description,
+            context=goal.context,
+            state=goal.state,
+            subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in goal.subtasks],
+            created_at=goal.created_at,
+            updated_at=goal.updated_at,
+        )
+
+    @app.post("/v1/goals/{goal_id}/retry")
+    async def retry_goal(goal_id: str):
+        goal = await coordinator.retry(goal_id)
+        return GoalResponse(
+            id=goal.id,
+            description=goal.description,
+            context=goal.context,
+            state=goal.state,
+            subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in goal.subtasks],
+            created_at=goal.created_at,
+            updated_at=goal.updated_at,
+        )
+
+    @app.delete("/v1/goals/{goal_id}")
+    async def cancel_goal(goal_id: str):
+        goal = await coordinator.cancel(goal_id)
+        return GoalResponse(
+            id=goal.id,
+            description=goal.description,
+            context=goal.context,
+            state=goal.state,
+            subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in goal.subtasks],
+            created_at=goal.created_at,
+            updated_at=goal.updated_at,
+        )
 
     return app
 

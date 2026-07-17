@@ -11,6 +11,11 @@ from .storage import InMemoryBackend, StorageBackend
 
 
 @dataclass
+class OneShotSchedule:
+    """Run a job exactly once as soon as the scheduler is able."""
+
+
+@dataclass
 class IntervalSchedule:
     """Run a job every ``seconds``."""
 
@@ -24,7 +29,7 @@ class CronSchedule:
     expression: str
 
 
-Schedule = IntervalSchedule | CronSchedule
+Schedule = OneShotSchedule | IntervalSchedule | CronSchedule
 
 
 @dataclass
@@ -207,12 +212,16 @@ class Scheduler:
         finally:
             job.running_count -= 1
             job.last_run = datetime.now(timezone.utc).isoformat()
+            if isinstance(job.schedule, OneShotSchedule):
+                job.enabled = False
             self._persist_state()
             self._wake_event.set()
 
     def _compute_next_run(self, job: Job) -> None:
         now = datetime.now(timezone.utc)
-        if isinstance(job.schedule, IntervalSchedule):
+        if isinstance(job.schedule, OneShotSchedule):
+            job.next_run = now.isoformat()
+        elif isinstance(job.schedule, IntervalSchedule):
             last = self._parse_time(job.last_run)
             base = max(last, now) if last is not None else now
             job.next_run = (
