@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .storage import JSONLBackend, StorageBackend
+
 TOKEN_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
 
 
@@ -13,33 +15,29 @@ def run_log_path_for_memory(memory_path: Path | str | None) -> Path | None:
     return Path(memory_path).with_name("runs.jsonl")
 
 
+def _backend_for_path(path: Path | str | None) -> tuple[StorageBackend, str] | None:
+    if not path:
+        return None
+    run_path = Path(path)
+    return JSONLBackend(run_path.parent), run_path.stem
+
+
 def append_run(path: Path | str, record: dict) -> None:
     """Append one JSON-lines run record."""
-    run_path = Path(path)
-    run_path.parent.mkdir(parents=True, exist_ok=True)
-    with run_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    backend_info = _backend_for_path(path)
+    if backend_info is None:
+        return
+    backend, key = backend_info
+    backend.append(key, record)
 
 
 def load_runs(path: Path | str | None) -> list[dict]:
     """Load JSON-lines run records, skipping malformed lines."""
-    if not path:
+    backend_info = _backend_for_path(path)
+    if backend_info is None:
         return []
-    run_path = Path(path)
-    if not run_path.exists():
-        return []
-    runs: list[dict] = []
-    for line in run_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(record, dict):
-            runs.append(record)
-    return runs
+    backend, key = backend_info
+    return backend.load_stream(key)
 
 
 def build_run_record(
