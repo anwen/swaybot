@@ -241,4 +241,46 @@
 
 ## 当前聚焦
 
-P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监控、inspect、矛盾驱动探索和信念更新闭环已完成。下一步做 **多模型 backend 抽象**，把 `LLMBrain` 拆成通用 `Model` 基类与 `OpenAIModel` 实现，让 Agent 能接入本地模型或其他 API。
+P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监控、inspect、矛盾驱动探索和信念更新闭环已完成。
+
+## 下一批：nanobot 深度对比后的 10 项
+
+### [x] #65 异步消息总线 + 每会话锁
+- **文件**：`swaybot/bus.py`、`swaybot/async_agent.py`、`tests/test_bus.py`
+- **状态**：已完成（2026-07-17）。9 个测试通过。
+
+### [x] #66 持久化 SessionManager（JSONL 历史）
+- **文件**：`swaybot/session.py`、相关测试
+- **状态**：已完成（2026-07-17）。按 session 写入 `{id}.jsonl`，路径做安全转义。
+
+### [x] #67 OpenAI-compatible API / WebUI / Python SDK
+- **文件**：`swaybot/api.py`、`swaybot/sdk.py`
+- **状态**：已完成（2026-07-17）。FastAPI 提供 `/v1/chat/completions`、SSE 流式与 SDK 同步调用。
+
+### [x] #68 Provider 抽象 + 原生 tool calls
+- **文件**：`swaybot/models.py` 扩展
+- **状态**：已完成（2026-07-17）。`Model` Protocol、`FallbackModel`、原生 OpenAI tool-call 解析。
+
+### [x] #69 Streaming 与 reasoning hooks
+- **文件**：`swaybot/hook.py`、`swaybot/llm_brain.py`
+- **状态**：已完成（2026-07-17）。`AgentHook` 支持 `on_token` / `on_reasoning`。
+
+### [x] #70 工具插件加载器
+- **文件**：`swaybot/plugin_loader.py`
+- **状态**：已完成（2026-07-17）。可发现目录/模块中 `@tool` 装饰的函数。
+
+### [x] #71 沙盒文件系统与 shell 工具
+- **文件**：`swaybot/tools/fs.py`、`swaybot/tools/shell.py`
+- **状态**：已完成（2026-07-17）。路径限制在 workspace，shell 命令经白名单/元字符过滤。
+
+### [x] #72 Markdown skill 系统
+- **文件**：`swaybot/skills.py`、`skills/*.md`
+- **状态**：已完成（2026-07-17）。frontmatter 解析、标签查询、上下文渲染。
+
+### [x] #73 持续目标 / 长任务协调器
+- **文件**：`swaybot/coordinator.py`
+- **状态**：已完成（2026-07-17）。`GoalCoordinator` 拆解目标、串行执行子任务并持久化状态。
+
+### [x] #74 安全加固（workspace 范围、路径穿越防护、重复违规升级）
+- **文件**：`swaybot/security.py`、各工具集成
+- **状态**：已完成（2026-07-17）。新增 `PathGuard`、`CommandGuard`、`SecurityManager`；文件/Shell 工具复用统一安全层；新增 `tests/test_security.py`。全部 203 个测试通过。

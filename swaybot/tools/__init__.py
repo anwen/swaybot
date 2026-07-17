@@ -307,6 +307,8 @@ def format_action(action: dict) -> str:
 
 
 from .web import web_fetch, web_search
+from .fs import read_file, write_file, list_directory, search_files
+from .shell import run_shell_command
 
 
 def build_default_registry() -> ToolRegistry:
@@ -317,4 +319,9 @@ def build_default_registry() -> ToolRegistry:
     registry.register("final_answer", final_answer)
     registry.register("web_fetch", web_fetch, read_only=True, risk_level="medium")
     registry.register("web_search", web_search, read_only=True, risk_level="medium")
+    registry.register("read_file", read_file, read_only=True, risk_level="low")
+    registry.register("write_file", write_file, read_only=False, risk_level="medium")
+    registry.register("list_directory", list_directory, read_only=True, risk_level="low")
+    registry.register("search_files", search_files, read_only=True, risk_level="low")
+    registry.register("run_shell_command", run_shell_command, read_only=True, risk_level="high")
     return registry

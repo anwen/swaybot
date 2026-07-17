@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -330,6 +331,90 @@ def test_llm_brain_populates_metadata(mock_openai):
     assert metadata["token_usage"]["completion_tokens"] == 5
     assert metadata["token_usage"]["total_tokens"] == 15
     assert metadata["duration_ms"] >= 0
+
+
+def _mock_tool_call_response(name: str, arguments: dict):
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    message = response.choices[0].message
+    message.content = ""
+    tool_call = MagicMock()
+    tool_call.id = "call_1"
+    tool_call.function.name = name
+    tool_call.function.arguments = json.dumps(arguments)
+    message.tool_calls = [tool_call]
+    return response
+
+
+@patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_passes_native_tools_when_supported(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_response(
+        '{"name": "done", "args": {}}'
+    )
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    schemas = [
+        {
+            "name": "add",
+            "description": "Add two numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                "required": ["a", "b"],
+            },
+        }
+    ]
+    brain.think(
+        {
+            "task": "test",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "tool_descriptions": schemas,
+        },
+        ["add", "done"],
+    )
+    call_kwargs = client.chat.completions.create.call_args.kwargs
+    assert "tools" in call_kwargs
+    assert call_kwargs["tools"][0]["type"] == "function"
+    assert call_kwargs["tools"][0]["function"]["name"] == "add"
+
+
+@patch("swaybot.llm_brain.OpenAI")
+def test_llm_brain_parses_native_tool_call(mock_openai):
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_tool_call_response(
+        "add", {"a": 2, "b": 3}
+    )
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    action = brain.think(
+        {
+            "task": "compute",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "tool_descriptions": [
+                {
+                    "name": "add",
+                    "description": "Add two numbers.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "a": {"type": "number"},
+                            "b": {"type": "number"},
+                        },
+                        "required": ["a", "b"],
+                    },
+                }
+            ],
+        },
+        ["add", "done"],
+    )
+    assert action == {"name": "add", "args": {"a": 2, "b": 3}}
 
 
 @patch("swaybot.llm_brain.OpenAI")

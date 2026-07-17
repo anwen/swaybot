@@ -65,6 +65,11 @@ def test_tool_registry_descriptions():
         "final_answer(answer)",
         "web_fetch(url, max_length=4000)",
         "web_search(query, max_results=3)",
+        "read_file(path, max_length=10000)",
+        "write_file(path, content)",
+        "list_directory(path='.')",
+        "search_files(query, path='.')",
+        "run_shell_command(command, cwd='.')",
     }
 
 
