@@ -269,6 +269,7 @@ class LLMBrain:
                     tool_descriptions=perception.get("tool_descriptions"),
                     available_tools=available_tools,
                     behavior_guidance=perception.get("behavior_guidance"),
+                    project_instructions=perception.get("project_instructions"),
                 ),
             }
         ]
@@ -307,6 +308,7 @@ class LLMBrain:
                     tool_descriptions=perception.get("tool_descriptions"),
                     available_tools=available_tools,
                     behavior_guidance=perception.get("behavior_guidance"),
+                    project_instructions=perception.get("project_instructions"),
                 ),
             },
             {
@@ -340,6 +342,7 @@ class LLMBrain:
                     tool_descriptions=perception.get("tool_descriptions"),
                     available_tools=available_tools,
                     behavior_guidance=perception.get("behavior_guidance"),
+                    project_instructions=perception.get("project_instructions"),
                 ),
             },
             {
