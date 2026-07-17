@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from .logging import log_event
+from .request_context import RequestContext, current_context
 from .storage import JSONBackend, StorageBackend
 
 
@@ -151,26 +153,51 @@ class SecurityManager:
         # accidental file pollution.
         self.store = store or InMemoryViolationStore()
 
-    def check_path(self, session_id: str, path: str) -> Path:
+    def check_path(
+        self,
+        session_id: str,
+        path: str,
+        request_context: RequestContext | None = None,
+    ) -> Path:
         """Validate a path, recording any violation for ``session_id``."""
+        ctx = request_context or current_context()
         try:
             return self.path_guard.resolve(path)
         except SecurityError as exc:
-            self.record_violation(session_id)
+            self.record_violation(session_id, ctx)
             raise
 
-    def check_command(self, session_id: str, command: str) -> list[str]:
+    def check_command(
+        self,
+        session_id: str,
+        command: str,
+        request_context: RequestContext | None = None,
+    ) -> list[str]:
         """Validate a command, recording any violation for ``session_id``."""
+        ctx = request_context or current_context()
         try:
             return self.command_guard.validate(command)
         except SecurityError as exc:
-            self.record_violation(session_id)
+            self.record_violation(session_id, ctx)
             raise
 
-    def record_violation(self, session_id: str) -> None:
+    def record_violation(
+        self,
+        session_id: str,
+        request_context: RequestContext | None = None,
+    ) -> None:
         """Increment the violation count for ``session_id``."""
+        ctx = request_context or current_context()
         self.store.set(
             session_id, self.store.get(session_id) + 1
+        )
+        log_event(
+            "security_violation",
+            session_id=session_id,
+            principal=ctx.principal,
+            request_id=ctx.request_id,
+            violations=self.store.get(session_id),
+            threshold=self.threshold,
         )
 
     def is_escalated(self, session_id: str) -> bool:

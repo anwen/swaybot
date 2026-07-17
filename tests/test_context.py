@@ -1,6 +1,7 @@
 from swaybot.agent import Agent
 from swaybot.context import ContextBuilder
 from swaybot.memory import Memory, MemoryStore
+from swaybot.request_context import RequestContext, current_context, set_context
 from swaybot.tools import build_default_registry
 
 
@@ -40,3 +41,28 @@ def test_context_builder_includes_memory_context_and_messages():
 def test_agent_uses_context_builder():
     agent = Agent()
     assert isinstance(agent.context_builder, ContextBuilder)
+
+
+def test_current_context_returns_default():
+    ctx = current_context()
+    assert ctx.principal == "anonymous"
+    assert ctx.permission_level == "medium"
+
+
+def test_set_context_sets_active_context():
+    ctx = RequestContext(principal="alice", request_id="req-1")
+    with set_context(ctx):
+        assert current_context().principal == "alice"
+        assert current_context().request_id == "req-1"
+    assert current_context().principal == "anonymous"
+
+
+def test_nested_set_context():
+    outer = RequestContext(principal="outer")
+    inner = RequestContext(principal="inner")
+    with set_context(outer):
+        assert current_context().principal == "outer"
+        with set_context(inner):
+            assert current_context().principal == "inner"
+        assert current_context().principal == "outer"
+    assert current_context().principal == "anonymous"
