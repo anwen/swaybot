@@ -1,7 +1,11 @@
 """Sandboxed filesystem tools scoped to a workspace root."""
 
 import fnmatch
+import json
 import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from ..security import PathGuard, SecurityError
@@ -80,3 +84,110 @@ def search_files(query: str, path: str = ".") -> list[str]:
             if fnmatch.fnmatch(name.lower(), query.lower()):
                 matches.append(str(rel_root / name))
     return sorted(matches)
+
+
+@tool(read_only=False, risk_level="medium")
+def edit_file(
+    path: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
+) -> str:
+    """Replace ``old_string`` with ``new_string`` in ``path``.
+
+    If ``old_string`` is not found, the file has changed since it was read
+    (stale content). If it appears more than once and ``replace_all`` is
+    False, the edit is rejected to avoid ambiguous replacements.
+    """
+    target = _fs.resolve(path)
+    try:
+        current = target.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return f"Error: {exc}"
+    occurrences = current.count(old_string)
+    if occurrences == 0:
+        return f"StaleContentError: old_string not found in {path}"
+    if not replace_all and occurrences > 1:
+        return (
+            f"Error: old_string appears {occurrences} times in {path}; "
+            "set replace_all=true to replace all occurrences"
+        )
+    new_content = current.replace(old_string, new_string) if replace_all else current.replace(old_string, new_string, 1)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(new_content, encoding="utf-8")
+    except Exception as exc:
+        return f"Error: {exc}"
+    return f"Edited {path}: replaced {occurrences} occurrence(s)"
+
+
+@tool(read_only=True)
+def grep(pattern: str, path: str = ".", max_results: int = 50) -> list[str]:
+    """Search file contents for ``pattern`` (regex) under ``path``.
+
+    Uses ripgrep (``rg --json``) when available, otherwise falls back to a
+    stdlib recursive search. Results are formatted as ``file:line: text``.
+    """
+    target = _fs.resolve(path)
+    if not target.exists():
+        return [f"Error: {path} does not exist"]
+
+    if shutil.which("rg"):
+        try:
+            cmd = [
+                "rg",
+                "--json",
+                "-n",
+                "--max-count",
+                str(max_results),
+                "--",
+                pattern,
+            ]
+            if target.is_dir():
+                cmd.append(".")
+            else:
+                cmd.append(str(target.relative_to(_fs.root)))
+            proc = subprocess.run(
+                cmd,
+                cwd=str(_fs.root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                shell=False,
+            )
+            results: list[str] = []
+            for line in proc.stdout.splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") != "match":
+                    continue
+                data = obj.get("data", {})
+                file_text = data.get("path", {}).get("text", "")
+                line_no = data.get("line_number", 0)
+                text = data.get("lines", {}).get("text", "")
+                results.append(f"{file_text}:{line_no}: {text.rstrip(chr(10))}")
+                if len(results) >= max_results:
+                    break
+            return results
+        except Exception:
+            pass
+
+    regex = re.compile(pattern)
+    results = []
+    files = [target] if target.is_file() else [p for p in target.rglob("*") if p.is_file()]
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        rel = f.relative_to(_fs.root)
+        for i, line in enumerate(text.splitlines(), start=1):
+            if regex.search(line):
+                results.append(f"{rel}:{i}: {line}")
+                if len(results) >= max_results:
+                    return results
+    return results
