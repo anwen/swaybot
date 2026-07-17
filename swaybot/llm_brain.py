@@ -40,6 +40,8 @@ def _parse_exploration_response(raw: str) -> dict:
 class OpenAIModel:
     """OpenAI-compatible text generation backend."""
 
+    supports_tools = True
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -89,18 +91,45 @@ class OpenAIModel:
         self,
         messages: list[dict],
         metadata: dict | None = None,
+        tools: list[dict] | None = None,
+        stream_callback=None,
+        reasoning_callback=None,
     ) -> str | None:
         last_error = ""
+        openai_tools = self._build_openai_tools(tools)
         for attempt in range(self.max_retries + 1):
             start = time.perf_counter()
             try:
-                response = self._client.chat.completions.create(
-                    model=cast(str, self.model),
-                    messages=messages,  # type: ignore
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                content = response.choices[0].message.content or ""
+                kwargs = {
+                    "model": cast(str, self.model),
+                    "messages": messages,  # type: ignore
+                    "temperature": self.temperature,
+                    "max_tokens": self.max_tokens,
+                }
+                if openai_tools:
+                    kwargs["tools"] = openai_tools
+                    kwargs["tool_choice"] = "auto"
+                if stream_callback:
+                    kwargs["stream"] = True
+                    return self._stream_generate(
+                        messages,
+                        kwargs,
+                        metadata,
+                        start,
+                        stream_callback,
+                        reasoning_callback,
+                    )
+                response = self._client.chat.completions.create(**kwargs)
+                message = response.choices[0].message
+                content = message.content or ""
+                reasoning = getattr(message, "reasoning_content", None)
+                if reasoning and reasoning_callback:
+                    reasoning_callback(reasoning)
+                tool_calls = getattr(message, "tool_calls", None)
+                if isinstance(tool_calls, list) and tool_calls:
+                    action = self._tool_call_to_action(tool_calls[0])
+                    if action is not None:
+                        content = json.dumps(action)
                 if metadata is not None:
                     metadata["model_input_messages"] = list(messages)
                     metadata["raw_output"] = content
@@ -122,6 +151,62 @@ class OpenAIModel:
                 if attempt < self.max_retries:
                     time.sleep(self.backoff * (2 ** attempt))
         return None
+
+    def _stream_generate(
+        self,
+        messages: list[dict],
+        kwargs: dict,
+        metadata: dict | None,
+        start: float,
+        stream_callback,
+        reasoning_callback,
+    ) -> str:
+        content_parts: list[str] = []
+        for chunk in self._client.chat.completions.create(**kwargs):
+            delta = chunk.choices[0].delta
+            text = getattr(delta, "content", None) or ""
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning and reasoning_callback:
+                reasoning_callback(reasoning)
+            if text:
+                content_parts.append(text)
+                stream_callback(text)
+        full_content = "".join(content_parts)
+        if metadata is not None:
+            metadata["model_input_messages"] = list(messages)
+            metadata["raw_output"] = full_content
+            metadata["duration_ms"] = (time.perf_counter() - start) * 1000
+        return full_content
+
+    @staticmethod
+    def _build_openai_tools(tools: list[dict] | None) -> list[dict]:
+        if not tools:
+            return []
+        openai_tools = []
+        for tool in tools:
+            parameters = tool.get("parameters", tool.get("inputs", {}))
+            openai_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool.get("description", ""),
+                        "parameters": parameters,
+                    },
+                }
+            )
+        return openai_tools
+
+    @staticmethod
+    def _tool_call_to_action(tool_call) -> dict | None:
+        try:
+            arguments = json.loads(tool_call.function.arguments or "{}")
+        except json.JSONDecodeError:
+            arguments = {}
+        return {
+            "name": tool_call.function.name,
+            "args": arguments,
+        }
 
 
 class LLMBrain:
@@ -161,6 +246,8 @@ class LLMBrain:
         perception: dict,
         available_tools: list[str],
         metadata: dict | None = None,
+        stream_callback=None,
+        reasoning_callback=None,
     ) -> dict:
         call_info: dict = {}
         if perception.get("planning"):
@@ -192,7 +279,15 @@ class LLMBrain:
                 {"role": "user", "content": render_prompt("user", **perception)}
             )
 
-        raw = self._model.generate(messages, metadata=call_info)
+        raw = self._model.generate(
+            messages,
+            metadata=call_info,
+            tools=perception.get("tool_descriptions")
+            if getattr(self._model, "supports_tools", False)
+            else None,
+            stream_callback=stream_callback,
+            reasoning_callback=reasoning_callback,
+        )
         _merge_metadata(metadata, call_info)
         if raw is None:
             return _fallback(perception, "LLM call failed after retries")

@@ -27,6 +27,14 @@ class AgentHook(Protocol):
     ) -> None:
         ...
 
+    def on_token(self, token: str) -> None:
+        """Receive a streaming output token from the model."""
+        ...
+
+    def on_reasoning(self, reasoning: str) -> None:
+        """Receive reasoning content emitted by the model."""
+        ...
+
 
 class CompositeHook:
     """Run multiple hooks as one."""
@@ -56,3 +64,13 @@ class CompositeHook:
     ) -> None:
         for hook in self.hooks:
             hook.after_run(task, env, reflections)
+
+    def on_token(self, token: str) -> None:
+        for hook in self.hooks:
+            if hasattr(hook, "on_token"):
+                hook.on_token(token)
+
+    def on_reasoning(self, reasoning: str) -> None:
+        for hook in self.hooks:
+            if hasattr(hook, "on_reasoning"):
+                hook.on_reasoning(reasoning)

@@ -11,6 +11,7 @@ class FakeModel:
         self,
         _messages: list[dict],
         metadata: dict | None = None,
+        tools: list[dict] | None = None,
     ) -> str | None:
         self.calls += 1
         if self.fail:

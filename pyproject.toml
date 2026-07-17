@@ -11,7 +11,8 @@ authors = [
 
 [project.optional-dependencies]
 llm = ["openai", "jinja2"]
-dev = ["pytest"]
+api = ["fastapi", "uvicorn", "requests"]
+dev = ["pytest", "pytest-asyncio", "httpx"]
 
 [project.scripts]
 swaybot = "swaybot.cli:main"

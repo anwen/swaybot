@@ -76,13 +76,24 @@ class Agent:
             )
             self.hooks.before_iteration(task, env.step, perception)
             call_info: dict = {}
+            stream_callback = lambda token: self.hooks.on_token(token)
+            reasoning_callback = lambda reason: self.hooks.on_reasoning(reason)
             try:
                 action = self.brain.think(
-                    perception, self.tools.names(), metadata=call_info
+                    perception,
+                    self.tools.names(),
+                    metadata=call_info,
+                    stream_callback=stream_callback,
+                    reasoning_callback=reasoning_callback,
                 )
             except TypeError:
-                action = self.brain.think(perception, self.tools.names())
-                call_info = {}
+                try:
+                    action = self.brain.think(
+                        perception, self.tools.names(), metadata=call_info
+                    )
+                except TypeError:
+                    action = self.brain.think(perception, self.tools.names())
+                    call_info = {}
             error = None
             allowed, permission_msg = self._allowed(action.get("name", ""))
             if allowed:
