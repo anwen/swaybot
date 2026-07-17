@@ -67,8 +67,10 @@ def test_tool_registry_descriptions():
         "web_search(query, max_results=3)",
         "read_file(path, max_length=10000)",
         "write_file(path, content)",
+        "edit_file(path, old_string, new_string, replace_all=False)",
         "list_directory(path='.')",
         "search_files(query, path='.')",
+        "grep(pattern, path='.', max_results=50)",
         "run_shell_command(command, cwd='.')",
     }
 

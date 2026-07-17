@@ -58,8 +58,10 @@ def test_tool_registry_schemas():
         "web_search",
         "read_file",
         "write_file",
+        "edit_file",
         "list_directory",
         "search_files",
+        "grep",
         "run_shell_command",
     }
     echo_schema = next(s for s in schemas if s["name"] == "echo")
