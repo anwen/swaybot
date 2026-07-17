@@ -34,6 +34,11 @@ class AgentHook(Protocol):
     def on_reasoning(self, reasoning: str) -> None:
         """Receive reasoning content emitted by the model."""
         ...
+    def on_metric(
+        self, name: str, value: float, labels: dict[str, Any] | None = None
+    ) -> None:
+        """Receive a metric observation."""
+        ...
 
 
 class CompositeHook:
@@ -74,3 +79,10 @@ class CompositeHook:
         for hook in self.hooks:
             if hasattr(hook, "on_reasoning"):
                 hook.on_reasoning(reasoning)
+
+    def on_metric(
+        self, name: str, value: float, labels: dict[str, Any] | None = None
+    ) -> None:
+        for hook in self.hooks:
+            if hasattr(hook, "on_metric"):
+                hook.on_metric(name, value, labels)

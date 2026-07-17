@@ -134,15 +134,22 @@ def test_cron_schedule_requires_croniter(monkeypatch):
         pass
 
     scheduler = Scheduler()
+    if not has_croniter:
+        with pytest.raises(RuntimeError):
+            scheduler.add_job(
+                lambda: None,
+                CronSchedule(expression="0 * * * *"),
+            )
+        return
+
     job_id = scheduler.add_job(
         lambda: None,
         CronSchedule(expression="0 * * * *"),
     )
     job = scheduler._jobs[job_id]
 
-    if has_croniter:
-        # Block the optional croniter import to exercise the fallback path.
-        monkeypatch.setitem(sys.modules, "croniter", object())
+    # Block the optional croniter import to exercise the fallback path.
+    monkeypatch.setitem(sys.modules, "croniter", object())
 
     with pytest.raises(RuntimeError):
         scheduler._compute_next_run(job)

@@ -125,6 +125,25 @@ class Agent:
             self.hooks.after_iteration(
                 task, env.step, action, result, metadata=call_info
             )
+            if error is None:
+                self.hooks.on_metric("tool.success", 1.0, {"tool": action.get("name", "")})
+            else:
+                self.hooks.on_metric("tool.error", 1.0, {"tool": action.get("name", "")})
+            if call_info.get("duration_ms") is not None:
+                self.hooks.on_metric(
+                    "model.duration_ms",
+                    float(call_info["duration_ms"]),
+                    {"tool": action.get("name", "")},
+                )
+            token_usage = call_info.get("token_usage")
+            if isinstance(token_usage, dict):
+                for key, val in token_usage.items():
+                    if isinstance(val, (int, float)):
+                        self.hooks.on_metric(
+                            f"model.tokens.{key}",
+                            float(val),
+                            {"tool": action.get("name", "")},
+                        )
             step_record = {
                 "step": env.step,
                 "action": action,
@@ -190,6 +209,7 @@ class Agent:
                 )
 
         self.hooks.after_run(task, env, reflections)
+        self.hooks.on_metric("agent.run.steps", float(env.step), {"task": task})
         return env
 
     def _create_plan(self, task: str, max_steps: int) -> None:

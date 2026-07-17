@@ -1,7 +1,7 @@
 import inspect
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Callable, Union, get_args, get_origin
+from typing import Any, Callable, Union, get_args, get_origin
 
 from ..logging import log_event
 from ..request_context import RequestContext, current_context
@@ -159,26 +159,37 @@ def tool(
 
 
 class ToolRegistry:
-    """Simple registry for named tools."""
+    """Registry of tools, with optional pluggable providers and namespaced names."""
 
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
+        self._providers: dict[str, Any] = {}
+
+    def register_provider(self, name: str, provider: Any) -> None:
+        """Add a ``ToolProvider`` under the namespace ``name``."""
+        self._providers[name] = provider
 
     def register(
         self,
         name: str,
         fn: Callable | Tool,
         *,
+        provider: str = "local",
         read_only: bool = False,
         concurrency_safe: bool = True,
         exclusive: bool = False,
         risk_level: str = "low",
     ) -> None:
-        """Register a callable or an existing Tool under the given name."""
+        """Register a callable or an existing Tool under the given name.
+
+        If ``provider`` is not ``"local"`` the tool is stored under
+        ``provider/name``.
+        """
+        key = name if provider == "local" else f"{provider}/{name}"
         if isinstance(fn, Tool):
-            self._tools[name] = fn
+            self._tools[key] = fn
         else:
-            self._tools[name] = tool(
+            self._tools[key] = tool(
                 fn,
                 read_only=read_only,
                 concurrency_safe=concurrency_safe,
@@ -187,14 +198,25 @@ class ToolRegistry:
             )
 
     def names(self) -> list[str]:
-        return list(self._tools.keys())
+        names = list(self._tools.keys())
+        for provider_name, provider in self._providers.items():
+            for t in provider.list_tools():
+                names.append(f"{provider_name}/{t.name}")
+        return names
 
     def get(self, name: str) -> Tool | None:
+        if "/" in name:
+            provider_name, tool_name = name.split("/", 1)
+            provider = self._providers.get(provider_name)
+            if provider is not None:
+                for t in provider.list_tools():
+                    if t.name == tool_name:
+                        return t
         return self._tools.get(name)
 
     def describe(self, name: str) -> str:
         """Return a short signature description for a registered tool."""
-        t = self._tools.get(name)
+        t = self.get(name)
         if t is None:
             return f"{name}: unknown tool"
         props = t.inputs.get("properties", {})
@@ -212,23 +234,41 @@ class ToolRegistry:
 
     def schemas(self) -> list[dict]:
         """Return JSON-schema descriptions for all registered tools."""
-        return [
-            {
-                "name": name,
-                "description": t.description,
-                "parameters": t.inputs,
-            }
-            for name, t in self._tools.items()
-        ]
+        schemas = []
+        for name, t in self._tools.items():
+            schemas.append(
+                {
+                    "name": name,
+                    "description": t.description,
+                    "parameters": t.inputs,
+                }
+            )
+        for provider_name, provider in self._providers.items():
+            for t in provider.list_tools():
+                schemas.append(
+                    {
+                        "name": f"{provider_name}/{t.name}",
+                        "description": t.description,
+                        "parameters": t.inputs,
+                    }
+                )
+        return schemas
 
     def execute(
         self,
         action: dict,
         request_context: RequestContext | None = None,
     ) -> object:
-        name = action.get("name")
+        name = action.get("name") or ""
         args = action.get("args", {})
+        if not name:
+            raise ValueError("action is missing a tool name")
         ctx = request_context or current_context()
+        if "/" in name:
+            provider_name, tool_name = name.split("/", 1)
+            provider = self._providers.get(provider_name)
+            if provider is not None:
+                return provider.execute(tool_name, args, ctx)
         t = self._tools.get(name)
         if t is None:
             raise ValueError(f"Unknown tool: {name}")
@@ -263,8 +303,10 @@ class ToolRegistry:
         i = 0
         while i < len(actions):
             action = actions[i]
-            tool_name = action.get("name")
-            t = self._tools.get(tool_name)
+            tool_name = action.get("name") or ""
+            if not tool_name:
+                raise ValueError("action is missing a tool name")
+            t = self.get(tool_name)
             if t is None:
                 raise ValueError(f"Unknown tool: {tool_name}")
 
