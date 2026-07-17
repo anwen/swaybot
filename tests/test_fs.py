@@ -88,6 +88,28 @@ def test_edit_file_stale_content(fs):
     assert fs.root.joinpath("code.py").read_text(encoding="utf-8") == "current"
 
 
+def test_grep_truncates_large_results_to_overflow(fs):
+    for i in range(10):
+        fs.root.joinpath(f"f{i}.py").write_text("match\n", encoding="utf-8")
+    results = grep(pattern="match", path=".", max_results=3)
+    assert len(results) == 4  # 3 preview + 1 marker
+    assert "truncated" in results[-1]
+    overflow = results[-1].split("saved to ")[-1].rstrip("]")
+    full_path = fs.root / overflow
+    assert full_path.exists()
+
+
+def test_read_file_truncates_large_file_to_overflow(fs):
+    content = "x\n" * 500
+    fs.root.joinpath("big.txt").write_text(content, encoding="utf-8")
+    result = read_file(path="big.txt", max_length=100)
+    assert "truncated" in result
+    overflow = result.split("saved to ")[-1].rstrip("]")
+    full_path = fs.root / overflow
+    assert full_path.exists()
+    assert full_path.read_text(encoding="utf-8") == content
+
+
 def test_grep_finds_content(fs):
     fs.root.joinpath("a.py").write_text("def foo():\n    pass\n", encoding="utf-8")
     fs.root.joinpath("b.py").write_text("def bar():\n    pass\n", encoding="utf-8")
@@ -99,8 +121,17 @@ def test_grep_finds_content(fs):
 def test_grep_respects_max_results(fs):
     for i in range(5):
         fs.root.joinpath(f"f{i}.py").write_text("target\n", encoding="utf-8")
+    results = grep(pattern="target", path=".", max_results=10)
+    assert len(results) == 5
+    assert not any("truncated" in r for r in results)
+
+
+def test_grep_respects_max_results_with_truncation(fs):
+    for i in range(5):
+        fs.root.joinpath(f"f{i}.py").write_text("target\n", encoding="utf-8")
     results = grep(pattern="target", path=".", max_results=3)
-    assert len(results) == 3
+    assert len(results) == 4
+    assert "truncated" in results[-1]
 
 
 def test_grep_fallback_when_rg_missing(fs, monkeypatch):
