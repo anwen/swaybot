@@ -1,3 +1,4 @@
+import contextvars
 import inspect
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -337,7 +338,12 @@ class ToolRegistry:
                 i += 1
 
             with ThreadPoolExecutor() as executor:
-                futures = [executor.submit(self.execute, a) for _, a in group]
+                futures = []
+                for _, action in group:
+                    ctx = contextvars.copy_context()
+                    futures.append(
+                        executor.submit(ctx.run, self.execute, action)
+                    )
             for (idx, _), fut in zip(group, futures):
                 results[idx] = fut.result()
 

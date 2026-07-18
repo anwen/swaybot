@@ -1,5 +1,6 @@
 import pytest
 
+from swaybot.request_context import RequestContext, current_context, set_context
 from swaybot.tools import Tool, ToolRegistry, build_default_registry, tool
 
 
@@ -162,3 +163,22 @@ def test_execute_batch_mixed_grouping():
         {"name": "double", "args": {"x": 2}},
     ]
     assert registry.execute_batch(actions) == [2, "done", 4]
+
+
+def test_execute_batch_propagates_request_context():
+    registry = ToolRegistry()
+    captured: list[str] = []
+
+    @tool(read_only=True, concurrency_safe=True)
+    def capture() -> str:
+        captured.append(current_context().principal)
+        return "ok"
+
+    registry.register("capture", capture)
+    ctx = RequestContext(principal="batch-user", request_id="req-batch")
+    with set_context(ctx):
+        results = registry.execute_batch(
+            [{"name": "capture", "args": {}} for _ in range(3)]
+        )
+    assert results == ["ok", "ok", "ok"]
+    assert captured == ["batch-user", "batch-user", "batch-user"]

@@ -208,8 +208,7 @@ class Scheduler:
             if inspect.iscoroutinefunction(job.fn):
                 await job.fn(*job.args)
             else:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, job.fn, *job.args)
+                await asyncio.to_thread(job.fn, *job.args)
         except Exception:  # pragma: no cover - job errors should not crash scheduler
             pass
         finally:

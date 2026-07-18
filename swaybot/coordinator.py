@@ -286,10 +286,8 @@ class GoalCoordinator:
             return
 
         agent = self.agent_factory()
-        loop = asyncio.get_running_loop()
         try:
-            env = await loop.run_in_executor(
-                None,
+            env = await asyncio.to_thread(
                 agent.run,
                 subtask.description,
                 self.max_subtask_steps,

@@ -74,7 +74,6 @@ class AsyncAgent:
                 if not task_text:
                     continue
 
-                loop = asyncio.get_running_loop()
                 ctx = RequestContext(
                     session_id=session_id,
                     request_id=request_ctx.request_id,
@@ -83,14 +82,12 @@ class AsyncAgent:
                     metadata=request_ctx.metadata.copy(),
                 )
                 with set_context(ctx):
-                    env = await loop.run_in_executor(
-                        None,
-                        lambda: agent.run(
-                            task_text,
-                            max_steps=self.max_steps,
-                            reflect=False,
-                            request_context=ctx,
-                        ),
+                    env = await asyncio.to_thread(
+                        agent.run,
+                        task_text,
+                        max_steps=self.max_steps,
+                        reflect=False,
+                        request_context=ctx,
                     )
                 for record in env.history:
                     outbound = OutboundMessage(
