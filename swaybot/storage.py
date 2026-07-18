@@ -2,6 +2,7 @@
 
 import json
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -65,6 +66,7 @@ class _BaseFileBackend:
     def __init__(self, base_dir: Path | str) -> None:
         self.base_dir = Path(base_dir).expanduser().resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
 
     @classmethod
     def _safe_key(cls, key: str) -> str:
@@ -83,21 +85,25 @@ class _BaseFileBackend:
         return path
 
     def create(self, key: str) -> None:
-        self._path(key).touch(exist_ok=True)
+        with self._lock:
+            self._path(key).touch(exist_ok=True)
 
     def exists(self, key: str) -> bool:
-        return self._path(key).exists()
+        with self._lock:
+            return self._path(key).exists()
 
     def delete(self, key: str) -> None:
-        self._path(key).unlink(missing_ok=True)
+        with self._lock:
+            self._path(key).unlink(missing_ok=True)
 
     def list_keys(self, prefix: str = "") -> list[str]:
-        keys: list[str] = []
-        for path in sorted(self.base_dir.glob(f"*{self.EXTENSION}")):
-            name = path.stem
-            if name.startswith(prefix):
-                keys.append(name)
-        return keys
+        with self._lock:
+            keys: list[str] = []
+            for path in sorted(self.base_dir.glob(f"*{self.EXTENSION}")):
+                name = path.stem
+                if name.startswith(prefix):
+                    keys.append(name)
+            return keys
 
 
 class JSONBackend(_BaseFileBackend):
@@ -106,30 +112,35 @@ class JSONBackend(_BaseFileBackend):
     EXTENSION = ".json"
 
     def load(self, key: str) -> Any:
-        path = self._path(key)
-        if not path.exists():
-            return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        with self._lock:
+            path = self._path(key)
+            if not path.exists():
+                return None
+            return json.loads(path.read_text(encoding="utf-8"))
 
     def save(self, key: str, data: Any) -> None:
-        path = self._path(key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        with self._lock:
+            path = self._path(key)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            tmp.replace(path)
 
     def append(self, key: str, record: dict[str, Any]) -> None:
-        data = self.load(key)
-        if data is None:
-            data = [record]
-        elif isinstance(data, list):
-            data.append(record)
-        else:
-            raise StorageError(
-                f"cannot append to non-list JSON at key {key!r}"
-            )
-        self.save(key, data)
+        with self._lock:
+            data = self.load(key)
+            if data is None:
+                data = [record]
+            elif isinstance(data, list):
+                data.append(record)
+            else:
+                raise StorageError(
+                    f"cannot append to non-list JSON at key {key!r}"
+                )
+            self.save(key, data)
 
     def load_stream(
         self, key: str, limit: int | None = None
@@ -166,39 +177,44 @@ class JSONLBackend(_BaseFileBackend):
         return self.load_stream(key)
 
     def save(self, key: str, data: Any) -> None:
-        records = data if isinstance(data, list) else [data]
-        path = self._path(key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as fh:
-            for record in records:
-                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        with self._lock:
+            records = data if isinstance(data, list) else [data]
+            path = self._path(key)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            with tmp.open("w", encoding="utf-8") as fh:
+                for record in records:
+                    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            tmp.replace(path)
 
     def append(self, key: str, record: dict[str, Any]) -> None:
-        path = self._path(key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        with self._lock:
+            path = self._path(key)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def load_stream(
         self, key: str, limit: int | None = None
     ) -> list[dict[str, Any]]:
-        path = self._path(key)
-        if not path.exists():
-            return []
-        records: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(record, dict):
-                records.append(record)
-        if limit is not None:
-            records = records[-limit:]
-        return records
+        with self._lock:
+            path = self._path(key)
+            if not path.exists():
+                return []
+            records: list[dict[str, Any]] = []
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(record, dict):
+                    records.append(record)
+            if limit is not None:
+                records = records[-limit:]
+            return records
 
     def query(self, key: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         records = self.load_stream(key)
