@@ -10,14 +10,31 @@ from .tools import Tool, ToolRegistry, tool
 
 
 class PluginLoader:
-    """Discover and register tools from external plugins."""
+    """Discover and register tools from external plugins.
 
-    def __init__(self, registry: ToolRegistry | None = None) -> None:
+    Loading plugins from arbitrary directories executes the plugin code in the
+    current process. To prevent accidental code execution, directory loading is
+    only allowed for directories listed in ``trusted_directories``.
+    """
+
+    def __init__(
+        self,
+        registry: ToolRegistry | None = None,
+        trusted_directories: list[Path | str] | None = None,
+    ) -> None:
         self.registry = registry or ToolRegistry()
+        self.trusted_directories = [
+            Path(d).expanduser().resolve()
+            for d in (trusted_directories or [])
+        ]
 
     def load_directory(self, path: Path | str) -> list[str]:
         """Import every ``*.py`` file in ``path`` and register its tools."""
-        directory = Path(path)
+        directory = Path(path).expanduser().resolve()
+        if not any(directory.is_relative_to(trusted) for trusted in self.trusted_directories):
+            raise ValueError(
+                f"refusing to load plugins from untrusted directory: {directory}"
+            )
         loaded: list[str] = []
         if not directory.exists():
             return loaded
@@ -60,9 +77,16 @@ def load_plugins(
     directories: list[Path | str] | None = None,
     modules: list[str] | None = None,
     registry: ToolRegistry | None = None,
+    trusted_directories: list[Path | str] | None = None,
 ) -> ToolRegistry:
-    """Convenience helper to load tools from directories and/or modules."""
-    loader = PluginLoader(registry=registry)
+    """Convenience helper to load tools from directories and/or modules.
+
+    ``directories`` must be covered by ``trusted_directories``; if the latter
+    is omitted, directory loading is refused.
+    """
+    loader = PluginLoader(
+        registry=registry, trusted_directories=trusted_directories
+    )
     for directory in directories or []:
         loader.load_directory(directory)
     for module in modules or []:

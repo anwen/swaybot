@@ -1,3 +1,5 @@
+import pytest
+
 from swaybot.plugin_loader import PluginLoader, load_plugins
 from swaybot.tools import ToolRegistry
 
@@ -11,7 +13,7 @@ def test_load_directory_registers_tool(tmp_path):
         "    '''Greet someone.'''\n"
         "    return f'Hello, {name}'\n"
     )
-    loader = PluginLoader()
+    loader = PluginLoader(trusted_directories=[tmp_path])
     loaded = loader.load_directory(tmp_path)
     assert "greet" in loaded
     assert loader.registry.execute({"name": "greet", "args": {"name": "Ada"}}) == "Hello, Ada"
@@ -25,9 +27,17 @@ def test_load_directory_skips_private_files(tmp_path):
         "def hidden() -> str:\n"
         "    return 'hidden'\n"
     )
-    loader = PluginLoader()
+    loader = PluginLoader(trusted_directories=[tmp_path])
     loaded = loader.load_directory(tmp_path)
     assert "hidden" not in loaded
+
+
+def test_load_directory_rejects_untrusted_directory(tmp_path):
+    other = tmp_path / "other"
+    other.mkdir()
+    loader = PluginLoader()
+    with pytest.raises(ValueError, match="untrusted directory"):
+        loader.load_directory(other)
 
 
 def test_load_module_registers_tool():
@@ -44,7 +54,9 @@ def test_load_plugins_returns_registry(tmp_path):
         "def ping() -> str:\n"
         "    return 'pong'\n"
     )
-    registry = load_plugins(directories=[tmp_path])
+    registry = load_plugins(
+        directories=[tmp_path], trusted_directories=[tmp_path]
+    )
     assert "ping" in registry.names()
 
 
