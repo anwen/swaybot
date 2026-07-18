@@ -8,8 +8,47 @@ from swaybot.api import create_app
 from swaybot.brain import EchoBrain
 from swaybot.bus import MessageBus
 from swaybot.coordinator import GoalCoordinator
+from swaybot.request_context import current_context
 from swaybot.session import SessionManager
 from swaybot.storage import InMemoryBackend
+
+
+def test_admin_api_key_grants_high_permission(monkeypatch):
+    monkeypatch.setenv("SWAYBOT_ADMIN_API_KEY", "secret-key")
+    captured = []
+
+    def factory(session_id):
+        captured.append(current_context().permission_level)
+        return Agent(brain=EchoBrain())
+
+    app = create_app(agent_factory=factory, max_steps=2)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/v1/sessions/admin-sess/messages",
+            json={"role": "user", "content": "hi"},
+            headers={"X-API-Key": "secret-key"},
+        )
+        assert resp.status_code == 200
+        assert captured == ["high"]
+
+
+def test_missing_or_wrong_api_key_is_anonymous(monkeypatch):
+    monkeypatch.setenv("SWAYBOT_ADMIN_API_KEY", "secret-key")
+    captured = []
+
+    def factory(session_id):
+        captured.append(current_context().permission_level)
+        return Agent(brain=EchoBrain())
+
+    app = create_app(agent_factory=factory, max_steps=2)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/v1/sessions/user-sess/messages",
+            json={"role": "user", "content": "hi"},
+            headers={"X-API-Key": "wrong-key"},
+        )
+        assert resp.status_code == 200
+        assert captured == ["medium"]
 
 
 def test_health():

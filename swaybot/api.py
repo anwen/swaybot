@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import os
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -119,7 +121,8 @@ def create_app(
     ):
         request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
         api_key = request.headers.get("X-API-Key", "")
-        if api_key == "admin":
+        admin_key = os.environ.get("SWAYBOT_ADMIN_API_KEY")
+        if admin_key and secrets.compare_digest(api_key, admin_key):
             principal = "admin"
             permission_level = "high"
         else:
