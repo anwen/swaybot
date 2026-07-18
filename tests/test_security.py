@@ -29,6 +29,16 @@ def test_path_guard_rejects_absolute_escape(tmp_path):
         guard.resolve("/etc/passwd")
 
 
+def test_path_guard_rejects_sibling_prefix_traversal(tmp_path):
+    """A directory whose name starts with the workspace name must not pass."""
+    sibling = tmp_path.parent / (tmp_path.name + "2")
+    sibling.mkdir(exist_ok=True)
+    (sibling / "secret.txt").write_text("leak")
+    guard = PathGuard(tmp_path)
+    with pytest.raises(SecurityError):
+        guard.resolve("../" + sibling.name + "/secret.txt")
+
+
 def test_command_guard_allows_whitelisted_command():
     guard = CommandGuard()
     assert guard.validate("ls -la") == ["ls", "-la"]

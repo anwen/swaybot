@@ -99,7 +99,7 @@ class PathGuard:
     def resolve(self, path: str) -> Path:
         """Resolve ``path`` inside the workspace or raise SecurityError."""
         target = (self.root / path).resolve()
-        if not str(target).startswith(str(self.root)):
+        if not target.is_relative_to(self.root):
             raise SecurityError(
                 f"path '{path}' escapes workspace '{self.root}'"
             )
