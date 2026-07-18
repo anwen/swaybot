@@ -1,7 +1,6 @@
 """Minimal stdio MCP client for dynamic tool loading."""
 
 import json
-import queue
 import subprocess
 import threading
 from pathlib import Path
@@ -15,9 +14,12 @@ class McpClient:
         self.command = command
         self.cwd = Path(cwd) if cwd else None
         self._process: subprocess.Popen | None = None
-        self._lines: queue.Queue[str] = queue.Queue()
         self._reader: threading.Thread | None = None
         self._request_id = 0
+        self._lock = threading.Lock()
+        self._pending: dict[int, threading.Event] = {}
+        self._results: dict[int, dict] = {}
+        self._shutdown = threading.Event()
 
     def start(self) -> "McpClient":
         self._process = subprocess.Popen(
@@ -43,6 +45,10 @@ class McpClient:
         return self
 
     def close(self) -> None:
+        self._shutdown.set()
+        with self._lock:
+            for event in self._pending.values():
+                event.set()
         if self._process is not None:
             try:
                 self._process.terminate()
@@ -70,7 +76,18 @@ class McpClient:
             return
         try:
             for line in self._process.stdout:
-                self._lines.put(line.strip())
+                try:
+                    message = json.loads(line.strip())
+                except json.JSONDecodeError:
+                    continue
+                request_id = message.get("id")
+                if request_id is None:
+                    continue
+                with self._lock:
+                    event = self._pending.get(request_id)
+                    if event is not None:
+                        self._results[request_id] = message
+                        event.set()
         except Exception:  # pragma: no cover
             pass
 
@@ -84,29 +101,37 @@ class McpClient:
         self._send({"jsonrpc": "2.0", "method": method, "params": params or {}})
 
     def _call(self, method: str, params: dict | None = None) -> dict:
-        self._request_id += 1
-        request_id = self._request_id
-        self._send(
-            {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": method,
-                "params": params or {},
-            }
-        )
-        while True:
-            try:
-                line = self._lines.get(timeout=30)
-            except queue.Empty as exc:
-                raise RuntimeError(f"MCP request {method} timed out") from exc
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if message.get("id") == request_id:
-                if "error" in message:
-                    raise RuntimeError(message["error"])
-                return message
+        if self._shutdown.is_set():
+            raise RuntimeError("MCP client is closed")
+        with self._lock:
+            self._request_id += 1
+            request_id = self._request_id
+            event = threading.Event()
+            self._pending[request_id] = event
+        try:
+            self._send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": method,
+                    "params": params or {},
+                }
+            )
+            if not event.wait(timeout=30):
+                if self._shutdown.is_set():
+                    raise RuntimeError("MCP client is closed")
+                raise RuntimeError(f"MCP request {method} timed out")
+            with self._lock:
+                message = self._results.pop(request_id, None)
+            if message is None:
+                raise RuntimeError("MCP client is closed")
+            if "error" in message:
+                raise RuntimeError(message["error"])
+            return message
+        finally:
+            with self._lock:
+                self._pending.pop(request_id, None)
+                self._results.pop(request_id, None)
 
 
 def register_mcp_tools(registry: Any, command: list[str]) -> McpClient:

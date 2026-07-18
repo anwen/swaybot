@@ -1,3 +1,4 @@
+import concurrent.futures
 import sys
 from pathlib import Path
 
@@ -26,6 +27,18 @@ def test_mcp_client_lists_tools(mcp_client):
 def test_mcp_client_calls_tool(mcp_client):
     result = mcp_client.call_tool("greet", {"name": "world"})
     assert result == "Hello, world!"
+
+
+def test_mcp_client_concurrent_calls(mcp_client):
+    names = [f"user{i}" for i in range(10)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        results = list(
+            executor.map(
+                lambda name: mcp_client.call_tool("greet", {"name": name}), names
+            )
+        )
+    for name, result in zip(names, results):
+        assert result == f"Hello, {name}!"
 
 
 def test_register_mcp_tools_adds_tool_to_registry():
