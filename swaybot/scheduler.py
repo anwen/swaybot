@@ -145,6 +145,9 @@ class Scheduler:
             except asyncio.CancelledError:
                 pass
         self._loop_task = None
+        for job in self._jobs.values():
+            job.running_count = 0
+        self._persist_state()
 
     async def run_job_now(self, job_id: str) -> None:
         """Trigger a job immediately, outside of its schedule."""
@@ -258,11 +261,11 @@ class Scheduler:
             return None
 
     def _persist_state(self) -> None:
+        # running_count is runtime-only; do not persist it.
         state = {
             job.id: {
                 "last_run": job.last_run,
                 "next_run": job.next_run,
-                "running_count": job.running_count,
             }
             for job in self._jobs.values()
         }
@@ -279,4 +282,4 @@ class Scheduler:
             if isinstance(job_state, dict):
                 job.last_run = job_state.get("last_run")
                 job.next_run = job_state.get("next_run")
-                job.running_count = job_state.get("running_count", 0)
+                job.running_count = 0

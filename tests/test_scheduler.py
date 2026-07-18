@@ -67,6 +67,27 @@ async def test_scheduler_persists_state(tmp_path: Path):
     state = backend.load("scheduler_state")
     assert state[job_id]["last_run"] is not None
     assert state[job_id]["next_run"] is not None
+    assert "running_count" not in state[job_id]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_resets_running_count_on_stop(tmp_path: Path):
+    backend = InMemoryBackend()
+
+    async def slow():
+        await asyncio.sleep(0.2)
+
+    scheduler = Scheduler(backend=backend)
+    job_id = scheduler.add_job(
+        slow,
+        IntervalSchedule(seconds=0.05),
+        max_running=2,
+    )
+    await scheduler.start()
+    await asyncio.sleep(0.12)
+    await scheduler.stop()
+
+    assert scheduler._jobs[job_id].running_count == 0
 
 
 @pytest.mark.asyncio
@@ -78,7 +99,7 @@ async def test_scheduler_reloads_state(tmp_path: Path):
             "job-1": {
                 "last_run": None,
                 "next_run": "2000-01-01T00:00:00+00:00",
-                "running_count": 0,
+                "running_count": 5,
             }
         },
     )
@@ -99,6 +120,7 @@ async def test_scheduler_reloads_state(tmp_path: Path):
     await scheduler.stop()
 
     assert counter["value"] == 1
+    assert scheduler._jobs["job-1"].running_count == 0
 
 
 @pytest.mark.asyncio
