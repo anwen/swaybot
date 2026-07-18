@@ -356,13 +356,13 @@ def add(a: float, b: float) -> float:
     return a + b
 
 
-@tool(exclusive=True)
+@tool(read_only=True, exclusive=True)
 def done() -> str:
     """Signal that the task is complete."""
     return "finished"
 
 
-@tool(exclusive=True)
+@tool(read_only=True, exclusive=True)
 def final_answer(answer: str) -> str:
     """Provide the final answer and end the task."""
     return answer
