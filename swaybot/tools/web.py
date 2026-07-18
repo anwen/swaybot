@@ -62,6 +62,20 @@ def _safe_url(url: str) -> str:
     return url
 
 
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow redirects only if the target passes the same SSRF checks."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        full_url = urllib.parse.urljoin(req.full_url, newurl)
+        _safe_url(full_url)
+        return urllib.request.Request(
+            full_url,
+            headers=req.headers,
+            origin_req_host=req.origin_req_host,
+            unverifiable=True,
+        )
+
+
 def _fetch(url: str) -> str:
     request = urllib.request.Request(
         url,
@@ -71,7 +85,8 @@ def _fetch(url: str) -> str:
             )
         },
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
+    opener = urllib.request.build_opener(_SafeRedirectHandler)
+    with opener.open(request, timeout=10) as response:
         data = response.read()
         charset = response.headers.get_content_charset() or "utf-8"
         return data.decode(charset, errors="replace")

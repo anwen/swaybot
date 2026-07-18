@@ -1,4 +1,5 @@
 import socket
+import urllib.request
 
 import pytest
 
@@ -98,3 +99,17 @@ def test_web_search_returns_no_results_when_empty(monkeypatch):
     monkeypatch.setattr(web_tools, "_fetch", lambda url: "<html></html>")
     result = web_tools.web_search("query")
     assert result == "No results found."
+
+
+def test_safe_redirect_handler_rejects_private_target():
+    handler = web_tools._SafeRedirectHandler()
+    req = urllib.request.Request("https://example.com/")
+    with pytest.raises(ValueError, match="local"):
+        handler.redirect_request(req, None, 302, "Found", {}, "http://127.0.0.1/")
+
+
+def test_safe_redirect_handler_follows_public_target():
+    handler = web_tools._SafeRedirectHandler()
+    req = urllib.request.Request("https://example.com/page")
+    new = handler.redirect_request(req, None, 302, "Found", {}, "/other")
+    assert new.full_url == "https://example.com/other"
