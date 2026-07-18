@@ -68,9 +68,22 @@ class MessageBus:
         except asyncio.TimeoutError:
             return None
 
-    def subscribe(self, callback: Callable[[OutboundMessage], None]) -> None:
-        """Register a callback for outbound messages."""
+    def subscribe(
+        self, callback: Callable[[OutboundMessage], None]
+    ) -> Callable[[], None]:
+        """Register a callback for outbound messages.
+
+        Returns a function that removes the callback when called.
+        """
         self._subscribers.append(callback)
+
+        def unsubscribe() -> None:
+            try:
+                self._subscribers.remove(callback)
+            except ValueError:
+                pass
+
+        return unsubscribe
 
     async def emit(self, message: OutboundMessage) -> None:
         """Notify all subscribers of an outbound message."""

@@ -62,6 +62,19 @@ def test_bus_subscribers_receive_outbound():
     assert received[0].content == "hi"
 
 
+def test_bus_unsubscribe_removes_callback():
+    bus = MessageBus()
+    received = []
+
+    def cb(msg):
+        received.append(msg)
+
+    unsubscribe = bus.subscribe(cb)
+    unsubscribe()
+    asyncio.run(bus.emit(OutboundMessage(content="hi", session_id="s1")))
+    assert len(received) == 0
+
+
 def test_bus_close_session_removes_state():
     bus = MessageBus()
     bus.create_session("s1")
