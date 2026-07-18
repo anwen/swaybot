@@ -35,6 +35,7 @@ class Shell:
         except SecurityError as exc:
             raise ShellError(str(exc)) from exc
         workdir = self.resolve(cwd)
+        self._validate_arguments(parts)
         try:
             result = subprocess.run(
                 parts,
@@ -52,6 +53,24 @@ class Shell:
             return "Error: command timed out"
         except Exception as exc:
             return f"Error: {exc}"
+
+    @staticmethod
+    def _validate_arguments(parts: list[str]) -> None:
+        """Reject arguments that escape the workspace or invoke sub-commands."""
+        if not parts:
+            return
+        for arg in parts[1:]:
+            if arg.startswith("/"):
+                raise ShellError("absolute paths are not allowed")
+            if ".." in arg:
+                raise ShellError("path traversal is not allowed")
+        if parts[0] == "find":
+            forbidden = {"-exec", "-execdir", "-ok", "-okdir", "-delete"}
+            for arg in parts[1:]:
+                if arg in forbidden:
+                    raise ShellError(
+                        f"find action '{arg}' is not allowed"
+                    )
 
 
 _shell = Shell()

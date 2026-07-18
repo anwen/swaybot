@@ -37,3 +37,19 @@ def test_command_timeout(shell):
     # sleep is not in the allowlist, so this would raise ShellError rather than timeout.
     with pytest.raises(ShellError):
         run_shell_command(command="sleep 5")
+
+
+def test_absolute_path_blocked(shell):
+    with pytest.raises(ShellError, match="absolute paths"):
+        run_shell_command(command="cat /etc/passwd")
+
+
+def test_argument_traversal_blocked(shell):
+    shell.root.joinpath("a.txt").write_text("hello", encoding="utf-8")
+    with pytest.raises(ShellError, match="path traversal"):
+        run_shell_command(command="cat ../a.txt")
+
+
+def test_find_exec_blocked(shell):
+    with pytest.raises(ShellError, match="find action"):
+        run_shell_command(command="find . -exec sh -c 'echo pwned' +")
