@@ -1,3 +1,5 @@
+import socket
+
 import pytest
 
 from swaybot.tools import web as web_tools
@@ -14,6 +16,22 @@ SAMPLE_HTML = """
 </body>
 </html>
 """
+
+
+def _fake_getaddrinfo(host, port, *_args, **_kwargs):
+    """Return stable public/private addresses so tests do not rely on real DNS."""
+    if host == "example.com":
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", port))]
+    if host == "localhost":
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", port))]
+    if host == "192.168.1.1":
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.1", port))]
+    raise socket.gaierror("No address found")
+
+
+@pytest.fixture(autouse=True)
+def patch_socket_getaddrinfo(monkeypatch):
+    monkeypatch.setattr(web_tools.socket, "getaddrinfo", _fake_getaddrinfo)
 
 
 def test_safe_url_accepts_public_https():

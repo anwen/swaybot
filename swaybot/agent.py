@@ -3,6 +3,7 @@ from .context import ContextBuilder
 from .environment import Environment
 from .hook import AgentHook, CompositeHook
 from .request_context import RequestContext, current_context, set_context
+from .security import PermissionPolicy
 from .memory import (
     ActionStep,
     AutoCompact,
@@ -30,6 +31,7 @@ class Agent:
         reflector: Reflector | None = None,
         hooks: list[AgentHook] | None = None,
         permission_level: str = "medium",
+        permission_policy: PermissionPolicy | None = None,
         auto_compact: bool = False,
         compactor: AutoCompact | None = None,
     ):
@@ -39,15 +41,20 @@ class Agent:
         self.reflector = reflector
         self.hooks = CompositeHook(hooks)
         self.permission_level = permission_level
+        self.permission_policy = permission_policy
         self.auto_compact = auto_compact
         self.compactor = compactor
         self.context_builder = ContextBuilder(self.memory, self.tools)
 
     def _allowed(self, action_name: str) -> tuple[bool, str]:
-        """Check whether the current permission level allows ``action_name``."""
+        """Check whether the active permission policy allows ``action_name``."""
         tool = self.tools.get(action_name)
         if tool is None:
             return True, ""
+        if self.permission_policy is not None:
+            return self.permission_policy.allows(
+                tool.name, tool.required_permission
+            )
         if _RISK_ORDER[tool.risk_level] > _RISK_ORDER[self.permission_level]:
             return False, (
                 f"Permission denied: '{action_name}' requires "
@@ -63,10 +70,11 @@ class Agent:
         plan: bool = False,
         hypothesis: str | None = None,
         request_context: RequestContext | None = None,
+        stream: bool = False,
     ) -> Environment:
         ctx = request_context or current_context()
         with set_context(ctx):
-            return self._run(task, max_steps, reflect, plan, hypothesis)
+            return self._run(task, max_steps, reflect, plan, hypothesis, stream)
 
     def _run(
         self,
@@ -75,6 +83,7 @@ class Agent:
         reflect: bool = True,
         plan: bool = False,
         hypothesis: str | None = None,
+        stream: bool = False,
     ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
         run_steps: list[dict] = []
@@ -90,16 +99,21 @@ class Agent:
             )
             self.hooks.before_iteration(task, env.step, perception)
             call_info: dict = {}
-            stream_callback = lambda token: self.hooks.on_token(token)
-            reasoning_callback = lambda reason: self.hooks.on_reasoning(reason)
             try:
-                action = self.brain.think(
-                    perception,
-                    self.tools.names(),
-                    metadata=call_info,
-                    stream_callback=stream_callback,
-                    reasoning_callback=reasoning_callback,
-                )
+                if stream:
+                    action = self.brain.think(
+                        perception,
+                        self.tools.names(),
+                        metadata=call_info,
+                        stream_callback=lambda token: self.hooks.on_token(token),
+                        reasoning_callback=lambda reason: self.hooks.on_reasoning(reason),
+                    )
+                else:
+                    action = self.brain.think(
+                        perception,
+                        self.tools.names(),
+                        metadata=call_info,
+                    )
             except TypeError:
                 try:
                     action = self.brain.think(

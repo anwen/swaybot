@@ -60,7 +60,7 @@ def test_agent_runs_with_streaming_hook():
 
     hook = CapturingHook()
     agent = Agent(brain=TokenBrain(), hooks=[hook])
-    env = agent.run("test", max_steps=2)
+    env = agent.run("test", max_steps=2, stream=True)
     assert env.done
     assert hook.tokens == ["tok"]
     assert hook.reasoning == ["reason"]

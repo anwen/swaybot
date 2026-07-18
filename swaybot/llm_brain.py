@@ -7,9 +7,30 @@ from .models import FallbackModel, Model
 from .prompts import render_prompt
 
 try:
-    from openai import OpenAI
+    from openai import (
+        APIConnectionError,
+        APIStatusError,
+        APITimeoutError,
+        OpenAI,
+    )
 except ImportError:  # pragma: no cover
     OpenAI = None  # type: ignore[misc, assignment]
+    APIStatusError = None  # type: ignore[misc, assignment]
+    APITimeoutError = None  # type: ignore[misc, assignment]
+    APIConnectionError = None  # type: ignore[misc, assignment]
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Return True if the exception is worth retrying."""
+    if APIStatusError is not None and isinstance(exc, APIStatusError):
+        # Retry server errors and rate limits; not client errors.
+        return exc.status_code >= 500 or exc.status_code == 429
+    if APITimeoutError is not None and isinstance(exc, APITimeoutError):
+        return True
+    if APIConnectionError is not None and isinstance(exc, APIConnectionError):
+        return True
+    # Unknown/non-OpenAI exceptions (e.g. mock RuntimeError) are retried by default.
+    return True
 
 
 def _parse_exploration_response(raw: str) -> dict:
@@ -51,6 +72,7 @@ class OpenAIModel:
         max_tokens: int = 1024,
         max_retries: int = 3,
         backoff: float = 1.0,
+        timeout: float = 60.0,
     ):
         if OpenAI is None:
             raise ImportError(
@@ -65,6 +87,7 @@ class OpenAIModel:
         self.max_tokens = max_tokens
         self.max_retries = max_retries
         self.backoff = backoff
+        self.timeout = timeout
 
         if not self.api_key:
             raise ValueError(
@@ -85,6 +108,7 @@ class OpenAIModel:
         self._client = OpenAI(
             api_key=cast(str, self.api_key),
             base_url=cast(str, self.base_url),
+            timeout=self.timeout,
         )
 
     def generate(
@@ -148,6 +172,18 @@ class OpenAIModel:
                 last_error = str(exc)
                 if metadata is not None:
                     metadata["error"] = last_error
+                # Some providers accept chat completions but reject native tool-calling.
+                # Drop the tools parameter and retry immediately; the system prompt
+                # still describes available tools as JSON schema.
+                if (
+                    openai_tools
+                    and "tool" in last_error.lower()
+                    and "not supported" in last_error.lower()
+                ):
+                    openai_tools = []
+                    continue
+                if not _is_retryable(exc):
+                    break
                 if attempt < self.max_retries:
                     time.sleep(self.backoff * (2 ** attempt))
         return None
@@ -221,6 +257,7 @@ class LLMBrain:
         max_tokens: int = 1024,
         max_retries: int = 3,
         backoff: float = 1.0,
+        timeout: float = 60.0,
         backend: Model | None = None,
         fallback_models: list[Model] | None = None,
     ):
@@ -233,6 +270,7 @@ class LLMBrain:
                 max_tokens=max_tokens,
                 max_retries=max_retries,
                 backoff=backoff,
+                timeout=timeout,
             )
         if fallback_models:
             backend = FallbackModel([backend] + fallback_models)
@@ -291,7 +329,11 @@ class LLMBrain:
         )
         _merge_metadata(metadata, call_info)
         if raw is None:
-            return _fallback(perception, "LLM call failed after retries")
+            error_detail = call_info.get("error", "")
+            message = "LLM call failed after retries"
+            if error_detail:
+                message = f"{message}: {error_detail}"
+            return _fallback(perception, message)
         return _parse_action(raw, perception)
 
     def _plan(

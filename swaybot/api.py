@@ -16,8 +16,10 @@ from .async_agent import AsyncAgent
 from .bus import InboundMessage, MessageBus, OutboundMessage
 from .request_context import RequestContext, current_context, set_context
 from .coordinator import GoalCoordinator
+from .env import load_dotenv
 from .logging import JSONFormatter, get_event_logger
 from .scheduler import Scheduler
+from .security import PermissionMode, PermissionPolicy
 from .session import SessionManager
 
 
@@ -70,7 +72,14 @@ def create_app(
         from .agent import Agent
 
         def _default_agent_factory(session_id: str = "") -> Agent:
-            return Agent()
+            level = current_context().permission_level
+            if level == "high":
+                mode = PermissionMode.DANGER
+            elif level == "low":
+                mode = PermissionMode.READ_ONLY
+            else:
+                mode = PermissionMode.WORKSPACE_WRITE
+            return Agent(permission_policy=PermissionPolicy(mode=mode))
 
         agent_factory = _default_agent_factory
 
@@ -428,5 +437,6 @@ def main():
     """CLI entrypoint: uvicorn swaybot.api:app"""
     import uvicorn
 
+    load_dotenv()
     app = create_app()
     uvicorn.run(app, host="127.0.0.1", port=8000)

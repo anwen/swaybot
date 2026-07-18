@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from ..code_quality import run_quality_hooks
+from ..file_locks import PathLockManager
 from ..output_limits import truncate_lines, truncate_text
 from ..security import PathGuard, SecurityError
 from . import tool
@@ -48,16 +49,17 @@ def read_file(path: str, max_length: int = 10000) -> str:
 def write_file(path: str, content: str) -> str:
     """Write ``content`` to a file inside the workspace."""
     target = _fs.resolve(path)
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-    except Exception as exc:
-        return f"Error: {exc}"
-    result = f"Wrote {len(content)} characters to {path}"
-    quality = run_quality_hooks(target)
-    if quality:
-        result += f"\n\n{quality}"
-    return result
+    with PathLockManager.lock(target):
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        except Exception as exc:
+            return f"Error: {exc}"
+        result = f"Wrote {len(content)} characters to {path}"
+        quality = run_quality_hooks(target)
+        if quality:
+            result += f"\n\n{quality}"
+        return result
 
 
 @tool(read_only=True)
@@ -104,29 +106,30 @@ def edit_file(
     False, the edit is rejected to avoid ambiguous replacements.
     """
     target = _fs.resolve(path)
-    try:
-        current = target.read_text(encoding="utf-8", errors="replace")
-    except Exception as exc:
-        return f"Error: {exc}"
-    occurrences = current.count(old_string)
-    if occurrences == 0:
-        return f"StaleContentError: old_string not found in {path}"
-    if not replace_all and occurrences > 1:
-        return (
-            f"Error: old_string appears {occurrences} times in {path}; "
-            "set replace_all=true to replace all occurrences"
-        )
-    new_content = current.replace(old_string, new_string) if replace_all else current.replace(old_string, new_string, 1)
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(new_content, encoding="utf-8")
-    except Exception as exc:
-        return f"Error: {exc}"
-    result = f"Edited {path}: replaced {occurrences} occurrence(s)"
-    quality = run_quality_hooks(target)
-    if quality:
-        result += f"\n\n{quality}"
-    return result
+    with PathLockManager.lock(target):
+        try:
+            current = target.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            return f"Error: {exc}"
+        occurrences = current.count(old_string)
+        if occurrences == 0:
+            return f"StaleContentError: old_string not found in {path}"
+        if not replace_all and occurrences > 1:
+            return (
+                f"Error: old_string appears {occurrences} times in {path}; "
+                "set replace_all=true to replace all occurrences"
+            )
+        new_content = current.replace(old_string, new_string) if replace_all else current.replace(old_string, new_string, 1)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(new_content, encoding="utf-8")
+        except Exception as exc:
+            return f"Error: {exc}"
+        result = f"Edited {path}: replaced {occurrences} occurrence(s)"
+        quality = run_quality_hooks(target)
+        if quality:
+            result += f"\n\n{quality}"
+        return result
 
 
 @tool(read_only=True)

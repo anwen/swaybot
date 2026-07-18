@@ -330,6 +330,34 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 - **验收**：文本/列表输出在阈值内原样返回；超出时生成溢出文件并附带路径；`read_file`、`grep`、`run_shell_command` 均接入。271 个测试全部通过。
 - **状态**：已完成（2026-07-17）。
 
+### [x] 可配置权限规则（PermissionMode / PermissionPolicy）
+- **问题**：`Agent` 只有基于 `risk_level` 的粗略权限检查，没有显式命名模式，CLI/API 无法切换 read-only / workspace-write / danger 模式，也不能按工具 allow/deny。
+- **方案**：参考 Claw Code 的 `PermissionMode` + `PermissionPolicy`，新增 `read-only`、`workspace-write`、`danger` 三种模式；`Tool` 根据 `read_only`/`risk_level` 推导 `required_permission`；`Agent` 优先按 `PermissionPolicy` 校验，回退到原有 `permission_level` 风险检查；CLI 增加 `--permission-mode`；API 默认根据 `permission_level` 映射模式。
+- **文件**：`swaybot/security.py`、`swaybot/tools/__init__.py`、`swaybot/agent.py`、`swaybot/cli.py`、`swaybot/api.py`、`tests/test_permissions.py`
+- **验收**：`read-only` 拒绝写入和危险工具；`workspace-write` 允许文件读写但拒绝 shell；`danger` 放行全部；denied/allowed 列表生效；原有 `permission_level` 测试保持兼容。283 个测试全部通过。
+- **状态**：已完成（2026-07-18）。
+
+### [x] 按路径文件锁
+- **问题**：`write_file`/`edit_file` 在同一进程内可能被并发调用（多子代理、并发子任务），导致写覆盖或读到半写状态。
+- **方案**：新增 `PathLockManager`，按规范化路径维护 `threading.Lock`；`write_file` 和 `edit_file` 在解析目标路径后获取锁，整个读-改-写周期受保护。
+- **文件**：`swaybot/file_locks.py`、`swaybot/tools/fs.py`、`tests/test_file_locks.py`
+- **验收**：并发线程对同一文件递增 200 次结果正确；不同文件可并发；等价路径共享同一把锁。289 个测试全部通过。
+- **状态**：已完成（2026-07-18）。
+
+### [x] NDJSON 结构化 CLI 输出
+- **问题**：SwayBot CLI 只能输出人类可读文本，难以被其他 agent/CI 消费。
+- **方案**：CLI 增加 `--output-format {text,json}`；`json` 模式以 NDJSON 输出 `run_start`、`step`、`run_end` 事件，包含 action、result、error、brain、permission_mode 等字段；`text` 模式保持原样。
+- **文件**：`swaybot/cli.py`、`tests/test_cli.py`
+- **验收**：`--output-format json` 输出可解析的 NDJSON；`explore` 模式同样支持；默认 `text` 不变。289 个测试全部通过。
+- **状态**：已完成（2026-07-18）。
+
+### [x] API 入口加载项目根目录 .env
+- **问题**：CLI 会自动加载 `.env`，但 API 入口 `python -m swaybot.api` 不会，导致启动服务时还要手动 export 环境变量。
+- **方案**：把 `_load_dotenv` 抽到 `swaybot/env.py` 作为 `load_dotenv()`；CLI 和 API 入口都调用它；不覆盖已存在的环境变量。
+- **文件**：`swaybot/env.py`（新）、`swaybot/cli.py`、`swaybot/api.py`、`tests/test_env.py`
+- **验收**：API 启动前自动读取当前目录 `.env`；注释/空行被忽略；已存在的环境变量不被覆盖。293 个测试全部通过。
+- **状态**：已完成（2026-07-18）。
+
 ## 当前聚焦
 
-OpenCode 借鉴中，下一步可考虑：按路径文件锁、可配置权限规则（ask/allow/deny）。
+OpenCode/Claw Code 借鉴中，下一步可考虑：交互式 ask/allow/deny 确认、持久化外部存储后端。

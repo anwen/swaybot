@@ -100,6 +100,15 @@ class Tool:
             "risk_level": self.risk_level,
         }
 
+    @property
+    def required_permission(self) -> str:
+        """Map tool flags to the coarse permission mode they require."""
+        if self.risk_level == "high":
+            return "danger"
+        if not self.read_only:
+            return "write"
+        return "read"
+
 
 def tool(
     fn: Callable | None = None,

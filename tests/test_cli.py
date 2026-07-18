@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from swaybot.cli import _default_data_dir, main
@@ -93,3 +94,75 @@ def test_cli_inspect_survives_reflection_pruning(tmp_path, capsys):
     assert exit_code == 0
     assert "Task: hello" in captured.out
     assert "Reflections:" in captured.out
+
+
+def test_cli_output_format_json(tmp_path, capsys, monkeypatch):
+    data_dir = tmp_path / "jsonout"
+    monkeypatch.setenv("SWAYBOT_DATA_DIR", str(data_dir))
+    main(
+        [
+            "hello",
+            "--max-steps",
+            "2",
+            "--data-dir",
+            str(data_dir),
+            "--output-format",
+            "json",
+        ]
+    )
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.strip().splitlines() if line]
+    assert len(lines) >= 3
+    events = [json.loads(line) for line in lines]
+    assert events[0]["event"] == "run_start"
+    assert events[0]["type"] == "task"
+    assert events[0]["task"] == "hello"
+    assert events[-1]["event"] == "run_end"
+    assert events[-1]["done"]
+    step_events = [e for e in events if e["event"] == "step"]
+    assert len(step_events) == 2
+    assert "action" in step_events[0]
+    assert "result" in step_events[0]
+
+
+def test_cli_output_format_json_explore(tmp_path, capsys, monkeypatch):
+    data_dir = tmp_path / "jsonexplore"
+    monkeypatch.setenv("SWAYBOT_DATA_DIR", str(data_dir))
+    main(
+        [
+            "--explore",
+            "--max-steps",
+            "2",
+            "--data-dir",
+            str(data_dir),
+            "--output-format",
+            "json",
+        ]
+    )
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.strip().splitlines() if line]
+    events = [json.loads(line) for line in lines]
+    assert events[0]["event"] == "run_start"
+    assert events[0]["type"] == "explore"
+    assert "task" in events[0]
+    assert events[-1]["event"] == "run_end"
+    assert any(e["event"] == "step" for e in events)
+
+
+def test_cli_text_output_still_works(tmp_path, capsys, monkeypatch):
+    data_dir = tmp_path / "textout"
+    monkeypatch.setenv("SWAYBOT_DATA_DIR", str(data_dir))
+    main(
+        [
+            "hello",
+            "--max-steps",
+            "1",
+            "--data-dir",
+            str(data_dir),
+            "--output-format",
+            "text",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert "Step 1:" in captured.out
+    assert "run_start" not in captured.out

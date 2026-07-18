@@ -1,34 +1,19 @@
 import argparse
-import os
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from .agent import Agent
 from .brain import EchoBrain
+from .environment import Environment
+from .env import load_dotenv
 from .explorer import Explorer
 from .memory import MemoryStore
 from .reflection import Reflector
 from .run_log import format_run, load_runs, run_log_path_for_memory, select_runs
+from .security import PermissionMode, PermissionPolicy
 from .tools import format_action
-
-
-def _load_dotenv(path: Path | str = ".env") -> None:
-    """Load key=value pairs from a .env file into os.environ.
-
-    Does not overwrite existing environment variables. Values may be quoted.
-    """
-    env_path = Path(path)
-    if not env_path.exists():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
 
 
 def _default_data_dir() -> Path:
@@ -88,8 +73,65 @@ def _inspect_main(argv: list[str]) -> int:
     return 0
 
 
+def _print_ndjson_run(
+    args: argparse.Namespace,
+    env: Environment,
+    exploration: Any | None = None,
+) -> None:
+    """Emit the run as NDJSON events."""
+    run_type = "explore" if exploration is not None else "task"
+    start_event: dict[str, Any] = {
+        "event": "run_start",
+        "type": run_type,
+        "task": exploration.task if exploration is not None else args.task,
+        "brain": args.brain,
+        "permission_mode": args.permission_mode,
+        "max_steps": args.max_steps,
+    }
+    if exploration is not None and exploration.hypothesis:
+        start_event["hypothesis"] = exploration.hypothesis
+    print(json.dumps(start_event, ensure_ascii=False))
+    for entry in env.history:
+        step_event: dict[str, Any] = {
+            "event": "step",
+            "step": entry["step"],
+            "action": entry["action"],
+            "result": str(entry["result"]),
+        }
+        if "error" in entry:
+            step_event["error"] = entry["error"]
+        if args.verbose:
+            step_event["raw_action"] = entry["action"]
+        print(json.dumps(step_event, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"event": "run_end", "steps": env.step, "done": env.done},
+            ensure_ascii=False,
+        )
+    )
+
+
+def _print_text_run(
+    args: argparse.Namespace,
+    env: Environment,
+    exploration: Any | None = None,
+) -> None:
+    """Emit the run as human-readable text."""
+    if exploration is not None:
+        print(f"Exploration: {exploration.task}")
+        if exploration.hypothesis:
+            print(f"Hypothesis: {exploration.hypothesis}")
+    for entry in env.history:
+        action = entry["action"]
+        result = entry["result"]
+        line = f"Step {entry['step']}: {format_action(action)} → {result}"
+        if args.verbose:
+            line = f"{line}  {action}"
+        print(line)
+
+
 def main(argv: list[str] | None = None) -> int:
-    _load_dotenv()
+    load_dotenv()
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "inspect":
         return _inspect_main(argv[1:])
@@ -147,9 +189,27 @@ def main(argv: list[str] | None = None) -> int:
         "--model", type=str, default=None, help="LLM model name (or SWAYBOT_MODEL)"
     )
     parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="LLM request timeout in seconds (default: 60)",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print raw action dicts alongside formatted output",
+    )
+    parser.add_argument(
+        "--permission-mode",
+        choices=[m.value for m in PermissionMode],
+        default=None,
+        help="Permission mode: read-only, workspace-write, or danger (default: workspace-write)",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format: human-readable text or NDJSON events (default: text)",
     )
     args = parser.parse_args(argv)
 
@@ -166,27 +226,39 @@ def main(argv: list[str] | None = None) -> int:
     if args.brain == "llm":
         from .llm_brain import LLMBrain
 
-        brain = LLMBrain(api_key=args.api_key, base_url=args.api_base, model=args.model)
+        llm_kwargs = {
+            "api_key": args.api_key,
+            "base_url": args.api_base,
+            "model": args.model,
+        }
+        if args.timeout is not None:
+            llm_kwargs["timeout"] = args.timeout
+        brain = LLMBrain(**llm_kwargs)
+
+    permission_policy = None
+    if args.permission_mode is not None:
+        permission_policy = PermissionPolicy(mode=args.permission_mode)
 
     memory = MemoryStore(path=memory_path) if memory_path else None
     reflector = Reflector(memory) if memory and (args.reflect or args.explore) else None
-    agent = Agent(brain=brain, memory=memory, reflector=reflector)
+    agent = Agent(
+        brain=brain,
+        memory=memory,
+        reflector=reflector,
+        permission_policy=permission_policy,
+    )
 
+    exploration: Any | None = None
     if args.explore:
         explorer = Explorer(agent, max_steps=args.max_steps)
         exploration, env = explorer.run()
-        print(f"Exploration: {exploration.task}")
-        if exploration.hypothesis:
-            print(f"Hypothesis: {exploration.hypothesis}")
     else:
         env = agent.run(
             args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
         )
-    for entry in env.history:
-        action = entry["action"]
-        result = entry["result"]
-        line = f"Step {entry['step']}: {format_action(action)} → {result}"
-        if args.verbose:
-            line = f"{line}  {action}"
-        print(line)
+
+    if args.output_format == "json":
+        _print_ndjson_run(args, env, exploration)
+    else:
+        _print_text_run(args, env, exploration)
     return 0
