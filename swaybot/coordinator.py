@@ -156,12 +156,7 @@ class GoalCoordinator:
         # Backward compatibility: if no backend is supplied but a file path is,
         # keep the original append-only JSONL behavior for load_history().
         self._legacy_state_path = Path(state_path) if state_path else None
-        if backend is not None:
-            self.backend = backend
-        elif state_path is not None:
-            self.backend = InMemoryBackend()
-        else:
-            self.backend = InMemoryBackend()
+        self.backend = backend or InMemoryBackend()
 
         self.state_machine = GoalStateMachine(self.backend)
         self.scheduler = scheduler or Scheduler()
