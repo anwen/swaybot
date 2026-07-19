@@ -33,16 +33,22 @@ def _is_retryable(exc: Exception) -> bool:
     return True
 
 
+def _strip_markdown_fences(raw: str) -> str:
+    """Remove leading/trailing ``` markdown fences if present."""
+    raw = raw.strip()
+    if not raw.startswith("```"):
+        return raw
+    lines = raw.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
 def _parse_exploration_response(raw: str) -> dict:
     """Parse a JSON response expected to contain task and hypothesis."""
-    raw = raw.strip()
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
+    raw = _strip_markdown_fences(raw)
 
     try:
         data = json.loads(raw)
@@ -410,14 +416,7 @@ def _merge_metadata(target: dict | None, source: dict) -> None:
 
 
 def _parse_action(raw: str, perception: dict) -> dict:
-    raw = raw.strip()
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
+    raw = _strip_markdown_fences(raw)
 
     try:
         action = json.loads(raw)
@@ -431,14 +430,7 @@ def _parse_action(raw: str, perception: dict) -> dict:
 
 
 def _parse_plan(raw: str) -> dict:
-    raw = raw.strip()
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
+    raw = _strip_markdown_fences(raw)
 
     try:
         plan = json.loads(raw)

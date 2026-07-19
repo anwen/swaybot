@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from .agent import Agent
 from .brain import EchoBrain
 from .environment import Environment
+from .llm_brain import _strip_markdown_fences
 from .reflection import Reflector
 
 
@@ -131,14 +132,7 @@ class Explorer:
 
 def parse_exploration_response(raw: str) -> dict:
     """Parse a JSON response expected to contain task and hypothesis."""
-    raw = raw.strip()
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
+    raw = _strip_markdown_fences(raw)
 
     try:
         data = json.loads(raw)
