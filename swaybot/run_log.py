@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .storage import JSONLBackend, StorageBackend
+from .tools import format_action
 
 TOKEN_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
 
@@ -150,10 +151,7 @@ def format_run(record: dict) -> str:
 
 
 def _format_action(action: dict) -> str:
-    name = action.get("name", "unknown")
-    args = action.get("args") or {}
-    args_str = ", ".join(f"{key}={value!r}" for key, value in args.items())
-    return f"{name}({args_str})"
+    return format_action(action)
 
 
 def _format_number(value: Any) -> str:

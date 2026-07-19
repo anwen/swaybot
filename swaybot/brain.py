@@ -1,6 +1,22 @@
 from typing import Protocol, runtime_checkable
 
 
+DEFAULT_EXPLORATION_TASKS = [
+    {
+        "task": "Test whether the echo tool preserves punctuation.",
+        "hypothesis": "echo returns the exact message including punctuation.",
+    },
+    {
+        "task": "Verify that add works with negative numbers.",
+        "hypothesis": "add(a=-1, b=1) returns 0.",
+    },
+    {
+        "task": "Check what happens when done is called multiple times.",
+        "hypothesis": "done always returns 'finished'.",
+    },
+]
+
+
 @runtime_checkable
 class Brain(Protocol):
     """Decision-making core of the agent."""
@@ -17,21 +33,6 @@ class Brain(Protocol):
 
 class EchoBrain:
     """Deterministic brain for bootstrapping. Requires no external API."""
-
-    _DEFAULT_TASKS = [
-        {
-            "task": "Test whether the echo tool preserves punctuation.",
-            "hypothesis": "echo returns the exact message including punctuation.",
-        },
-        {
-            "task": "Verify that add works with negative numbers.",
-            "hypothesis": "add(a=-1, b=1) returns 0.",
-        },
-        {
-            "task": "Check what happens when done is called multiple times.",
-            "hypothesis": "done always returns 'finished'.",
-        },
-    ]
 
     def __init__(self, echo_text: str = "thinking...") -> None:
         self.echo_text = echo_text
@@ -56,8 +57,10 @@ class EchoBrain:
                 },
             }
         if perception.get("exploring"):
-            task = self._DEFAULT_TASKS[self._explore_index]
-            self._explore_index = (self._explore_index + 1) % len(self._DEFAULT_TASKS)
+            task = DEFAULT_EXPLORATION_TASKS[self._explore_index]
+            self._explore_index = (self._explore_index + 1) % len(
+                DEFAULT_EXPLORATION_TASKS
+            )
             return {"name": "explore", "args": task}
         if perception["step"] + 1 >= perception["max_steps"]:
             return {"name": "done", "args": {}}
