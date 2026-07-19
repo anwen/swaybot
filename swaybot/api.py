@@ -290,53 +290,42 @@ async def _stream_chat(
             except asyncio.TimeoutError:
                 break
             if not sent_role:
-                chunk = {
-                    "id": session_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": model,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {"role": "assistant"},
-                            "finish_reason": None,
-                        }
-                    ],
-                }
-                yield f"data: {json.dumps(chunk)}\n\n"
+                yield _sse_chunk(
+                    session_id, created, model, {"role": "assistant"}
+                )
                 sent_role = True
-            chunk = {
-                "id": session_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"content": msg.content},
-                        "finish_reason": None,
-                    }
-                ],
-            }
-            yield f"data: {json.dumps(chunk)}\n\n"
+            yield _sse_chunk(
+                session_id, created, model, {"content": msg.content}
+            )
 
-        final = {
-            "id": session_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-        yield f"data: {json.dumps(final)}\n\n"
+        yield _sse_chunk(session_id, created, model, {}, finish_reason="stop")
         yield "data: [DONE]\n\n"
     finally:
         unsubscribe()
+
+
+def _sse_chunk(
+    session_id: str,
+    created: int,
+    model: str,
+    delta: dict,
+    finish_reason: str | None = None,
+) -> str:
+    """Format one server-sent event chunk."""
+    chunk = {
+        "id": session_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "delta": delta,
+                "finish_reason": finish_reason,
+            }
+        ],
+    }
+    return f"data: {json.dumps(chunk)}\n\n"
 
 
 async def _run_one_turn(
