@@ -31,32 +31,25 @@ class ContextBuilder:
             "history": history,
         }
         if self.memory is not None:
-            perception["memory_context"] = self._memory_context(task)
-            perception["behavior_guidance"] = self._behavior_guidance(task)
-            perception["messages"] = self._build_messages(task)
+            relevant = self.memory.query_relevant(task, scope="long_term", limit=5)
+            perception["memory_context"] = self._memory_context(relevant)
+            perception["behavior_guidance"] = self._behavior_guidance(relevant)
+            perception["messages"] = self._build_messages(task, relevant)
         perception["tool_descriptions"] = self.tools.schemas()
         perception["available_tools"] = self.tools.names()
         perception["project_instructions"] = load_project_instructions()
         return perception
 
-    def _memory_context(self, task: str) -> str:
-        if self.memory is None:
-            return ""
-        relevant = self.memory.query_relevant(task, scope="long_term", limit=5)
+    def _memory_context(self, relevant: list) -> str:
         if not relevant:
             return ""
         return "\n".join(
             f"- {getattr(m, 'content', str(m))}" for m in relevant
         )
 
-    def _behavior_guidance(self, task: str) -> str:
-        if self.memory is None:
-            return ""
-        theories = self.memory.query_relevant(task, scope="long_term", limit=5)
-        if not theories:
-            return ""
+    def _behavior_guidance(self, relevant: list) -> str:
         lines: list[str] = []
-        for theory in theories:
+        for theory in relevant:
             if getattr(theory, "credibility", 0.0) < 0.5:
                 continue
             content = getattr(theory, "content", str(theory))
@@ -64,11 +57,9 @@ class ContextBuilder:
                 lines.append(f"- {content}")
         return "\n".join(lines)
 
-    def _build_messages(self, task: str) -> list[dict]:
-        if self.memory is None:
-            return []
+    def _build_messages(self, task: str, relevant: list) -> list[dict]:
         messages: list[dict] = []
-        context = self._memory_context(task)
+        context = self._memory_context(relevant)
         if context:
             messages.append(
                 {"role": "user", "content": f"Relevant memories:\n{context}"}
