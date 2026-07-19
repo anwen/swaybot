@@ -66,13 +66,16 @@ def test_agent_runs_with_streaming_hook():
     assert hook.reasoning == ["reason"]
 
 
-def test_agent_runs_when_brain_does_not_support_callbacks():
-    class OldBrain:
-        def think(self, perception, available_tools):
+def test_agent_runs_when_brain_ignores_callbacks():
+    class IgnoringBrain:
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "done", "args": {}}
 
     hook = CapturingHook()
-    agent = Agent(brain=OldBrain(), hooks=[hook])
+    agent = Agent(brain=IgnoringBrain(), hooks=[hook])
     env = agent.run("test", max_steps=2)
     assert env.done
     assert hook.tokens == []

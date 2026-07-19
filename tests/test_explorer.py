@@ -97,7 +97,10 @@ def test_explorer_passes_candidate_hypotheses_to_brain():
         def __init__(self):
             self.perception = None
 
-        def think(self, perception, available_tools, metadata=None):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             self.perception = perception
             return {
                 "name": "explore",

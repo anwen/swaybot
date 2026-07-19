@@ -125,29 +125,20 @@ class Agent:
     def _think(self, perception: dict, stream: bool) -> tuple[dict, dict]:
         """Ask the brain for the next action, capturing call metadata."""
         call_info: dict = {}
-        try:
-            if stream:
-                action = self.brain.think(
-                    perception,
-                    self.tools.names(),
-                    metadata=call_info,
-                    stream_callback=lambda token: self.hooks.on_token(token),
-                    reasoning_callback=lambda reason: self.hooks.on_reasoning(reason),
-                )
-            else:
-                action = self.brain.think(
-                    perception,
-                    self.tools.names(),
-                    metadata=call_info,
-                )
-        except TypeError:
-            try:
-                action = self.brain.think(
-                    perception, self.tools.names(), metadata=call_info
-                )
-            except TypeError:
-                action = self.brain.think(perception, self.tools.names())
-                call_info = {}
+        if stream:
+            action = self.brain.think(
+                perception,
+                self.tools.names(),
+                metadata=call_info,
+                stream_callback=lambda token: self.hooks.on_token(token),
+                reasoning_callback=lambda reason: self.hooks.on_reasoning(reason),
+            )
+        else:
+            action = self.brain.think(
+                perception,
+                self.tools.names(),
+                metadata=call_info,
+            )
         return action, call_info
 
     def _execute_action(self, action: dict) -> tuple[Any, str | None]:

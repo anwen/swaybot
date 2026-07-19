@@ -26,6 +26,8 @@ class Brain(Protocol):
         perception: dict,
         available_tools: list[str],
         metadata: dict | None = None,
+        stream_callback=None,
+        reasoning_callback=None,
     ) -> dict:
         """Return the next action to execute."""
         ...
@@ -43,6 +45,8 @@ class EchoBrain:
         perception: dict,
         available_tools: list[str],
         metadata: dict | None = None,
+        stream_callback=None,
+        reasoning_callback=None,
     ) -> dict:
         if perception.get("planning"):
             return {

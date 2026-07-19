@@ -85,7 +85,10 @@ def test_agent_permission_policy_blocks_unauthorized_tools():
     registry.register("mutate", mutate)
 
     class MutateBrain:
-        def think(self, perception, available_tools):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "mutate", "args": {}}
 
     agent = Agent(
@@ -110,7 +113,10 @@ def test_agent_permission_policy_allows_authorized_tools():
     registry.register("mutate", mutate)
 
     class MutateBrain:
-        def think(self, perception, available_tools):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "mutate", "args": {}}
 
     agent = Agent(
@@ -133,7 +139,10 @@ def test_agent_falls_back_to_permission_level_without_policy():
     registry.register("dangerous", dangerous)
 
     class DangerBrain:
-        def think(self, perception, available_tools):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "dangerous", "args": {}}
 
     agent = Agent(brain=DangerBrain(), tools=registry, permission_level="low")

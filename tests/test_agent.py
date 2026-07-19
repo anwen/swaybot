@@ -85,7 +85,10 @@ def test_agent_run():
 
 def test_agent_run_ends_early_with_done_brain():
     class DoneBrain:
-        def think(self, perception, available_tools):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "done", "args": {}}
 
     agent = Agent(brain=DoneBrain())
@@ -96,7 +99,10 @@ def test_agent_run_ends_early_with_done_brain():
 
 def test_agent_run_ends_early_with_final_answer_brain():
     class FinalAnswerBrain:
-        def think(self, perception, available_tools):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "final_answer", "args": {"answer": "done early"}}
 
     agent = Agent(brain=FinalAnswerBrain())
@@ -112,7 +118,10 @@ def test_agent_run_records_tool_error_and_continues():
         def __init__(self):
             self.calls = 0
 
-        def think(self, perception, available_tools):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             self.calls += 1
             if self.calls == 1:
                 return {"name": "add", "args": {"a": 1}}  # missing 'b'
@@ -201,7 +210,10 @@ def test_agent_permission_level_blocks_high_risk_tools():
     registry.register("dangerous", dangerous)
 
     class DangerBrain:
-        def think(self, perception, available_tools):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "dangerous", "args": {}}
 
     agent = Agent(brain=DangerBrain(), tools=registry, permission_level="low")
@@ -220,7 +232,10 @@ def test_agent_permission_level_allows_authorized_high_risk_tools():
     registry.register("dangerous", dangerous)
 
     class DangerBrain:
-        def think(self, perception, available_tools):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "dangerous", "args": {}}
 
     agent = Agent(brain=DangerBrain(), tools=registry, permission_level="high")

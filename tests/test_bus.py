@@ -109,7 +109,10 @@ async def test_async_agent_isolates_sessions():
     results = {}
 
     class CapturingBrain:
-        def think(self, perception, available_tools, metadata=None):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             results[perception["task"]] = perception["task"]
             return {"name": "done", "args": {}}
 
@@ -133,7 +136,10 @@ async def test_async_agent_orders_mid_turn_messages():
     bus = MessageBus()
 
     class EchoDoneBrain:
-        def think(self, perception, available_tools, metadata=None):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "done", "args": {}}
 
     def factory(session_id):

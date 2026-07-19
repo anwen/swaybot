@@ -72,7 +72,10 @@ def test_post_message_and_history(tmp_path):
     bus = MessageBus()
 
     class DoneBrain:
-        def think(self, perception, available_tools, metadata=None):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "done", "args": {}}
 
     app = create_app(
@@ -103,7 +106,10 @@ def test_chat_completions(tmp_path):
     bus = MessageBus()
 
     class DoneBrain:
-        def think(self, perception, available_tools, metadata=None):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "done", "args": {}}
 
     app = create_app(
@@ -132,7 +138,10 @@ def test_chat_completions_streaming(tmp_path):
     bus = MessageBus()
 
     class DoneBrain:
-        def think(self, perception, available_tools, metadata=None):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "done", "args": {}}
 
     app = create_app(

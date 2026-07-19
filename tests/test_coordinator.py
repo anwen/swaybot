@@ -37,7 +37,10 @@ def test_coordinator_saves_state(tmp_path: Path):
 
 def test_coordinator_plans_from_brain():
     class PlanBrain:
-        def think(self, perception, available_tools, metadata=None):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {
                 "name": "plan",
                 "args": {"steps": ["step one", "step two"]},
@@ -55,7 +58,10 @@ def test_coordinator_plans_from_brain():
 
 def test_coordinator_records_failed_subtask(tmp_path: Path):
     class BrokenBrain:
-        def think(self, perception, available_tools, metadata=None):
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
             return {"name": "nonexistent_tool", "args": {}}
 
     coordinator = GoalCoordinator(
