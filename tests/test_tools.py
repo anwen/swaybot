@@ -182,3 +182,20 @@ def test_execute_batch_propagates_request_context():
         )
     assert results == ["ok", "ok", "ok"]
     assert captured == ["batch-user", "batch-user", "batch-user"]
+
+
+def test_execute_batch_handles_provider_prefixed_tools():
+    registry = ToolRegistry()
+
+    @tool(read_only=True, concurrency_safe=True)
+    def greet(name: str) -> str:
+        return f"Hi {name}"
+
+    registry.register("greet", greet, provider="test")
+    results = registry.execute_batch(
+        [
+            {"name": "test/greet", "args": {"name": "a"}},
+            {"name": "test/greet", "args": {"name": "b"}},
+        ]
+    )
+    assert set(results) == {"Hi a", "Hi b"}

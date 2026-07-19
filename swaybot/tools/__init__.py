@@ -328,8 +328,10 @@ class ToolRegistry:
             group: list[tuple[int, dict]] = []
             while i < len(actions):
                 action = actions[i]
-                tool_name = action.get("name")
-                t = self._tools.get(tool_name)
+                tool_name = action.get("name") or ""
+                if not tool_name:
+                    raise ValueError("action is missing a tool name")
+                t = self.get(tool_name)
                 if t is None:
                     raise ValueError(f"Unknown tool: {tool_name}")
                 if t.exclusive or not t.concurrency_safe:
