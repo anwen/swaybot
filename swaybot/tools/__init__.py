@@ -1,5 +1,6 @@
 import contextvars
 import inspect
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable, Union, get_args, get_origin
@@ -207,22 +208,21 @@ class ToolRegistry:
                 risk_level=risk_level,
             )
 
-    def names(self) -> list[str]:
-        names = list(self._tools.keys())
+    def _iter_registered(self) -> Iterator[tuple[str, Tool]]:
+        """Yield (qualified_name, tool) for local and provider tools."""
+        yield from self._tools.items()
         for provider_name, provider in self._providers.items():
-            for t in provider.list_tools():
-                names.append(f"{provider_name}/{t.name}")
-        return names
+            for tool in provider.list_tools():
+                yield f"{provider_name}/{tool.name}", tool
+
+    def names(self) -> list[str]:
+        return [name for name, _ in self._iter_registered()]
 
     def get(self, name: str) -> Tool | None:
-        if "/" in name:
-            provider_name, tool_name = name.split("/", 1)
-            provider = self._providers.get(provider_name)
-            if provider is not None:
-                for t in provider.list_tools():
-                    if t.name == tool_name:
-                        return t
-        return self._tools.get(name)
+        for n, tool in self._iter_registered():
+            if n == name:
+                return tool
+        return None
 
     def describe(self, name: str) -> str:
         """Return a short signature description for a registered tool."""
@@ -244,25 +244,14 @@ class ToolRegistry:
 
     def schemas(self) -> list[dict]:
         """Return JSON-schema descriptions for all registered tools."""
-        schemas = []
-        for name, t in self._tools.items():
-            schemas.append(
-                {
-                    "name": name,
-                    "description": t.description,
-                    "parameters": t.inputs,
-                }
-            )
-        for provider_name, provider in self._providers.items():
-            for t in provider.list_tools():
-                schemas.append(
-                    {
-                        "name": f"{provider_name}/{t.name}",
-                        "description": t.description,
-                        "parameters": t.inputs,
-                    }
-                )
-        return schemas
+        return [
+            {
+                "name": name,
+                "description": t.description,
+                "parameters": t.inputs,
+            }
+            for name, t in self._iter_registered()
+        ]
 
     def execute(
         self,
