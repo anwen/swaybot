@@ -130,17 +130,8 @@ class OpenAIModel:
         for attempt in range(self.max_retries + 1):
             start = time.perf_counter()
             try:
-                kwargs = {
-                    "model": cast(str, self.model),
-                    "messages": messages,  # type: ignore
-                    "temperature": self.temperature,
-                    "max_tokens": self.max_tokens,
-                }
-                if openai_tools:
-                    kwargs["tools"] = openai_tools
-                    kwargs["tool_choice"] = "auto"
+                kwargs = self._prepare_kwargs(messages, openai_tools, stream_callback)
                 if stream_callback:
-                    kwargs["stream"] = True
                     return self._stream_generate(
                         messages,
                         kwargs,
@@ -150,30 +141,9 @@ class OpenAIModel:
                         reasoning_callback,
                     )
                 response = self._client.chat.completions.create(**kwargs)
-                message = response.choices[0].message
-                content = message.content or ""
-                reasoning = getattr(message, "reasoning_content", None)
-                if reasoning and reasoning_callback:
-                    reasoning_callback(reasoning)
-                tool_calls = getattr(message, "tool_calls", None)
-                if isinstance(tool_calls, list) and tool_calls:
-                    action = self._tool_call_to_action(tool_calls[0])
-                    if action is not None:
-                        content = json.dumps(action)
-                if metadata is not None:
-                    metadata["model_input_messages"] = list(messages)
-                    metadata["raw_output"] = content
-                    metadata["duration_ms"] = (time.perf_counter() - start) * 1000
-                    usage = response.usage
-                    if usage:
-                        metadata["token_usage"] = {
-                            "prompt_tokens": getattr(usage, "prompt_tokens", None),
-                            "completion_tokens": getattr(
-                                usage, "completion_tokens", None
-                            ),
-                            "total_tokens": getattr(usage, "total_tokens", None),
-                        }
-                return content
+                return self._handle_completion_response(
+                    messages, response, metadata, start, reasoning_callback
+                )
             except Exception as exc:
                 last_error = str(exc)
                 if metadata is not None:
@@ -193,6 +163,67 @@ class OpenAIModel:
                 if attempt < self.max_retries:
                     time.sleep(self.backoff * (2 ** attempt))
         return None
+
+    def _prepare_kwargs(
+        self,
+        messages: list[dict],
+        openai_tools: list[dict],
+        stream_callback,
+    ) -> dict:
+        kwargs = {
+            "model": cast(str, self.model),
+            "messages": messages,  # type: ignore
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        if openai_tools:
+            kwargs["tools"] = openai_tools
+            kwargs["tool_choice"] = "auto"
+        if stream_callback:
+            kwargs["stream"] = True
+        return kwargs
+
+    def _handle_completion_response(
+        self,
+        messages: list[dict],
+        response,
+        metadata: dict | None,
+        start: float,
+        reasoning_callback,
+    ) -> str:
+        message = response.choices[0].message
+        content = message.content or ""
+        reasoning = getattr(message, "reasoning_content", None)
+        if reasoning and reasoning_callback:
+            reasoning_callback(reasoning)
+        tool_calls = getattr(message, "tool_calls", None)
+        if isinstance(tool_calls, list) and tool_calls:
+            action = self._tool_call_to_action(tool_calls[0])
+            if action is not None:
+                content = json.dumps(action)
+        self._record_completion_metadata(metadata, messages, content, start, response)
+        return content
+
+    def _record_completion_metadata(
+        self,
+        metadata: dict | None,
+        messages: list[dict],
+        content: str,
+        start: float,
+        response,
+    ) -> None:
+        if metadata is None:
+            return
+        metadata["model_input_messages"] = list(messages)
+        metadata["raw_output"] = content
+        metadata["duration_ms"] = (time.perf_counter() - start) * 1000
+        usage = response.usage
+        if usage:
+            metadata["token_usage"] = {
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "total_tokens": getattr(usage, "total_tokens", None),
+            }
 
     def _stream_generate(
         self,
@@ -214,11 +245,21 @@ class OpenAIModel:
                 content_parts.append(text)
                 stream_callback(text)
         full_content = "".join(content_parts)
-        if metadata is not None:
-            metadata["model_input_messages"] = list(messages)
-            metadata["raw_output"] = full_content
-            metadata["duration_ms"] = (time.perf_counter() - start) * 1000
+        self._record_stream_metadata(metadata, messages, full_content, start)
         return full_content
+
+    def _record_stream_metadata(
+        self,
+        metadata: dict | None,
+        messages: list[dict],
+        content: str,
+        start: float,
+    ) -> None:
+        if metadata is None:
+            return
+        metadata["model_input_messages"] = list(messages)
+        metadata["raw_output"] = content
+        metadata["duration_ms"] = (time.perf_counter() - start) * 1000
 
     @staticmethod
     def _build_openai_tools(tools: list[dict] | None) -> list[dict]:
