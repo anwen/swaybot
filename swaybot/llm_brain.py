@@ -212,11 +212,9 @@ class OpenAIModel:
         start: float,
         response,
     ) -> None:
+        self._record_base_metadata(metadata, messages, content, start)
         if metadata is None:
             return
-        metadata["model_input_messages"] = list(messages)
-        metadata["raw_output"] = content
-        metadata["duration_ms"] = (time.perf_counter() - start) * 1000
         usage = response.usage
         if usage:
             metadata["token_usage"] = {
@@ -225,30 +223,16 @@ class OpenAIModel:
                 "total_tokens": getattr(usage, "total_tokens", None),
             }
 
-    def _stream_generate(
-        self,
-        messages: list[dict],
-        kwargs: dict,
-        metadata: dict | None,
-        start: float,
-        stream_callback,
-        reasoning_callback,
-    ) -> str:
-        content_parts: list[str] = []
-        for chunk in self._client.chat.completions.create(**kwargs):
-            delta = chunk.choices[0].delta
-            text = getattr(delta, "content", None) or ""
-            reasoning = getattr(delta, "reasoning_content", None)
-            if reasoning and reasoning_callback:
-                reasoning_callback(reasoning)
-            if text:
-                content_parts.append(text)
-                stream_callback(text)
-        full_content = "".join(content_parts)
-        self._record_stream_metadata(metadata, messages, full_content, start)
-        return full_content
-
     def _record_stream_metadata(
+        self,
+        metadata: dict | None,
+        messages: list[dict],
+        content: str,
+        start: float,
+    ) -> None:
+        self._record_base_metadata(metadata, messages, content, start)
+
+    def _record_base_metadata(
         self,
         metadata: dict | None,
         messages: list[dict],
