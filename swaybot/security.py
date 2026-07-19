@@ -9,7 +9,7 @@ from typing import Any, Iterable, Protocol, runtime_checkable
 
 from .logging import log_event
 from .request_context import RequestContext, current_context
-from .storage import JSONBackend, StorageBackend
+from .storage import StorageBackend, _resolve_file_backend
 
 
 class SecurityError(ValueError):
@@ -150,16 +150,12 @@ class JSONViolationStore:
         path: Path | str | None = None,
         backend: StorageBackend | None = None,
     ) -> None:
-        if backend is not None:
-            self.backend = backend
-            self._key = "violations"
-        elif path is not None:
-            p = Path(path)
-            self.backend = JSONBackend(p.parent)
-            self._key = p.stem
-        else:
-            self.backend = JSONBackend(Path.home() / ".swaybot")
-            self._key = "violations"
+        self.backend, self._key = _resolve_file_backend(
+            backend,
+            path,
+            Path.home() / ".swaybot",
+            "violations",
+        )
 
     def _load(self) -> dict[str, int]:
         data = self.backend.load(self._key)

@@ -306,3 +306,23 @@ def default_memory_backend(path: Path | str | None = None) -> JSONBackend:
     if path is None:
         path = Path.home() / ".swaybot" / "memory.json"
     return JSONBackend(Path(path).parent)
+
+
+def _resolve_file_backend(
+    backend: StorageBackend | None,
+    path: Path | str | None,
+    default_dir: Path,
+    default_key: str,
+) -> tuple[StorageBackend, str]:
+    """Return a backend and key for single-file JSON storage.
+
+    If a backend is passed it is used as-is with ``default_key``. If a path
+    is passed, the backend is created for the parent directory and the key
+    is the path stem. Otherwise use ``default_dir`` with ``default_key``.
+    """
+    if backend is not None:
+        return backend, default_key
+    if path is not None:
+        p = Path(path)
+        return JSONBackend(p.parent), p.stem
+    return JSONBackend(default_dir), default_key

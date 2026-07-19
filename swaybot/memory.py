@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Callable, ClassVar
 
 from .storage import (
+    InMemoryBackend,
     JSONLBackend,
     StorageBackend,
+    _resolve_file_backend,
     default_memory_backend,
-    InMemoryBackend,
 )
 
 _STEP_REGISTRY: dict[str, type["MemoryStep"]] = {}
@@ -165,9 +166,12 @@ class MemoryStore:
             self.backend = backend
             self._key = key or "memory"
         elif path is not None:
-            p = Path(path)
-            self.backend = default_memory_backend(p)
-            self._key = p.stem
+            self.backend, self._key = _resolve_file_backend(
+                None,
+                path,
+                Path.home() / ".swaybot",
+                "memory",
+            )
         else:
             # Default to in-memory storage for backward compatibility and
             # to keep tests isolated.
