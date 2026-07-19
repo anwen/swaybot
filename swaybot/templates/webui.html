@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SwayBot WebUI</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    #history { border: 1px solid #ccc; border-radius: 8px; min-height: 200px; padding: 1rem; margin-bottom: 1rem; }
+    .msg { margin: 0.5rem 0; }
+    .user { color: #0066cc; }
+    .assistant { color: #228822; }
+    textarea { width: 100%; height: 80px; }
+    button { padding: 0.5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>SwayBot WebUI</h1>
+  <label>Session ID: <input id="sessionId" value="demo" /></label>
+  <div id="history"></div>
+  <textarea id="input" placeholder="Type a message..."></textarea><br/>
+  <button id="send">Send</button>
+  <script>
+    const sessionId = () => document.getElementById('sessionId').value || 'demo';
+    async function loadHistory() {
+      const res = await fetch(`/v1/sessions/${sessionId()}/history`);
+      const data = await res.json();
+      const box = document.getElementById('history');
+      box.innerHTML = data.messages.map(m =>
+        `<div class="msg ${m.role}"><b>${m.role}:</b> ${escapeHtml(m.content)}</div>`
+      ).join('');
+    }
+    function escapeHtml(text) {
+      return text.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;"'"'"'":'&#39;'}[c]));
+    }
+    document.getElementById('send').onclick = async () => {
+      const input = document.getElementById('input');
+      await fetch(`/v1/sessions/${sessionId()}/messages`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({role: 'user', content: input.value})
+      });
+      input.value = '';
+      setTimeout(loadHistory, 500);
+    };
+    setInterval(loadHistory, 2000);
+    loadHistory();
+  </script>
+</body>
+</html>
