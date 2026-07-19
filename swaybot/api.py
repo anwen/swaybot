@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from .async_agent import AsyncAgent
 from .bus import InboundMessage, MessageBus, OutboundMessage
 from .request_context import RequestContext, current_context, set_context
-from .coordinator import GoalCoordinator
+from .coordinator import Goal, GoalCoordinator
 from .env import load_dotenv
 from .logging import JSONFormatter, get_event_logger
 from .scheduler import Scheduler
@@ -208,32 +208,35 @@ def create_app(
     async def webui():
         return HTMLResponse(content=_WEBUI_HTML)
 
-    @app.post("/v1/goals")
-    async def create_goal(body: CreateGoalRequest):
-        with set_context(_session_context(f"goal-{uuid.uuid4().hex[:8]}")):
-            goal = await coordinator.arun(body.description, body.context)
+    def _goal_to_response(goal: Goal) -> GoalResponse:
         return GoalResponse(
             id=goal.id,
             description=goal.description,
             context=goal.context,
             state=goal.state,
-            subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in goal.subtasks],
+            subtasks=[
+                {
+                    "id": s.id,
+                    "description": s.description,
+                    "status": s.status,
+                    "result": s.result,
+                }
+                for s in goal.subtasks
+            ],
             created_at=goal.created_at,
             updated_at=goal.updated_at,
         )
 
+    @app.post("/v1/goals")
+    async def create_goal(body: CreateGoalRequest):
+        with set_context(_session_context(f"goal-{uuid.uuid4().hex[:8]}")):
+            goal = await coordinator.arun(body.description, body.context)
+        return _goal_to_response(goal)
+
     @app.get("/v1/goals")
     async def list_goals():
         return [
-            GoalResponse(
-                id=g.id,
-                description=g.description,
-                context=g.context,
-                state=g.state,
-                subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in g.subtasks],
-                created_at=g.created_at,
-                updated_at=g.updated_at,
-            )
+            _goal_to_response(g)
             for g in coordinator.state_machine.list_goals()
         ]
 
@@ -243,41 +246,17 @@ def create_app(
             goal = coordinator.state_machine.load(goal_id)
         except KeyError:
             return JSONResponse({"error": "not found"}, status_code=404)
-        return GoalResponse(
-            id=goal.id,
-            description=goal.description,
-            context=goal.context,
-            state=goal.state,
-            subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in goal.subtasks],
-            created_at=goal.created_at,
-            updated_at=goal.updated_at,
-        )
+        return _goal_to_response(goal)
 
     @app.post("/v1/goals/{goal_id}/retry")
     async def retry_goal(goal_id: str):
         goal = await coordinator.retry(goal_id)
-        return GoalResponse(
-            id=goal.id,
-            description=goal.description,
-            context=goal.context,
-            state=goal.state,
-            subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in goal.subtasks],
-            created_at=goal.created_at,
-            updated_at=goal.updated_at,
-        )
+        return _goal_to_response(goal)
 
     @app.delete("/v1/goals/{goal_id}")
     async def cancel_goal(goal_id: str):
         goal = await coordinator.cancel(goal_id)
-        return GoalResponse(
-            id=goal.id,
-            description=goal.description,
-            context=goal.context,
-            state=goal.state,
-            subtasks=[{"id": s.id, "description": s.description, "status": s.status, "result": s.result} for s in goal.subtasks],
-            created_at=goal.created_at,
-            updated_at=goal.updated_at,
-        )
+        return _goal_to_response(goal)
 
     return app
 
