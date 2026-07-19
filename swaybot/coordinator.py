@@ -3,6 +3,7 @@
 import asyncio
 import json
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -165,7 +166,6 @@ class GoalCoordinator:
         self.state_machine = GoalStateMachine(self.backend)
         self.scheduler = scheduler or Scheduler()
         self.event_bus = event_bus or InMemoryEventBus()
-        self._owns_scheduler = scheduler is None
 
     def run(self, description: str, context: str = "") -> Goal:
         """Plan, execute, and record a goal."""
@@ -186,16 +186,11 @@ class GoalCoordinator:
         self.state_machine.save(goal)
 
         self.state_machine.transition(goal, GOAL_RUNNING)
-        await self._start_scheduler()
-
-        try:
+        async with self._scheduler_context():
             for subtask in goal.subtasks:
                 if goal.state == GOAL_CANCELLED:
                     break
                 await self._execute_subtask(goal, subtask)
-        finally:
-            if self._owns_scheduler:
-                await self.scheduler.stop()
 
         failed = any(s.status == SUBTASK_FAILED for s in goal.subtasks)
         final_state = GOAL_FAILED if failed else GOAL_DONE
@@ -206,14 +201,10 @@ class GoalCoordinator:
     async def resume(self, goal_id: str) -> Goal:
         """Resume a previously saved goal, retrying pending/failed subtasks."""
         goal = self.state_machine.load(goal_id)
-        await self._start_scheduler()
-        try:
+        async with self._scheduler_context():
             for subtask in goal.subtasks:
                 if subtask.status in (SUBTASK_PENDING, SUBTASK_FAILED):
                     await self._execute_subtask(goal, subtask)
-        finally:
-            if self._owns_scheduler:
-                await self.scheduler.stop()
         failed = any(s.status == SUBTASK_FAILED for s in goal.subtasks)
         self.state_machine.transition(
             goal, GOAL_FAILED if failed else GOAL_DONE
@@ -319,9 +310,18 @@ class GoalCoordinator:
             )
         )
 
-    async def _start_scheduler(self) -> None:
+    @asynccontextmanager
+    async def _scheduler_context(self):
+        """Start the scheduler if it is not already running, then stop it."""
+        own = False
         if not self.scheduler._running:
             await self.scheduler.start()
+            own = True
+        try:
+            yield
+        finally:
+            if own:
+                await self.scheduler.stop()
 
     def _plan(self, goal: Goal) -> list[Subtask]:
         """Ask the agent's brain for a list of subtasks."""
