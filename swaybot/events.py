@@ -32,10 +32,11 @@ class EventBus(Protocol):
         self,
         event_type: str,
         handler: Callable[[Event], Any],
-    ) -> None:
+    ) -> Callable[[], None]:
         """Subscribe ``handler`` to events of ``event_type``.
 
         Use ``event_type="*"`` to receive all events.
+        Returns a function that removes the subscription when called.
         """
         ...
 
@@ -58,8 +59,16 @@ class InMemoryEventBus:
         self,
         event_type: str,
         handler: Callable[[Event], Any],
-    ) -> None:
+    ) -> Callable[[], None]:
         self._handlers.setdefault(event_type, []).append(handler)
+
+        def unsubscribe() -> None:
+            try:
+                self._handlers[event_type].remove(handler)
+            except (KeyError, ValueError):
+                pass
+
+        return unsubscribe
 
     async def publish(self, event: Event) -> None:
         handlers = (

@@ -249,14 +249,17 @@ class GoalCoordinator:
                 payload.update(event.payload)
                 completed.set()
 
-        self.event_bus.subscribe("subtask.completed", on_complete)
+        unsubscribe = self.event_bus.subscribe("subtask.completed", on_complete)
         self.scheduler.add_job(
             self._subtask_job,
             OneShotSchedule(),
             args=(goal.id, subtask.id),
             job_id=subtask.id,
         )
-        await completed.wait()
+        try:
+            await completed.wait()
+        finally:
+            unsubscribe()
 
         status = payload.get("status", SUBTASK_FAILED)
         result = payload.get("result", "")

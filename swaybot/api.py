@@ -296,19 +296,35 @@ async def _stream_chat(
         if msg.session_id == session_id:
             queue.put_nowait(msg)
 
-    bus.subscribe(on_message)
-    await async_agent.post(
-        InboundMessage(role="user", content=content, session_id=session_id)
-    )
+    unsubscribe = bus.subscribe(on_message)
+    try:
+        await async_agent.post(
+            InboundMessage(role="user", content=content, session_id=session_id)
+        )
 
-    created = int(time.time())
-    sent_role = False
-    while True:
-        try:
-            msg = await asyncio.wait_for(queue.get(), timeout=10.0)
-        except asyncio.TimeoutError:
-            break
-        if not sent_role:
+        created = int(time.time())
+        sent_role = False
+        while True:
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=10.0)
+            except asyncio.TimeoutError:
+                break
+            if not sent_role:
+                chunk = {
+                    "id": session_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant"},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+                sent_role = True
             chunk = {
                 "id": session_id,
                 "object": "chat.completion.chunk",
@@ -317,14 +333,14 @@ async def _stream_chat(
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"role": "assistant"},
+                        "delta": {"content": msg.content},
                         "finish_reason": None,
                     }
                 ],
             }
             yield f"data: {json.dumps(chunk)}\n\n"
-            sent_role = True
-        chunk = {
+
+        final = {
             "id": session_id,
             "object": "chat.completion.chunk",
             "created": created,
@@ -332,28 +348,15 @@ async def _stream_chat(
             "choices": [
                 {
                     "index": 0,
-                    "delta": {"content": msg.content},
-                    "finish_reason": None,
+                    "delta": {},
+                    "finish_reason": "stop",
                 }
             ],
         }
-        yield f"data: {json.dumps(chunk)}\n\n"
-
-    final = {
-        "id": session_id,
-        "object": "chat.completion.chunk",
-        "created": created,
-        "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {},
-                "finish_reason": "stop",
-            }
-        ],
-    }
-    yield f"data: {json.dumps(final)}\n\n"
-    yield "data: [DONE]\n\n"
+        yield f"data: {json.dumps(final)}\n\n"
+        yield "data: [DONE]\n\n"
+    finally:
+        unsubscribe()
 
 
 async def _run_one_turn(
@@ -372,7 +375,7 @@ async def _run_one_turn(
             last_answer[0] = msg.content
             answer_event.set()
 
-    bus.subscribe(on_message)
+    unsubscribe = bus.subscribe(on_message)
     await async_agent.post(
         InboundMessage(role="user", content=content, session_id=session_id)
     )
@@ -380,6 +383,8 @@ async def _run_one_turn(
         await asyncio.wait_for(answer_event.wait(), timeout=timeout)
     except asyncio.TimeoutError:
         pass
+    finally:
+        unsubscribe()
     return last_answer[0]
 
 

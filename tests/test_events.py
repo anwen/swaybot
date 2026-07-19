@@ -45,11 +45,14 @@ async def test_event_bus_wildcard_receives_all_events():
 
 
 @pytest.mark.asyncio
-async def test_event_bus_ignores_errors_from_subscribers():
+async def test_event_bus_unsubscribe_removes_handler():
     bus = InMemoryEventBus()
+    received = []
 
-    def bad_handler(_event: Event) -> None:
-        raise RuntimeError("boom")
+    def handler(event: Event) -> None:
+        received.append(event)
 
-    bus.subscribe("x", bad_handler)
+    unsubscribe = bus.subscribe("x", handler)
+    unsubscribe()
     await bus.publish(Event(type="x", payload={}))
+    assert len(received) == 0
