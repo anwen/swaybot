@@ -1,10 +1,9 @@
-import json
 from dataclasses import dataclass
 
 from .agent import Agent
 from .brain import DEFAULT_EXPLORATION_TASKS, EchoBrain
 from .environment import Environment
-from .llm_brain import _strip_markdown_fences
+from .llm_brain import parse_exploration_response
 from .reflection import Reflector
 
 
@@ -113,21 +112,3 @@ class Explorer:
                     seen.add(content)
                     candidates.append(content)
         return candidates
-
-
-def parse_exploration_response(raw: str) -> dict:
-    """Parse a JSON response expected to contain task and hypothesis."""
-    raw = _strip_markdown_fences(raw)
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-
-    if not isinstance(data, dict):
-        return {}
-
-    return {
-        "task": data.get("task", data.get("explore", "")),
-        "hypothesis": data.get("hypothesis", ""),
-    }

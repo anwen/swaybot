@@ -76,7 +76,9 @@ class Agent:
     ) -> Environment:
         ctx = request_context or current_context()
         with set_context(ctx):
-            return self._run(task, max_steps, reflect, plan, hypothesis, stream)
+            return self._run(
+                task, max_steps, reflect, plan, hypothesis, stream, ctx
+            )
 
     def _run(
         self,
@@ -86,6 +88,7 @@ class Agent:
         plan: bool = False,
         hypothesis: str | None = None,
         stream: bool = False,
+        request_context: RequestContext | None = None,
     ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
         run_steps: list[dict] = []
@@ -101,7 +104,7 @@ class Agent:
             )
             self.hooks.before_iteration(task, env.step, perception)
             action, call_info = self._think(perception, stream)
-            result, error = self._execute_action(action)
+            result, error = self._execute_action(action, request_context)
             if error is None and call_info.get("error"):
                 error = str(call_info["error"])
             env.observe(action, result)
@@ -141,13 +144,15 @@ class Agent:
             )
         return action, call_info
 
-    def _execute_action(self, action: dict) -> tuple[Any, str | None]:
+    def _execute_action(
+        self, action: dict, request_context: RequestContext | None = None
+    ) -> tuple[Any, str | None]:
         """Run the chosen tool if permitted, returning (result, error)."""
         allowed, permission_msg = self._allowed(action.get("name", ""))
         if not allowed:
             return f"Error: {permission_msg}", permission_msg
         try:
-            return self.tools.execute(action, current_context()), None
+            return self.tools.execute(action, request_context), None
         except Exception as exc:
             return f"Error: {exc}", str(exc)
 
@@ -208,7 +213,8 @@ class Agent:
         call_info: dict,
     ) -> None:
         """Store an action/observation pair in memory and optionally compact."""
-        self.memory.add(
+        assert self.memory is not None
+        steps = [
             ActionStep(
                 step=step,
                 action=action,
@@ -217,15 +223,15 @@ class Agent:
                 raw_output=call_info.get("raw_output"),
                 token_usage=call_info.get("token_usage"),
                 duration_ms=call_info.get("duration_ms"),
-            )
-        )
-        self.memory.add(
+            ),
             ObservationStep(
                 step=step,
                 observation=str(result),
                 tags=[task],
-            )
-        )
+            ),
+        ]
+        self.memory.memories.extend(steps)
+        self.memory.save()
         if self.auto_compact and self.compactor is not None:
             self.compactor.compact(self.memory, tag=task)
 

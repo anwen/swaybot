@@ -135,6 +135,7 @@ class GoalCoordinator:
     """Break a long goal into subtasks and execute them sequentially.
 
     ``agent_factory`` should return an ``Agent`` instance for each subtask.
+    It receives the goal id as its sole argument.
 
     The coordinator can persist state to a ``StorageBackend`` and execute
     subtasks through an async ``Scheduler``. This allows goals to resume after
@@ -143,7 +144,7 @@ class GoalCoordinator:
 
     def __init__(
         self,
-        agent_factory: Callable[[], Agent],
+        agent_factory: Callable[[str], Agent],
         state_path: Path | str | None = None,
         max_subtask_steps: int = 10,
         backend: StorageBackend | None = None,
@@ -243,7 +244,14 @@ class GoalCoordinator:
             job_id=subtask.id,
         )
         try:
-            await completed.wait()
+            await asyncio.wait_for(completed.wait(), timeout=300.0)
+        except asyncio.TimeoutError:
+            payload.update(
+                {
+                    "status": SUBTASK_FAILED,
+                    "result": "subtask timed out",
+                }
+            )
         finally:
             unsubscribe()
 
@@ -274,7 +282,7 @@ class GoalCoordinator:
             )
             return
 
-        agent = self.agent_factory()
+        agent = self.agent_factory(goal_id)
         try:
             env = await asyncio.to_thread(
                 agent.run,
@@ -320,7 +328,7 @@ class GoalCoordinator:
 
     def _plan(self, goal: Goal) -> list[Subtask]:
         """Ask the agent's brain for a list of subtasks."""
-        agent = self.agent_factory()
+        agent = self.agent_factory(goal.id)
         perception = {
             "task": goal.description,
             "context": goal.context,

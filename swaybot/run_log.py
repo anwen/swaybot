@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -129,7 +128,7 @@ def format_run(record: dict) -> str:
     for step in steps:
         action = step.get("action") or {}
         result = step.get("result")
-        lines.append(f"Step {step.get('step')}: {_format_action(action)} → {result}")
+        lines.append(f"Step {step.get('step')}: {format_action(action)} → {result}")
         raw_output = step.get("raw_output")
         if raw_output:
             lines.append(f"  raw output: {raw_output}")
@@ -148,10 +147,6 @@ def format_run(record: dict) -> str:
         if error:
             lines.append(f"  error: {error}")
     return "\n".join(lines)
-
-
-def _format_action(action: dict) -> str:
-    return format_action(action)
 
 
 def _format_number(value: Any) -> str:

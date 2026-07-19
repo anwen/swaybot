@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -210,7 +211,7 @@ class Scheduler:
             else:
                 await asyncio.to_thread(job.fn, *job.args)
         except Exception:  # pragma: no cover - job errors should not crash scheduler
-            pass
+            logging.getLogger(__name__).exception("Job %s failed", job.id)
         finally:
             job.running_count -= 1
             job.last_run = datetime.now(timezone.utc).isoformat()

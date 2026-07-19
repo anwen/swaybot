@@ -89,6 +89,7 @@ def create_app(
     coordinator = goal_coordinator or GoalCoordinator(
         agent_factory=agent_factory,
         max_subtask_steps=max_steps,
+        scheduler=scheduler,
     )
 
     async_agent = AsyncAgent(
@@ -286,7 +287,7 @@ async def _stream_chat(
         sent_role = False
         while True:
             try:
-                msg = await asyncio.wait_for(queue.get(), timeout=10.0)
+                msg = await asyncio.wait_for(queue.get(), timeout=30.0)
             except asyncio.TimeoutError:
                 break
             if not sent_role:
@@ -297,6 +298,8 @@ async def _stream_chat(
             yield _sse_chunk(
                 session_id, created, model, {"content": msg.content}
             )
+            if msg.final:
+                break
 
         yield _sse_chunk(session_id, created, model, {}, finish_reason="stop")
         yield "data: [DONE]\n\n"
@@ -335,12 +338,12 @@ async def _run_one_turn(
     content: str,
     timeout: float = 30.0,
 ) -> str:
-    """Post a message and wait for the first outbound response."""
+    """Post a message and wait for the final outbound response."""
     answer_event = asyncio.Event()
     last_answer: list[str] = [""]
 
     def on_message(msg: OutboundMessage) -> None:
-        if msg.session_id == session_id:
+        if msg.session_id == session_id and msg.final:
             last_answer[0] = msg.content
             answer_event.set()
 

@@ -46,7 +46,7 @@ def _strip_markdown_fences(raw: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _parse_exploration_response(raw: str) -> dict:
+def parse_exploration_response(raw: str) -> dict:
     """Parse a JSON response expected to contain task and hypothesis."""
     raw = _strip_markdown_fences(raw)
 
@@ -432,7 +432,7 @@ class LLMBrain:
         raw = self._model.generate(messages, metadata=metadata)
         if raw is None:
             return {"name": "explore", "args": {"task": "explore", "hypothesis": ""}}
-        return {"name": "explore", "args": _parse_exploration_response(raw)}
+        return {"name": "explore", "args": parse_exploration_response(raw)}
 
 
 def _merge_metadata(target: dict | None, source: dict) -> None:

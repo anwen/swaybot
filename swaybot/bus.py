@@ -26,6 +26,7 @@ class OutboundMessage:
     role: str = "assistant"
     content: str = ""
     session_id: str = ""
+    final: bool = False
     posted_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

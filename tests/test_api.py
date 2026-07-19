@@ -167,7 +167,7 @@ def test_chat_completions_streaming(tmp_path):
 def test_create_goal_endpoint():
     backend = InMemoryBackend()
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(brain=EchoBrain()),
+        agent_factory=lambda _: Agent(brain=EchoBrain()),
         backend=backend,
         max_subtask_steps=2,
     )
@@ -187,7 +187,7 @@ def test_create_goal_endpoint():
 def test_get_and_retry_goal_endpoint():
     backend = InMemoryBackend()
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(brain=EchoBrain()),
+        agent_factory=lambda _: Agent(brain=EchoBrain()),
         backend=backend,
         max_subtask_steps=2,
     )
@@ -211,7 +211,7 @@ def test_get_and_retry_goal_endpoint():
 def test_cancel_goal_endpoint():
     backend = InMemoryBackend()
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(brain=EchoBrain()),
+        agent_factory=lambda _: Agent(brain=EchoBrain()),
         backend=backend,
         max_subtask_steps=2,
     )

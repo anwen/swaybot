@@ -141,7 +141,8 @@ def test_agent_build_messages_includes_memory_context_and_short_term_steps():
     store.add(Memory(content="demo context long", scope="long_term", tags=["demo"]))
     store.add(Memory(content="demo short note", scope="short_term", tags=["demo"]))
     agent = Agent(memory=store)
-    messages = agent.context_builder._build_messages("demo")
+    relevant = store.query_relevant("demo")
+    messages = agent.context_builder._build_messages("demo", relevant)
     assert any("Relevant memories" in msg["content"] and "demo context long" in msg["content"] for msg in messages)
     assert any(msg["content"] == "demo short note" for msg in messages)
 
@@ -180,7 +181,8 @@ def test_agent_behavior_guidance_pulls_high_credibility_theories():
         )
     )
     agent = Agent(memory=store)
-    guidance = agent.context_builder._behavior_guidance("demo")
+    relevant = store.query_relevant("demo")
+    guidance = agent.context_builder._behavior_guidance("demo", relevant)
     assert "avoid recursion" in guidance
     assert "low confidence" not in guidance
 
@@ -193,7 +195,8 @@ def test_agent_memory_context_uses_relevance_and_long_term_only():
     store.add(Memory(content="long demo fact", scope="long_term", tags=["demo"]))
     store.add(Memory(content="unrelated", scope="long_term", tags=["other"]))
     agent = Agent(memory=store)
-    context = agent.context_builder._memory_context("demo")
+    relevant = store.query_relevant("demo")
+    context = agent.context_builder._memory_context("demo", relevant)
     assert "long demo fact" in context
     assert "short demo note" not in context
     assert "unrelated" not in context

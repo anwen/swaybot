@@ -40,26 +40,14 @@ class ContextBuilder:
         perception["project_instructions"] = load_project_instructions()
         return perception
 
-    def _memory_context(self, task: str, relevant: list | None = None) -> str:
-        if relevant is None:
-            relevant = (
-                self.memory.query_relevant(task, scope="long_term", limit=5)
-                if self.memory is not None
-                else []
-            )
+    def _memory_context(self, task: str, relevant: list) -> str:
         if not relevant:
             return ""
         return "\n".join(
             f"- {getattr(m, 'content', str(m))}" for m in relevant
         )
 
-    def _behavior_guidance(self, task: str, relevant: list | None = None) -> str:
-        if relevant is None:
-            relevant = (
-                self.memory.query_relevant(task, scope="long_term", limit=5)
-                if self.memory is not None
-                else []
-            )
+    def _behavior_guidance(self, task: str, relevant: list) -> str:
         lines: list[str] = []
         for theory in relevant:
             if getattr(theory, "credibility", 0.0) < 0.5:
@@ -69,15 +57,9 @@ class ContextBuilder:
                 lines.append(f"- {content}")
         return "\n".join(lines)
 
-    def _build_messages(
-        self, task: str, relevant: list | None = None
-    ) -> list[dict]:
-        if relevant is None:
-            relevant = (
-                self.memory.query_relevant(task, scope="long_term", limit=5)
-                if self.memory is not None
-                else []
-            )
+    def _build_messages(self, task: str, relevant: list) -> list[dict]:
+        if self.memory is None:
+            return []
         messages: list[dict] = []
         context = self._memory_context(task, relevant)
         if context:

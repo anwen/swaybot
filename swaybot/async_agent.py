@@ -89,11 +89,12 @@ class AsyncAgent:
                         reflect=False,
                         request_context=ctx,
                     )
-                for record in env.history:
+                for idx, record in enumerate(env.history):
                     outbound = OutboundMessage(
                         role="assistant",
                         content=str(record["result"]),
                         session_id=session_id,
+                        final=idx == len(env.history) - 1,
                     )
                     if self.session_manager is not None:
                         self.session_manager.append(session_id, outbound)

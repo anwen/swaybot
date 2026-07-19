@@ -12,7 +12,7 @@ from swaybot.storage import InMemoryBackend
 def test_coordinator_runs_subtasks(tmp_path: Path):
     state = tmp_path / "goals.jsonl"
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(),
+        agent_factory=lambda _: Agent(),
         state_path=state,
         max_subtask_steps=2,
     )
@@ -25,7 +25,7 @@ def test_coordinator_runs_subtasks(tmp_path: Path):
 def test_coordinator_saves_state(tmp_path: Path):
     state = tmp_path / "goals.jsonl"
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(),
+        agent_factory=lambda _: Agent(),
         state_path=state,
         max_subtask_steps=2,
     )
@@ -47,7 +47,7 @@ def test_coordinator_plans_from_brain():
             }
 
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(brain=PlanBrain()),
+        agent_factory=lambda _: Agent(brain=PlanBrain()),
         state_path=Path("/dev/null"),
         max_subtask_steps=1,
     )
@@ -65,7 +65,7 @@ def test_coordinator_records_failed_subtask(tmp_path: Path):
             return {"name": "nonexistent_tool", "args": {}}
 
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(brain=BrokenBrain()),
+        agent_factory=lambda _: Agent(brain=BrokenBrain()),
         state_path=tmp_path / "goals.jsonl",
         max_subtask_steps=2,
     )
@@ -96,7 +96,7 @@ async def test_resume_runs_pending_subtasks():
     sm.create(goal)
 
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(brain=EchoBrain()),
+        agent_factory=lambda _: Agent(brain=EchoBrain()),
         backend=backend,
         max_subtask_steps=2,
     )
@@ -114,7 +114,7 @@ async def test_retry_resets_failed_subtasks():
     sm.create(goal)
 
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(brain=EchoBrain()),
+        agent_factory=lambda _: Agent(brain=EchoBrain()),
         backend=backend,
         max_subtask_steps=2,
     )
@@ -132,7 +132,7 @@ async def test_cancel_marks_goal_cancelled():
     sm.create(goal)
 
     coordinator = GoalCoordinator(
-        agent_factory=lambda: Agent(brain=EchoBrain()),
+        agent_factory=lambda _: Agent(brain=EchoBrain()),
         backend=backend,
         max_subtask_steps=2,
     )
