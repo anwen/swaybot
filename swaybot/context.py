@@ -84,8 +84,6 @@ class ContextBuilder:
             messages.append(
                 {"role": "user", "content": f"Relevant memories:\n{context}"}
             )
-        for step in self.memory.memories:
-            if task not in step.tags or step.scope != "short_term":
-                continue
+        for step in self.memory.iter_short_term(task):
             messages.extend(step.to_messages())
         return messages

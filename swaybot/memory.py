@@ -1,5 +1,6 @@
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -213,6 +214,15 @@ class MemoryStore:
             ]
         return results[-limit:]
 
+    def iter_short_term(self, tag: str | None = None) -> Iterator[MemoryStep]:
+        """Yield short-term steps, optionally filtered to a tag."""
+        for m in self.memories:
+            if m.scope != "short_term":
+                continue
+            if tag is not None and tag not in m.tags:
+                continue
+            yield m
+
     def query_relevant(
         self,
         query: str,
@@ -356,11 +366,7 @@ class Consolidator:
 
         Returns the archived steps.
         """
-        candidates = [
-            m
-            for m in store.memories
-            if m.scope == "short_term" and (tag is None or tag in m.tags)
-        ]
+        candidates = list(store.iter_short_term(tag))
         if keep_last > 0:
             archived = candidates[:-keep_last]
         else:
@@ -465,11 +471,7 @@ class AutoCompact:
 
         Returns ``True`` if compaction happened.
         """
-        candidates = [
-            m
-            for m in store.memories
-            if m.scope == "short_term" and (tag is None or tag in m.tags)
-        ]
+        candidates = list(store.iter_short_term(tag))
         if len(candidates) <= self.max_steps:
             return False
 
