@@ -5,7 +5,7 @@ import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 
 class StorageError(ValueError):
@@ -84,6 +84,15 @@ class _BaseFileBackend:
             raise StorageError(f"key path escapes base_dir: {key}")
         return path
 
+    def _atomic_write(self, key: str, write_fn: Callable[[Path], None]) -> None:
+        """Write to a temp file under ``key``'s parent and atomically replace it."""
+        with self._lock:
+            path = self._path(key)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            write_fn(tmp)
+            tmp.replace(path)
+
     def create(self, key: str) -> None:
         with self._lock:
             self._path(key).touch(exist_ok=True)
@@ -106,6 +115,17 @@ class _BaseFileBackend:
             return keys
 
 
+def _normalize_stream_data(data: Any) -> list[Any]:
+    """Normalize stored data into a list of records for load_stream."""
+    if data is None:
+        return []
+    if isinstance(data, dict):
+        return [data]
+    if isinstance(data, list):
+        return data
+    return []
+
+
 class JSONBackend(_BaseFileBackend):
     """Store each key as a single JSON file."""
 
@@ -119,15 +139,13 @@ class JSONBackend(_BaseFileBackend):
             return json.loads(path.read_text(encoding="utf-8"))
 
     def save(self, key: str, data: Any) -> None:
-        with self._lock:
-            path = self._path(key)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
+        def _write(tmp: Path) -> None:
             tmp.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            tmp.replace(path)
+
+        self._atomic_write(key, _write)
 
     def append(self, key: str, record: dict[str, Any]) -> None:
         with self._lock:
@@ -145,15 +163,7 @@ class JSONBackend(_BaseFileBackend):
     def load_stream(
         self, key: str, limit: int | None = None
     ) -> list[dict[str, Any]]:
-        data = self.load(key)
-        if data is None:
-            return []
-        if isinstance(data, dict):
-            records = [data]
-        elif isinstance(data, list):
-            records = data
-        else:
-            return []
+        records = _normalize_stream_data(self.load(key))
         if limit is not None:
             records = records[-limit:]
         return records
@@ -177,15 +187,14 @@ class JSONLBackend(_BaseFileBackend):
         return self.load_stream(key)
 
     def save(self, key: str, data: Any) -> None:
-        with self._lock:
-            records = data if isinstance(data, list) else [data]
-            path = self._path(key)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
+        records = data if isinstance(data, list) else [data]
+
+        def _write(tmp: Path) -> None:
             with tmp.open("w", encoding="utf-8") as fh:
                 for record in records:
                     fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-            tmp.replace(path)
+
+        self._atomic_write(key, _write)
 
     def append(self, key: str, record: dict[str, Any]) -> None:
         with self._lock:
@@ -274,14 +283,10 @@ class InMemoryBackend:
         self, key: str, limit: int | None = None
     ) -> list[dict[str, Any]]:
         data = self.load(key)
-        if data is None:
-            return []
-        if isinstance(data, dict):
-            records = [data]
-        elif isinstance(data, list):
+        if isinstance(data, list):
             records = list(data)
         else:
-            return []
+            records = _normalize_stream_data(data)
         if limit is not None:
             records = records[-limit:]
         return records
