@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .storage import StorageBackend, _resolve_file_backend
+from .storage import JSONLBackend, StorageBackend
 from .tools import format_action
 
 TOKEN_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
@@ -20,7 +20,7 @@ def _backend_for_path(path: Path | str | None) -> tuple[StorageBackend, str] | N
     if not path:
         return None
     run_path = Path(path)
-    return _resolve_file_backend(None, run_path, run_path.parent, run_path.stem)
+    return JSONLBackend(run_path.parent), run_path.stem
 
 
 def append_run(path: Path | str, record: dict) -> None:
