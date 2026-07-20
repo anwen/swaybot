@@ -1,4 +1,8 @@
-from typing import Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
+
+
+StreamCallback = Callable[[str], None]
+ReasoningCallback = Callable[[str], None]
 
 
 DEFAULT_EXPLORATION_TASKS = [
@@ -26,9 +30,9 @@ class Brain(Protocol):
         perception: dict,
         available_tools: list[str],
         metadata: dict | None = None,
-        stream_callback=None,
-        reasoning_callback=None,
-    ) -> dict:
+        stream_callback: StreamCallback | None = None,
+        reasoning_callback: ReasoningCallback | None = None,
+    ) -> dict[str, Any]:
         """Return the next action to execute."""
         ...
 
@@ -45,9 +49,9 @@ class EchoBrain:
         perception: dict,
         available_tools: list[str],
         metadata: dict | None = None,
-        stream_callback=None,
-        reasoning_callback=None,
-    ) -> dict:
+        stream_callback: StreamCallback | None = None,
+        reasoning_callback: ReasoningCallback | None = None,
+    ) -> dict[str, Any]:
         if perception.get("planning"):
             return {
                 "name": "plan",

@@ -23,7 +23,7 @@ from .coordinator import Goal, GoalCoordinator
 from .env import load_dotenv
 from .logging import JSONFormatter, get_event_logger
 from .scheduler import Scheduler
-from .security import PermissionMode, PermissionPolicy
+from .security import PermissionPolicy, permission_level_to_mode
 from .session import SessionManager
 
 
@@ -76,14 +76,11 @@ def create_app(
         from .agent import Agent
 
         def _default_agent_factory(session_id: str = "") -> Agent:
-            level = current_context().permission_level
-            if level == "high":
-                mode = PermissionMode.DANGER
-            elif level == "low":
-                mode = PermissionMode.READ_ONLY
-            else:
-                mode = PermissionMode.WORKSPACE_WRITE
-            return Agent(permission_policy=PermissionPolicy(mode=mode))
+            return Agent(
+                permission_policy=PermissionPolicy(
+                    mode=permission_level_to_mode(current_context().permission_level)
+                )
+            )
 
         agent_factory = _default_agent_factory
 
@@ -204,7 +201,7 @@ def create_app(
     @app.get("/v1/sessions/{session_id}/history")
     async def get_history(session_id: str, limit: int | None = None):
         with set_context(_session_context(session_id)):
-            messages = manager.load(session_id, limit=limit)
+            messages = await manager.aload(session_id, limit=limit)
         return {
             "session_id": session_id,
             "messages": messages,
@@ -241,15 +238,13 @@ def create_app(
 
     @app.get("/v1/goals")
     async def list_goals():
-        return [
-            _goal_to_response(g)
-            for g in coordinator.state_machine.list_goals()
-        ]
+        goals = await coordinator.state_machine.alist_goals()
+        return [_goal_to_response(g) for g in goals]
 
     @app.get("/v1/goals/{goal_id}")
     async def get_goal(goal_id: str):
         try:
-            goal = coordinator.state_machine.load(goal_id)
+            goal = await coordinator.state_machine.aload(goal_id)
         except KeyError:
             return JSONResponse({"error": "not found"}, status_code=404)
         return _goal_to_response(goal)

@@ -5,7 +5,7 @@ from typing import Callable
 
 from .agent import Agent
 from .bus import InboundMessage, MessageBus, OutboundMessage
-from .request_context import RequestContext, current_context, set_context
+from .request_context import RequestContext, current_context
 from .session import SessionManager
 
 
@@ -81,7 +81,7 @@ class AsyncAgent:
                     permission_level=request_ctx.permission_level,
                     metadata=request_ctx.metadata.copy(),
                 )
-                with set_context(ctx):
+                try:
                     env = await asyncio.to_thread(
                         agent.run,
                         task_text,
@@ -89,6 +89,17 @@ class AsyncAgent:
                         reflect=False,
                         request_context=ctx,
                     )
+                except Exception as exc:  # noqa: BLE001
+                    error_outbound = OutboundMessage(
+                        role="assistant",
+                        content=f"Error: {exc}",
+                        session_id=session_id,
+                        final=True,
+                    )
+                    if self.session_manager is not None:
+                        self.session_manager.append(session_id, error_outbound)
+                    await self.bus.emit(error_outbound)
+                    continue
                 for idx, record in enumerate(env.history):
                     outbound = OutboundMessage(
                         role="assistant",

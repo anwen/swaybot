@@ -1,8 +1,9 @@
 import json
 import os
 import time
-from typing import cast
+from typing import Any, cast
 
+from .brain import ReasoningCallback, StreamCallback
 from .models import FallbackModel, Model
 from .prompts import render_prompt
 
@@ -46,7 +47,7 @@ def _strip_markdown_fences(raw: str) -> str:
     return "\n".join(lines).strip()
 
 
-def parse_exploration_response(raw: str) -> dict:
+def parse_exploration_response(raw: str) -> dict[str, Any]:
     """Parse a JSON response expected to contain task and hypothesis."""
     raw = _strip_markdown_fences(raw)
 
@@ -122,8 +123,8 @@ class OpenAIModel:
         messages: list[dict],
         metadata: dict | None = None,
         tools: list[dict] | None = None,
-        stream_callback=None,
-        reasoning_callback=None,
+        stream_callback: StreamCallback | None = None,
+        reasoning_callback: ReasoningCallback | None = None,
     ) -> str | None:
         last_error = ""
         openai_tools = self._build_openai_tools(tools)
@@ -251,7 +252,7 @@ class OpenAIModel:
             return []
         openai_tools = []
         for tool in tools:
-            parameters = tool.get("parameters", tool.get("inputs", {}))
+            parameters = tool.get("parameters", {})
             openai_tools.append(
                 {
                     "type": "function",
@@ -315,9 +316,9 @@ class LLMBrain:
         perception: dict,
         available_tools: list[str],
         metadata: dict | None = None,
-        stream_callback=None,
-        reasoning_callback=None,
-    ) -> dict:
+        stream_callback: StreamCallback | None = None,
+        reasoning_callback: ReasoningCallback | None = None,
+    ) -> dict[str, Any]:
         call_info: dict = {}
         if perception.get("planning"):
             plan = self._plan(perception, available_tools, metadata=call_info)
@@ -426,7 +427,7 @@ def _merge_metadata(target: dict | None, source: dict) -> None:
         target.update(source)
 
 
-def _parse_action(raw: str, perception: dict) -> dict:
+def _parse_action(raw: str, perception: dict) -> dict[str, Any]:
     raw = _strip_markdown_fences(raw)
 
     try:
@@ -440,7 +441,7 @@ def _parse_action(raw: str, perception: dict) -> dict:
     return action
 
 
-def _parse_plan(raw: str) -> dict:
+def _parse_plan(raw: str) -> dict[str, Any]:
     raw = _strip_markdown_fences(raw)
 
     try:
@@ -458,7 +459,7 @@ def _parse_plan(raw: str) -> dict:
     return {"name": "plan", "args": {"steps": []}}
 
 
-def _fallback(perception: dict, raw: str) -> dict:
+def _fallback(perception: dict, raw: str) -> dict[str, Any]:
     if perception["step"] + 1 >= perception["max_steps"]:
         return {"name": "done", "args": {}}
     return {"name": "echo", "args": {"message": raw[:200]}}

@@ -1,5 +1,6 @@
 """Persistent per-session JSONL history manager."""
 
+import asyncio
 import re
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -88,3 +89,24 @@ class SessionManager:
     def clear(self, session_id: str) -> None:
         """Truncate the session history without deleting the stream."""
         self.backend.save(self._key(session_id), [])
+
+    async def acreate(self, session_id: str) -> Path | None:
+        return await asyncio.to_thread(self.create, session_id)
+
+    async def aexists(self, session_id: str) -> bool:
+        return await asyncio.to_thread(self.exists, session_id)
+
+    async def adelete(self, session_id: str) -> None:
+        return await asyncio.to_thread(self.delete, session_id)
+
+    async def alist_sessions(self) -> list[str]:
+        return await asyncio.to_thread(self.list_sessions)
+
+    async def aappend(self, session_id: str, message: Any) -> None:
+        return await asyncio.to_thread(self.append, session_id, message)
+
+    async def aload(self, session_id: str, limit: int | None = None) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self.load, session_id, limit=limit)
+
+    async def aclear(self, session_id: str) -> None:
+        return await asyncio.to_thread(self.clear, session_id)

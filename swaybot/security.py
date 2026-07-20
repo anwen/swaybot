@@ -46,6 +46,16 @@ _PERMISSION_RANK = {
 _TOOL_PERMISSION_RANK = {"read": 0, "write": 1, "danger": 2}
 
 
+def permission_level_to_mode(level: str) -> PermissionMode:
+    """Map coarse permission level strings to a PermissionMode."""
+    mapping = {
+        "low": PermissionMode.READ_ONLY,
+        "medium": PermissionMode.WORKSPACE_WRITE,
+        "high": PermissionMode.DANGER,
+    }
+    return mapping.get(level, PermissionMode.WORKSPACE_WRITE)
+
+
 class PermissionPolicy:
     """Named permission mode with optional tool allow/deny lists."""
 

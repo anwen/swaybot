@@ -1,6 +1,6 @@
 import json
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -190,6 +190,11 @@ class MemoryStore:
     def add(self, memory: MemoryStep) -> None:
         """Append a step and persist if a backend is configured."""
         self.memories.append(memory)
+        self.save()
+
+    def add_steps(self, steps: Iterable[MemoryStep]) -> None:
+        """Append multiple steps and persist."""
+        self.memories.extend(steps)
         self.save()
 
     def query(

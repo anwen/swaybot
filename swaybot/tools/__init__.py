@@ -25,10 +25,21 @@ def _type_to_json_schema(tp: type) -> dict:
         return {"type": "object"}
 
     origin = get_origin(tp)
+    args = get_args(tp)
+    if origin in (list, set, tuple):
+        schema: dict = {"type": "array"}
+        if args:
+            schema["items"] = _type_to_json_schema(args[0])
+        return schema
+    if origin is dict:
+        schema = {"type": "object"}
+        if len(args) >= 2:
+            schema["additionalProperties"] = _type_to_json_schema(args[1])
+        return schema
     if origin is Union:
-        args = [a for a in get_args(tp) if a is not type(None)]
-        if len(args) == 1:
-            return _type_to_json_schema(args[0])
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1:
+            return _type_to_json_schema(non_none[0])
 
     return {"type": "string"}
 
@@ -278,6 +289,11 @@ class ToolRegistry:
         ):
             result = t.fn(**args)
         else:
+            unexpected = set(args) - set(sig.parameters)
+            if unexpected:
+                raise ValueError(
+                    f"Tool '{name}' received unexpected arguments: {sorted(unexpected)}"
+                )
             valid_args = {k: v for k, v in args.items() if k in sig.parameters}
             result = t.fn(**valid_args)
         log_event(
@@ -285,9 +301,6 @@ class ToolRegistry:
             tool=name,
             args=args,
             result=str(result),
-            principal=ctx.principal,
-            session_id=ctx.session_id,
-            request_id=ctx.request_id,
         )
         return result
 
@@ -390,5 +403,5 @@ def build_default_registry() -> ToolRegistry:
     registry.register("list_directory", list_directory, read_only=True, risk_level="low")
     registry.register("search_files", search_files, read_only=True, risk_level="low")
     registry.register("grep", grep, read_only=True, risk_level="low")
-    registry.register("run_shell_command", run_shell_command, read_only=True, risk_level="high")
+    registry.register("run_shell_command", run_shell_command, read_only=False, risk_level="high")
     return registry

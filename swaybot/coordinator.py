@@ -106,6 +106,35 @@ class GoalStateMachine:
                 subtask.result = subtask_result
         self.save(goal)
 
+    async def aload(self, goal_id: str) -> Goal:
+        return await asyncio.to_thread(self.load, goal_id)
+
+    async def asave(self, goal: Goal) -> None:
+        return await asyncio.to_thread(self.save, goal)
+
+    async def acreate(self, goal: Goal) -> None:
+        return await asyncio.to_thread(self.create, goal)
+
+    async def alist_goals(self) -> list[Goal]:
+        return await asyncio.to_thread(self.list_goals)
+
+    async def atransition(
+        self,
+        goal: Goal,
+        state: str | None = None,
+        subtask: Subtask | None = None,
+        subtask_status: str | None = None,
+        subtask_result: str | None = None,
+    ) -> None:
+        return await asyncio.to_thread(
+            self.transition,
+            goal,
+            state,
+            subtask,
+            subtask_status,
+            subtask_result,
+        )
+
     @staticmethod
     def _key(goal_id: str) -> str:
         return f"goal:{goal_id}"
@@ -153,6 +182,7 @@ class GoalCoordinator:
         self.state_machine = GoalStateMachine(self.backend)
         self.scheduler = scheduler or Scheduler()
         self.event_bus = event_bus or InMemoryEventBus()
+        self._main_loop: asyncio.AbstractEventLoop | None = None
 
     def run(self, description: str, context: str = "") -> Goal:
         """Plan, execute, and record a goal."""
@@ -163,16 +193,17 @@ class GoalCoordinator:
         return await self._run(description, context)
 
     async def _run(self, description: str, context: str = "") -> Goal:
+        self._main_loop = asyncio.get_running_loop()
         goal = Goal(description=description, context=context)
-        self.state_machine.create(goal)
+        await self.state_machine.acreate(goal)
 
-        self.state_machine.transition(goal, GOAL_PLANNING)
+        await self.state_machine.atransition(goal, GOAL_PLANNING)
         goal.subtasks = self._plan(goal)
         if not goal.subtasks:
             goal.subtasks.append(Subtask(description=description))
-        self.state_machine.save(goal)
+        await self.state_machine.asave(goal)
 
-        self.state_machine.transition(goal, GOAL_RUNNING)
+        await self.state_machine.atransition(goal, GOAL_RUNNING)
         async with self._scheduler_context():
             for subtask in goal.subtasks:
                 if goal.state == GOAL_CANCELLED:
@@ -181,40 +212,42 @@ class GoalCoordinator:
 
         failed = any(s.status == SUBTASK_FAILED for s in goal.subtasks)
         final_state = GOAL_FAILED if failed else GOAL_DONE
-        self.state_machine.transition(goal, final_state)
+        await self.state_machine.atransition(goal, final_state)
         return goal
 
     async def resume(self, goal_id: str) -> Goal:
         """Resume a previously saved goal, retrying pending/failed subtasks."""
-        goal = self.state_machine.load(goal_id)
+        self._main_loop = asyncio.get_running_loop()
+        goal = await self.state_machine.aload(goal_id)
         async with self._scheduler_context():
             for subtask in goal.subtasks:
                 if subtask.status in (SUBTASK_PENDING, SUBTASK_FAILED):
                     await self._execute_subtask(goal, subtask)
         failed = any(s.status == SUBTASK_FAILED for s in goal.subtasks)
-        self.state_machine.transition(
+        await self.state_machine.atransition(
             goal, GOAL_FAILED if failed else GOAL_DONE
         )
         return goal
 
     async def retry(self, goal_id: str) -> Goal:
         """Reset failed subtasks to pending and re-run them."""
-        goal = self.state_machine.load(goal_id)
+        self._main_loop = asyncio.get_running_loop()
+        goal = await self.state_machine.aload(goal_id)
         for subtask in goal.subtasks:
             if subtask.status == SUBTASK_FAILED:
                 subtask.status = SUBTASK_PENDING
                 subtask.result = ""
-        self.state_machine.save(goal)
+        await self.state_machine.asave(goal)
         return await self.resume(goal_id)
 
     async def cancel(self, goal_id: str) -> Goal:
         """Mark a goal as cancelled."""
-        goal = self.state_machine.load(goal_id)
-        self.state_machine.transition(goal, GOAL_CANCELLED)
+        goal = await self.state_machine.aload(goal_id)
+        await self.state_machine.atransition(goal, GOAL_CANCELLED)
         return goal
 
     async def _execute_subtask(self, goal: Goal, subtask: Subtask) -> None:
-        self.state_machine.transition(
+        await self.state_machine.atransition(
             goal, GOAL_RUNNING, subtask, SUBTASK_RUNNING
         )
 
@@ -247,11 +280,11 @@ class GoalCoordinator:
 
         status = payload.get("status", SUBTASK_FAILED)
         result = payload.get("result", "")
-        self.state_machine.transition(
+        await self.state_machine.atransition(
             goal, GOAL_WAITING, subtask, status, result
         )
 
-    async def _subtask_job(self, goal_id: str, subtask_id: str) -> None:
+    def _subtask_job(self, goal_id: str, subtask_id: str) -> None:
         """Worker executed by the scheduler for a single subtask."""
         goal = self.state_machine.load(goal_id)
         subtask = next(
@@ -259,23 +292,17 @@ class GoalCoordinator:
             None,
         )
         if subtask is None:
-            await self.event_bus.publish(
-                Event(
-                    type="subtask.completed",
-                    payload={
-                        "goal_id": goal_id,
-                        "subtask_id": subtask_id,
-                        "status": SUBTASK_FAILED,
-                        "result": "subtask not found",
-                    },
-                )
+            self._publish_subtask_event(
+                goal_id,
+                subtask_id,
+                SUBTASK_FAILED,
+                "subtask not found",
             )
             return
 
         agent = self.agent_factory(goal_id)
         try:
-            env = await asyncio.to_thread(
-                agent.run,
+            env = agent.run(
                 task=subtask.description,
                 max_steps=self.max_subtask_steps,
                 reflect=False,
@@ -291,17 +318,30 @@ class GoalCoordinator:
             result = f"Error: {exc}"
 
         self.state_machine.transition(goal, None, subtask, status, result)
-        await self.event_bus.publish(
-            Event(
-                type="subtask.completed",
-                payload={
-                    "goal_id": goal_id,
-                    "subtask_id": subtask_id,
-                    "status": status,
-                    "result": result,
-                },
-            )
+        self._publish_subtask_event(goal_id, subtask_id, status, result)
+
+    def _publish_subtask_event(
+        self,
+        goal_id: str,
+        subtask_id: str,
+        status: str,
+        result: str,
+    ) -> None:
+        event = Event(
+            type="subtask.completed",
+            payload={
+                "goal_id": goal_id,
+                "subtask_id": subtask_id,
+                "status": status,
+                "result": result,
+            },
         )
+        if self._main_loop is not None:
+            asyncio.run_coroutine_threadsafe(
+                self.event_bus.publish(event), self._main_loop
+            )
+        else:
+            asyncio.run(self.event_bus.publish(event))
 
     @asynccontextmanager
     async def _scheduler_context(self):

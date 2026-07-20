@@ -5,7 +5,7 @@ from .context import ContextBuilder
 from .environment import Environment
 from .hook import AgentHook, CompositeHook
 from .request_context import RequestContext, current_context, set_context
-from .security import PermissionMode, PermissionPolicy
+from .security import PermissionPolicy, permission_level_to_mode
 from .memory import (
     ActionStep,
     AutoCompact,
@@ -17,13 +17,6 @@ from .memory import (
 from .reflection import Reflector, reflection_to_memory
 from .run_log import append_run, build_run_record, run_log_path_for_memory
 from .tools import ToolRegistry, build_default_registry
-
-
-_LEVEL_TO_MODE = {
-    "low": PermissionMode.READ_ONLY,
-    "medium": PermissionMode.WORKSPACE_WRITE,
-    "high": PermissionMode.DANGER,
-}
 
 
 class Agent:
@@ -50,7 +43,7 @@ class Agent:
             self.permission_policy = permission_policy
         else:
             self.permission_policy = PermissionPolicy(
-                mode=_LEVEL_TO_MODE.get(permission_level, PermissionMode.WORKSPACE_WRITE)
+                mode=permission_level_to_mode(permission_level)
             )
         self.auto_compact = auto_compact
         self.compactor = compactor
@@ -115,7 +108,6 @@ class Agent:
             self.hooks.after_iteration(
                 task, env.step, action, result, metadata=call_info
             )
-            self._emit_step_metrics(action, error, call_info)
             run_steps.append(
                 self._build_step_record(env.step, action, result, error, call_info)
             )
@@ -126,7 +118,6 @@ class Agent:
         self._append_run_log(task, max_steps, run_steps, hypothesis, reflections)
 
         self.hooks.after_run(task, env, reflections)
-        self.hooks.on_metric("agent.run.steps", float(env.step), {"task": task})
         return env
 
     def _think(self, perception: dict, stream: bool) -> tuple[dict, dict]:
@@ -159,28 +150,6 @@ class Agent:
             return self.tools.execute(action, request_context), None
         except Exception as exc:
             return f"Error: {exc}", str(exc)
-
-    def _emit_step_metrics(
-        self, action: dict, error: str | None, call_info: dict
-    ) -> None:
-        """Emit success/error, duration, and token metrics for a step."""
-        tool = action.get("name", "")
-        if error is None:
-            self.hooks.on_metric("tool.success", 1.0, {"tool": tool})
-        else:
-            self.hooks.on_metric("tool.error", 1.0, {"tool": tool})
-        duration_ms = call_info.get("duration_ms")
-        if duration_ms is not None:
-            self.hooks.on_metric(
-                "model.duration_ms", float(duration_ms), {"tool": tool}
-            )
-        token_usage = call_info.get("token_usage")
-        if isinstance(token_usage, dict):
-            for key, val in token_usage.items():
-                if isinstance(val, (int, float)):
-                    self.hooks.on_metric(
-                        f"model.tokens.{key}", float(val), {"tool": tool}
-                    )
 
     def _build_step_record(
         self,
@@ -234,8 +203,7 @@ class Agent:
                 tags=[task],
             ),
         ]
-        self.memory.memories.extend(steps)
-        self.memory.save()
+        self.memory.add_steps(steps)
         if self.auto_compact and self.compactor is not None:
             self.compactor.compact(self.memory, tag=task)
 
@@ -289,13 +257,8 @@ class Agent:
     def _create_plan(self, task: str, max_steps: int) -> None:
         """Ask the brain for a plan and store it as a PlanningStep."""
         assert self.memory is not None
-        perception = {
-            "task": task,
-            "max_steps": max_steps,
-            "step": 0,
-            "planning": True,
-            "tool_descriptions": self.tools.schemas(),
-        }
+        perception = self.context_builder.build(task, 0, max_steps, [])
+        perception["planning"] = True
         action = self.brain.think(perception, self.tools.names())
         if action.get("name") == "plan":
             steps = action.get("args", {}).get("steps", [])

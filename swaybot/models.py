@@ -1,7 +1,11 @@
 """Model abstraction for text generation backends."""
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
+
+
+StreamCallback = Callable[[str], None]
+ReasoningCallback = Callable[[str], None]
 
 
 @dataclass
@@ -30,6 +34,8 @@ class Model(Protocol):
         messages: list[dict],
         metadata: dict | None = None,
         tools: list[dict] | None = None,
+        stream_callback: StreamCallback | None = None,
+        reasoning_callback: ReasoningCallback | None = None,
     ) -> str | None:
         """Return the model's text output, or None on failure.
 
@@ -52,6 +58,8 @@ class FallbackModel:
         messages: list[dict],
         metadata: dict | None = None,
         tools: list[dict] | None = None,
+        stream_callback: StreamCallback | None = None,
+        reasoning_callback: ReasoningCallback | None = None,
     ) -> str | None:
         last_error = ""
         for model in self.models:
