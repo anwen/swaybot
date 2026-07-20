@@ -1,10 +1,11 @@
 """Async message bus for per-session agent events."""
 
 import asyncio
-import inspect
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
+
+from .events import Event, EventBus, InMemoryEventBus
 
 
 @dataclass
@@ -33,12 +34,19 @@ class OutboundMessage:
 
 
 class MessageBus:
-    """In-memory async message bus with per-session queues and locks."""
+    """In-memory async message bus with per-session queues and locks.
 
-    def __init__(self) -> None:
+    Pub/sub is delegated to a shared :class:`EventBus` so the rest of the
+    system has a single event abstraction. This class keeps the per-session
+    FIFO queues and locks.
+    """
+
+    _OUTBOUND_TYPE = "outbound_message"
+
+    def __init__(self, event_bus: EventBus | None = None) -> None:
         self._queues: dict[str, asyncio.Queue[InboundMessage]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
-        self._subscribers: list[Callable[[OutboundMessage], None]] = []
+        self.event_bus = event_bus or InMemoryEventBus()
 
     def create_session(self, session_id: str) -> None:
         """Allocate a queue and lock for ``session_id``."""
@@ -76,26 +84,17 @@ class MessageBus:
 
         Returns a function that removes the callback when called.
         """
-        self._subscribers.append(callback)
 
-        def unsubscribe() -> None:
-            try:
-                self._subscribers.remove(callback)
-            except ValueError:
-                pass
+        def handler(event: Event) -> None:
+            callback(event.payload["message"])
 
-        return unsubscribe
+        return self.event_bus.subscribe(self._OUTBOUND_TYPE, handler)
 
     async def emit(self, message: OutboundMessage) -> None:
         """Notify all subscribers of an outbound message."""
-        for callback in self._subscribers:
-            try:
-                if inspect.iscoroutinefunction(callback):
-                    await callback(message)
-                else:
-                    callback(message)
-            except Exception:  # pragma: no cover
-                pass
+        await self.event_bus.publish(
+            Event(type=self._OUTBOUND_TYPE, payload={"message": message})
+        )
 
     def close_session(self, session_id: str) -> None:
         """Remove a session's queue and lock."""

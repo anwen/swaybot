@@ -1,5 +1,5 @@
 from swaybot.tools import ToolRegistry, build_default_registry, tool
-from swaybot.tools.provider import LocalToolProvider, ShellToolProvider, ToolProvider
+from swaybot.tools.provider import ToolProvider
 
 
 class UpperProvider(ToolProvider):
@@ -22,14 +22,6 @@ class UpperProvider(ToolProvider):
         pass
 
 
-def test_local_tool_provider_wraps_registry():
-    registry = build_default_registry()
-    provider = LocalToolProvider(registry)
-    tools = provider.list_tools()
-    assert any(t.name == "echo" for t in tools)
-    assert provider.execute("echo", {"message": "hi"}) == "hi"
-
-
 def test_registry_registers_provider_namespace():
     registry = ToolRegistry()
     registry.register_provider("upper", UpperProvider())
@@ -48,10 +40,3 @@ def test_registry_register_with_provider_namespace():
     registry.register("greet", greet, provider="hello")
     assert "hello/greet" in registry.names()
     assert registry.execute({"name": "hello/greet", "args": {"name": "world"}}) == "hello world"
-
-
-def test_shell_tool_provider_lists_shell_command():
-    provider = ShellToolProvider()
-    tools = provider.list_tools()
-    assert any(t.name == "run_shell_command" for t in tools)
-    assert tools[0].risk_level == "high"

@@ -1,10 +1,14 @@
 """Event bus for decoupled, observable agent interactions."""
 
 import inspect
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol, runtime_checkable
+
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -83,7 +87,7 @@ class InMemoryEventBus:
                     handler(event)
             except Exception:  # pragma: no cover
                 # Subscribers must not break the bus.
-                pass
+                _logger.exception("Event handler %s failed", handler)
 
     async def start(self) -> None:
         pass

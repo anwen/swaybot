@@ -5,7 +5,7 @@ from .context import ContextBuilder
 from .environment import Environment
 from .hook import AgentHook, CompositeHook
 from .request_context import RequestContext, current_context, set_context
-from .security import PermissionPolicy
+from .security import PermissionMode, PermissionPolicy
 from .memory import (
     ActionStep,
     AutoCompact,
@@ -19,7 +19,11 @@ from .run_log import append_run, build_run_record, run_log_path_for_memory
 from .tools import ToolRegistry, build_default_registry
 
 
-_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+_LEVEL_TO_MODE = {
+    "low": PermissionMode.READ_ONLY,
+    "medium": PermissionMode.WORKSPACE_WRITE,
+    "high": PermissionMode.DANGER,
+}
 
 
 class Agent:
@@ -42,8 +46,12 @@ class Agent:
         self.memory = memory
         self.reflector = reflector
         self.hooks = CompositeHook(hooks)
-        self.permission_level = permission_level
-        self.permission_policy = permission_policy
+        if permission_policy is not None:
+            self.permission_policy = permission_policy
+        else:
+            self.permission_policy = PermissionPolicy(
+                mode=_LEVEL_TO_MODE.get(permission_level, PermissionMode.WORKSPACE_WRITE)
+            )
         self.auto_compact = auto_compact
         self.compactor = compactor
         self.context_builder = ContextBuilder(self.memory, self.tools)
@@ -53,15 +61,11 @@ class Agent:
         tool = self.tools.get(action_name)
         if tool is None:
             return True, ""
-        if self.permission_policy is not None:
-            return self.permission_policy.allows(
-                tool.name, tool.required_permission
-            )
-        if _RISK_ORDER[tool.risk_level] > _RISK_ORDER[self.permission_level]:
-            return False, (
-                f"Permission denied: '{action_name}' requires "
-                f"{tool.risk_level} permission (current: {self.permission_level})"
-            )
+        allowed, reason = self.permission_policy.allows(
+            tool.name, tool.required_permission
+        )
+        if not allowed:
+            return False, f"Permission denied: {reason}"
         return True, ""
 
     def run(

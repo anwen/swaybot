@@ -330,18 +330,7 @@ class LLMBrain:
             _merge_metadata(metadata, call_info)
             return exploration
 
-        messages = [
-            {
-                "role": "system",
-                "content": render_prompt(
-                    "system",
-                    tool_descriptions=perception.get("tool_descriptions"),
-                    available_tools=available_tools,
-                    behavior_guidance=perception.get("behavior_guidance"),
-                    project_instructions=perception.get("project_instructions"),
-                ),
-            }
-        ]
+        messages = [self._system_message(perception, available_tools)]
         if perception.get("messages"):
             messages.extend(perception["messages"])
         else:
@@ -367,6 +356,21 @@ class LLMBrain:
             return _fallback(perception, message)
         return _parse_action(raw, perception)
 
+    def _system_message(
+        self, perception: dict, available_tools: list[str]
+    ) -> dict:
+        """Build the shared system message."""
+        return {
+            "role": "system",
+            "content": render_prompt(
+                "system",
+                tool_descriptions=perception.get("tool_descriptions"),
+                available_tools=available_tools,
+                behavior_guidance=perception.get("behavior_guidance"),
+                project_instructions=perception.get("project_instructions"),
+            ),
+        }
+
     def _plan(
         self,
         perception: dict,
@@ -374,16 +378,7 @@ class LLMBrain:
         metadata: dict | None = None,
     ) -> dict:
         messages = [
-            {
-                "role": "system",
-                "content": render_prompt(
-                    "system",
-                    tool_descriptions=perception.get("tool_descriptions"),
-                    available_tools=available_tools,
-                    behavior_guidance=perception.get("behavior_guidance"),
-                    project_instructions=perception.get("project_instructions"),
-                ),
-            },
+            self._system_message(perception, available_tools),
             {
                 "role": "user",
                 "content": render_prompt(
@@ -408,16 +403,7 @@ class LLMBrain:
         metadata: dict | None = None,
     ) -> dict:
         messages = [
-            {
-                "role": "system",
-                "content": render_prompt(
-                    "system",
-                    tool_descriptions=perception.get("tool_descriptions"),
-                    available_tools=available_tools,
-                    behavior_guidance=perception.get("behavior_guidance"),
-                    project_instructions=perception.get("project_instructions"),
-                ),
-            },
+            self._system_message(perception, available_tools),
             {
                 "role": "user",
                 "content": render_prompt(

@@ -32,9 +32,12 @@ class ContextBuilder:
         }
         if self.memory is not None:
             relevant = self.memory.query_relevant(task, scope="long_term", limit=5)
-            perception["memory_context"] = self._memory_context(task, relevant)
+            memory_context = self._memory_context(task, relevant)
+            perception["memory_context"] = memory_context
             perception["behavior_guidance"] = self._behavior_guidance(task, relevant)
-            perception["messages"] = self._build_messages(task, relevant)
+            perception["messages"] = self._build_messages(
+                task, relevant, memory_context
+            )
         perception["tool_descriptions"] = self.tools.schemas()
         perception["available_tools"] = self.tools.names()
         perception["project_instructions"] = load_project_instructions()
@@ -57,14 +60,13 @@ class ContextBuilder:
                 lines.append(f"- {content}")
         return "\n".join(lines)
 
-    def _build_messages(self, task: str, relevant: list) -> list[dict]:
+    def _build_messages(self, task: str, relevant: list, memory_context: str = "") -> list[dict]:
         if self.memory is None:
             return []
         messages: list[dict] = []
-        context = self._memory_context(task, relevant)
-        if context:
+        if memory_context:
             messages.append(
-                {"role": "user", "content": f"Relevant memories:\n{context}"}
+                {"role": "user", "content": f"Relevant memories:\n{memory_context}"}
             )
         for step in self.memory.iter_short_term(task):
             messages.extend(step.to_messages())

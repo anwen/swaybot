@@ -20,7 +20,7 @@ class SecurityEscalation(SecurityError):
     """Raised after repeated violations within a session."""
 
 
-class PermissionError(SecurityError):
+class ToolPermissionError(SecurityError):
     """Raised when a tool is blocked by the active permission policy."""
 
 

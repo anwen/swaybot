@@ -1,6 +1,3 @@
-import json
-from pathlib import Path
-
 import pytest
 
 from swaybot.agent import Agent
@@ -9,30 +6,29 @@ from swaybot.coordinator import GoalCoordinator, GoalStateMachine, Goal, Subtask
 from swaybot.storage import InMemoryBackend
 
 
-def test_coordinator_runs_subtasks(tmp_path: Path):
-    state = tmp_path / "goals.jsonl"
+def test_coordinator_runs_subtasks():
     coordinator = GoalCoordinator(
         agent_factory=lambda _: Agent(),
-        state_path=state,
+        backend=InMemoryBackend(),
         max_subtask_steps=2,
     )
     goal = coordinator.run("say hello")
-    assert goal.status == "done"
+    assert goal.state == "done"
     assert len(goal.subtasks) >= 1
     assert any(s.status == "done" for s in goal.subtasks)
 
 
-def test_coordinator_saves_state(tmp_path: Path):
-    state = tmp_path / "goals.jsonl"
+def test_coordinator_saves_state():
+    backend = InMemoryBackend()
     coordinator = GoalCoordinator(
         agent_factory=lambda _: Agent(),
-        state_path=state,
+        backend=backend,
         max_subtask_steps=2,
     )
     coordinator.run("test goal")
-    history = coordinator.load_history()
-    assert len(history) == 1
-    assert history[0]["description"] == "test goal"
+    goals = coordinator.state_machine.list_goals()
+    assert len(goals) == 1
+    assert goals[0].description == "test goal"
 
 
 def test_coordinator_plans_from_brain():
@@ -48,7 +44,7 @@ def test_coordinator_plans_from_brain():
 
     coordinator = GoalCoordinator(
         agent_factory=lambda _: Agent(brain=PlanBrain()),
-        state_path=Path("/dev/null"),
+        backend=InMemoryBackend(),
         max_subtask_steps=1,
     )
     goal = coordinator.run("do something")
@@ -56,7 +52,7 @@ def test_coordinator_plans_from_brain():
     assert goal.subtasks[0].description == "step one"
 
 
-def test_coordinator_records_failed_subtask(tmp_path: Path):
+def test_coordinator_records_failed_subtask():
     class BrokenBrain:
         def think(
             self, perception, available_tools, metadata=None,
@@ -66,11 +62,11 @@ def test_coordinator_records_failed_subtask(tmp_path: Path):
 
     coordinator = GoalCoordinator(
         agent_factory=lambda _: Agent(brain=BrokenBrain()),
-        state_path=tmp_path / "goals.jsonl",
+        backend=InMemoryBackend(),
         max_subtask_steps=2,
     )
     goal = coordinator.run("fail")
-    assert goal.status == "failed"
+    assert goal.state == "failed"
     assert any(s.status == "failed" for s in goal.subtasks)
 
 

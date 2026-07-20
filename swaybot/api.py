@@ -15,6 +15,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from .agent import Agent
 from .async_agent import AsyncAgent
 from .bus import InboundMessage, MessageBus, OutboundMessage
 from .request_context import RequestContext, current_context, set_context
@@ -60,7 +61,7 @@ class GoalResponse(BaseModel):
 def create_app(
     bus: MessageBus | None = None,
     session_manager: SessionManager | None = None,
-    agent_factory=None,
+    agent_factory: Callable[[str], Agent] | None = None,
     max_steps: int = 10,
     scheduler: Scheduler | None = None,
     goal_coordinator: GoalCoordinator | None = None,
@@ -90,6 +91,7 @@ def create_app(
         agent_factory=agent_factory,
         max_subtask_steps=max_steps,
         scheduler=scheduler,
+        event_bus=bus.event_bus,
     )
 
     async_agent = AsyncAgent(
@@ -101,11 +103,13 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        await bus.event_bus.start()
         await scheduler.start()
         await async_agent.start()
         yield
         await async_agent.stop()
         await scheduler.stop()
+        await bus.event_bus.stop()
 
     app = FastAPI(lifespan=lifespan)
 

@@ -142,7 +142,8 @@ def test_agent_build_messages_includes_memory_context_and_short_term_steps():
     store.add(Memory(content="demo short note", scope="short_term", tags=["demo"]))
     agent = Agent(memory=store)
     relevant = store.query_relevant("demo")
-    messages = agent.context_builder._build_messages("demo", relevant)
+    memory_context = agent.context_builder._memory_context("demo", relevant)
+    messages = agent.context_builder._build_messages("demo", relevant, memory_context)
     assert any("Relevant memories" in msg["content"] and "demo context long" in msg["content"] for msg in messages)
     assert any(msg["content"] == "demo short note" for msg in messages)
 

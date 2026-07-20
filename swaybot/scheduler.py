@@ -70,6 +70,10 @@ class Scheduler:
         self._stop_event = asyncio.Event()
         self._wake_event = asyncio.Event()
 
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
     def add_job(
         self,
         fn: Callable,

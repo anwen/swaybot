@@ -1,15 +1,14 @@
 """Sustained-goal / long-task coordinator with state-machine resume."""
 
 import asyncio
-import json
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Callable
 
 from .agent import Agent
+from .context import ContextBuilder
 from .events import Event, EventBus, InMemoryEventBus
 from .scheduler import OneShotSchedule, Scheduler
 from .storage import InMemoryBackend, StorageBackend
@@ -57,11 +56,6 @@ class Goal:
     updated_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
-
-    @property
-    def status(self) -> str:
-        """Backward-compatible alias for ``state``."""
-        return self.state
 
 
 class GoalStateMachine:
@@ -145,18 +139,15 @@ class GoalCoordinator:
     def __init__(
         self,
         agent_factory: Callable[[str], Agent],
-        state_path: Path | str | None = None,
         max_subtask_steps: int = 10,
+        planning_steps: int = 3,
         backend: StorageBackend | None = None,
         scheduler: Scheduler | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self.agent_factory = agent_factory
         self.max_subtask_steps = max_subtask_steps
-
-        # Backward compatibility: if no backend is supplied but a file path is,
-        # keep the original append-only JSONL behavior for load_history().
-        self._legacy_state_path = Path(state_path) if state_path else None
+        self.planning_steps = planning_steps
         self.backend = backend or InMemoryBackend()
 
         self.state_machine = GoalStateMachine(self.backend)
@@ -191,7 +182,6 @@ class GoalCoordinator:
         failed = any(s.status == SUBTASK_FAILED for s in goal.subtasks)
         final_state = GOAL_FAILED if failed else GOAL_DONE
         self.state_machine.transition(goal, final_state)
-        self._legacy_save(goal)
         return goal
 
     async def resume(self, goal_id: str) -> Goal:
@@ -286,9 +276,9 @@ class GoalCoordinator:
         try:
             env = await asyncio.to_thread(
                 agent.run,
-                subtask.description,
-                self.max_subtask_steps,
-                False,
+                task=subtask.description,
+                max_steps=self.max_subtask_steps,
+                reflect=False,
             )
             final = env.history[-1]["result"] if env.history else ""
             has_error = any("error" in h for h in env.history) or str(
@@ -317,7 +307,7 @@ class GoalCoordinator:
     async def _scheduler_context(self):
         """Start the scheduler if it is not already running, then stop it."""
         own = False
-        if not self.scheduler._running:
+        if not self.scheduler.is_running:
             await self.scheduler.start()
             own = True
         try:
@@ -329,15 +319,7 @@ class GoalCoordinator:
     def _plan(self, goal: Goal) -> list[Subtask]:
         """Ask the agent's brain for a list of subtasks."""
         agent = self.agent_factory(goal.id)
-        perception = {
-            "task": goal.description,
-            "context": goal.context,
-            "step": 0,
-            "max_steps": 3,
-            "planning": True,
-            "tool_descriptions": agent.tools.schemas(),
-            "available_tools": agent.tools.names(),
-        }
+        perception = self._planning_perception(agent, goal)
         action = agent.brain.think(perception, agent.tools.names())
         if action.get("name") == "plan":
             steps = action.get("args", {}).get("steps", [])
@@ -345,24 +327,14 @@ class GoalCoordinator:
                 return [Subtask(description=str(s)) for s in steps]
         return []
 
-    def _legacy_save(self, goal: Goal) -> None:
-        """Append-only JSONL fallback for the original state_path API."""
-        if self._legacy_state_path is None:
-            return
-        self._legacy_state_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._legacy_state_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(asdict(goal), ensure_ascii=False) + "\n")
-
-    def load_history(self) -> list[dict[str, Any]]:
-        """Return all saved goals as plain dicts."""
-        if self._legacy_state_path is not None:
-            if not self._legacy_state_path.exists():
-                return []
-            entries = []
-            with self._legacy_state_path.open("r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if line:
-                        entries.append(json.loads(line))
-            return entries
-        return [asdict(g) for g in self.state_machine.list_goals()]
+    def _planning_perception(self, agent: Agent, goal: Goal) -> dict:
+        """Build a planning perception using the shared context builder."""
+        builder = ContextBuilder(None, agent.tools)
+        perception = builder.build(
+            task=goal.description,
+            step=0,
+            max_steps=self.planning_steps,
+            history=[],
+        )
+        perception["planning"] = True
+        return perception
