@@ -14,6 +14,7 @@ from .memory import (
     PlanningStep,
     TaskStep,
 )
+from .metrics import LoggingMetricSink, MetricsHook
 from .reflection import Reflector, reflection_to_memory
 from .run_log import append_run, build_run_record, run_log_path_for_memory
 from .tools import ToolRegistry, build_default_registry
@@ -38,6 +39,8 @@ class Agent:
         self.tools = tools or build_default_registry()
         self.memory = memory
         self.reflector = reflector
+        if hooks is None:
+            hooks = [MetricsHook(LoggingMetricSink())]
         self.hooks = CompositeHook(hooks)
         if permission_policy is not None:
             self.permission_policy = permission_policy

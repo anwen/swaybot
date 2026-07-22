@@ -72,6 +72,11 @@ class MetricsHook:
     ) -> None:
         self.sink.record(name, value, labels)
 
+    def before_iteration(
+        self, task: str, step: int, perception: dict
+    ) -> None:
+        return None
+
     def after_iteration(
         self,
         task: str,

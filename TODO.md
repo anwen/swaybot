@@ -302,7 +302,7 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 
 ### [x] Phase 5 — Pluggable tool providers + metrics sink
 - **文件**：`swaybot/tools/provider.py`、`swaybot/metrics.py`、`swaybot/hook.py`、`swaybot/agent.py`、`swaybot/tools/__init__.py`、`tests/test_tool_provider.py`、`tests/test_metrics.py`
-- **状态**：已完成（2026-07-17）。新增 `ToolProvider` 协议与 `LocalToolProvider`、`ShellToolProvider`；`ToolRegistry` 支持 `provider/tool` 命名空间分发；新增 `MetricSink`、`InMemoryMetricSink`、`LoggingMetricSink` 与 `MetricsHook`。指标由附加的 `MetricsHook` 负责转发，`Agent` 本身不再直接 emit 指标，以保持核心循环简洁。
+- **状态**：已完成（2026-07-17）。新增 `ToolProvider` 协议与 `LocalToolProvider`、`ShellToolProvider`；`ToolRegistry` 支持 `provider/tool` 命名空间分发；新增 `MetricSink`、`InMemoryMetricSink`、`LoggingMetricSink` 与 `MetricsHook`。`Agent` 默认附加 `MetricsHook(LoggingMetricSink())`，指标由 hook 转发，`Agent` 核心循环不直接 emit 指标。
 
 ## OpenCode 借鉴 — 代码能力三件套
 
