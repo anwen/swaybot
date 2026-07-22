@@ -1,7 +1,7 @@
 """Model abstraction for text generation backends."""
 
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 
 StreamCallback = Callable[[str], None]
@@ -64,7 +64,13 @@ class FallbackModel:
         last_error = ""
         for model in self.models:
             try:
-                result = model.generate(messages, metadata=metadata, tools=tools)
+                result = model.generate(
+                    messages,
+                    metadata=metadata,
+                    tools=tools,
+                    stream_callback=stream_callback,
+                    reasoning_callback=reasoning_callback,
+                )
                 if result is not None:
                     return result
             except Exception as exc:  # pragma: no cover - defensive

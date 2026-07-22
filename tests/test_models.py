@@ -12,6 +12,8 @@ class FakeModel:
         _messages: list[dict],
         metadata: dict | None = None,
         tools: list[dict] | None = None,
+        stream_callback=None,
+        reasoning_callback=None,
     ) -> str | None:
         self.calls += 1
         if self.fail:

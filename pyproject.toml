@@ -11,7 +11,7 @@ authors = [
 
 [project.optional-dependencies]
 llm = ["openai", "jinja2"]
-api = ["fastapi", "uvicorn", "requests"]
+api = ["fastapi", "uvicorn"]
 dev = ["pytest", "pytest-asyncio", "httpx"]
 
 [project.scripts]

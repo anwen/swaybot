@@ -49,8 +49,10 @@ The minimal loop is `perceive → think → act → observe → loop`:
 
 - `Environment` holds the task, step counter, and observation history.
 - `Brain` decides the next action. `EchoBrain` is the default deterministic brain and requires no API key.
-- `ToolRegistry` dispatches actions to tools (`echo`, `add`, `done`).
+- `ToolRegistry` dispatches actions to tools. Built-ins include `echo`, `add`, `done`, `final_answer`, and optional workspace/shell/web tools (`read_file`, `write_file`, `edit_file`, `list_directory`, `search_files`, `grep`, `run_shell_command`, `web_search`, `web_fetch`).
 - `Agent` wires them together and runs until the task signals completion or the step budget is exhausted.
+
+The CLI supports `--brain {echo,llm}`, `--reflect`, `--plan`, `--explore`, `--permission-mode {read-only,workspace-write,danger}`, `--output-format {text,json}`, and memory paths via `--data-dir` / `--memory` / `--no-memory`.
 
 ## Memory
 
@@ -95,13 +97,24 @@ Alternatively, create a `.env` file (see `.env.example`) in the project root. Th
 
 The default brain remains `EchoBrain`, so the core package stays dependency-free.
 
+## HTTP API & WebUI
+
+Run the server with:
+
+```bash
+pip install -e ".[api]"
+python -m swaybot.api
+```
+
+It exposes an OpenAI-compatible `/v1/chat/completions` endpoint (including SSE streaming), session messages/history, and a long-running goal coordinator under `/v1/goals`.
+
 ## Roadmap
 
 - [x] Define the minimal agent loop
 - [x] Build memory primitives
 - [x] Build reflection primitives
 - [x] Add LLM-powered reasoning
-- [ ] Add self-improvement mechanisms
+- [x] Add self-improvement mechanisms
 - [ ] Document growth patterns and examples
 
 ## License

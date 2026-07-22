@@ -82,8 +82,8 @@
 ### [ ] 流式响应支持
 - **问题**：LLM 必须等完整响应返回。
 - **方案**：支持 SSE/流式输出，便于观察思考过程。
-- **文件**：`swaybot/llm_brain.py`
-- **验收**：思考过程可实时打印。
+- **文件**：`swaybot/llm_brain.py`、`swaybot/async_agent.py`、`swaybot/cli.py`
+- **验收**：API `/v1/chat/completions` 已支持 step-level SSE；token/reasoning 实时流式待 CLI 和 `AsyncAgent` 接线后完成。
 
 ## P4 — 借鉴 smolagents 补齐关键能力
 
@@ -122,11 +122,12 @@
 - **验收**：支持的假设让相关记忆置信度上升，反驳的下降；已验证问题不再被 `Explorer` 重复选中；95 个测试全部通过。
 - **状态**：已完成（2026-07-16）。
 
-### [ ] 多模型 backend 抽象
+### [x] 多模型 backend 抽象
 - **问题**：`LLMBrain` 直接依赖 `openai` 包，换本地模型或其他 API 时需要重写。
 - **方案**：提取 `Model` 基类，把 `LLMBrain` 改名为 `OpenAIModel` 或拆出 `OpenAIModel`；后续可添加 `TransformersModel` / `MockModel` 等。
 - **文件**：`swaybot/models.py`（新）、`swaybot/llm_brain.py`（重构）、`tests/test_models.py`（新）
 - **验收**：`Agent` 接收任意 `Model` 实现，核心逻辑不依赖 `openai`。
+- **状态**：已完成（2026-07-17）。`swaybot/models.py` 定义 `Model` Protocol、`ToolCall`/`ModelResponse`、`FallbackModel`；`LLMBrain` 内部使用 `OpenAIModel` 并可接 fallback 链。非 OpenAI 实现可后续按同一协议添加。
 
 ### [ ] 可选的 CodeAgent / 本地 Python 沙箱
 - **问题**：JSON action 一次只能调用一个工具，复杂多步组合需要多次 LLM 调用。
@@ -221,16 +222,12 @@
 - **验收**：空闲时可并发执行多个探索任务，定时触发心跳/反思。
 - **状态**：已完成（2026-07-17）。
 
-### [ ] 目标权限控制（Goal Permission）
-
 ### [x] 目标权限控制（Goal Permission）
 - **问题**：Agent 可能执行危险操作（文件删除、网络写、调用付费 API），缺少按风险分级校验。
 - **方案**：给 `Tool` 增加 `risk_level` 元数据；`Agent` 通过 `permission_level` 在执行前检查，不足时返回权限错误。
 - **文件**：`swaybot/tools/__init__.py`、`swaybot/agent.py`
 - **验收**：高风险工具在无授权时被拒绝；显式授权后可执行；测试覆盖默认拒绝与授权通过。
 - **状态**：已完成（2026-07-17）。
-
-### [ ] AutoCompact 会话压缩
 
 ### [x] AutoCompact 会话压缩
 - **问题**：长对话后上下文超出模型窗口，且历史未压缩，token 浪费。
@@ -263,7 +260,7 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 
 ### [x] #69 Streaming 与 reasoning hooks
 - **文件**：`swaybot/hook.py`、`swaybot/llm_brain.py`
-- **状态**：已完成（2026-07-17）。`AgentHook` 支持 `on_token` / `on_reasoning`。
+- **状态**：部分完成（2026-07-17）。`AgentHook` 已支持 `on_token` / `on_reasoning`，`OpenAIModel.generate` 也支持流式回调；但 CLI 与 `AsyncAgent` 尚未把 `stream=True` 传给 `agent.run`，因此实时 token/reasoning 流式默认未启用。
 
 ### [x] #70 工具插件加载器
 - **文件**：`swaybot/plugin_loader.py`
@@ -305,7 +302,7 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 
 ### [x] Phase 5 — Pluggable tool providers + metrics sink
 - **文件**：`swaybot/tools/provider.py`、`swaybot/metrics.py`、`swaybot/hook.py`、`swaybot/agent.py`、`swaybot/tools/__init__.py`、`tests/test_tool_provider.py`、`tests/test_metrics.py`
-- **状态**：已完成（2026-07-17）。新增 `ToolProvider` 协议与 `LocalToolProvider`、`ShellToolProvider`；`ToolRegistry` 支持 `provider/tool` 命名空间分发；新增 `MetricSink`、`InMemoryMetricSink`、`LoggingMetricSink` 与 `MetricsHook`；`Agent` 在迭代/运行结束 emits tool/model/run 指标。248 个测试全部通过。
+- **状态**：已完成（2026-07-17）。新增 `ToolProvider` 协议与 `LocalToolProvider`、`ShellToolProvider`；`ToolRegistry` 支持 `provider/tool` 命名空间分发；新增 `MetricSink`、`InMemoryMetricSink`、`LoggingMetricSink` 与 `MetricsHook`。指标由附加的 `MetricsHook` 负责转发，`Agent` 本身不再直接 emit 指标，以保持核心循环简洁。
 
 ## OpenCode 借鉴 — 代码能力三件套
 
