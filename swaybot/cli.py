@@ -6,13 +6,13 @@ from typing import Any
 
 from .agent import Agent
 from .brain import EchoBrain
-from .task_state import Environment
 from .dotenv import load_dotenv
 from .explorer import Explorer
 from .memory import MemoryStore
 from .reflection import Reflector
 from .run_log import format_run, load_runs, run_log_path_for_memory, select_runs
 from .security import PermissionMode, PermissionPolicy
+from .task_state import Environment
 from .tools import format_action
 
 
@@ -165,6 +165,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Disable memory persistence",
     )
     parser.add_argument(
+        "--skills",
+        type=str,
+        default=None,
+        help="Directory of Markdown skill files to load (default: ./skills)",
+    )
+    parser.add_argument(
         "--reflect",
         action="store_true",
         help="Reflect on the run and store insights",
@@ -241,11 +247,17 @@ def main(argv: list[str] | None = None) -> int:
 
     memory = MemoryStore(path=memory_path) if memory_path else None
     reflector = Reflector(memory) if memory and (args.reflect or args.explore) else None
+    skills = None
+    if args.skills is not None:
+        from .skills import SkillLibrary
+
+        skills = SkillLibrary(args.skills)
     agent = Agent(
         brain=brain,
         memory=memory,
         reflector=reflector,
         permission_policy=permission_policy,
+        skills=skills,
     )
 
     exploration: Any | None = None

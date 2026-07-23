@@ -358,3 +358,26 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 ## 当前聚焦
 
 OpenCode/Claw Code 借鉴中，下一步可考虑：交互式 ask/allow/deny 确认、持久化外部存储后端。
+
+## 扩展点（按当前架构重新接入）
+
+### [x] Skills 技能库加载
+- **问题**：需要能加载独立的 `skills/` 文件夹作为技能库，按任务匹配后注入 system prompt。
+- **方案**：新增 `swaybot/skills.py` 的 `SkillLibrary`，支持 nanobot 风格 `skills/<name>/SKILL.md` 与扁平 `skills/*.md`，解析 frontmatter（name/description/tags/metadata）；`ContextBuilder` 接受可选 `skills`，把 `render_context(task)` 注入 `perception["skill_context"]`；`system.j2` 新增 skills 区块；`Agent` / CLI `--skills` 接入。
+- **文件**：`swaybot/skills.py`、`swaybot/perception.py`、`swaybot/agent.py`、`swaybot/cli.py`、`swaybot/prompts/system.j2`、`tests/test_skills.py`、`tests/test_perception.py`
+- **验收**：能加载 `external/nanobot/nanobot/skills` 下全部技能；按任务匹配返回相关技能；无匹配时为空；292 个测试全部通过。
+- **状态**：已完成（2026-07-23）。
+
+### [ ] 工具插件加载器（PluginProvider）
+- **问题**：需要加载自定义 tools（目录或模块中的 `@tool` 函数 / `Tool` 实例）。
+- **方案**：按 `ToolProvider` 协议新增 `swaybot/tools/plugin_provider.py`，用 `importlib` 从 trusted directories 加载并收集工具，`execute` 调用对应函数；通过 `registry.register_provider("plugins/<name>", provider)` 接入，工具自动获得命名空间。
+- **文件**：新增 `swaybot/tools/plugin_provider.py`、`tests/test_plugin_provider.py`
+- **验收**：配置目录后其 `@tool` 函数出现在 registry 中并以 `plugins/` 前缀调用；非 trusted 目录被拒绝。
+- **备注**：旧的 `swaybot/plugin_loader.py` 已在结构清理中移除，应按 provider 接口重新实现，而非直接恢复原文件。
+
+### [ ] MCP 工具接入（McpProvider）
+- **问题**：需要支持连接外部 MCP server 动态加载工具。
+- **方案**：按 `ToolProvider` 协议新增 `swaybot/tools/mcp_provider.py`，启动 MCP server（stdio/SSE），`list_tools()` 调用 `tools/list` 转 `Tool`，`execute` 调用 `tools/call`，`close()` 终止子进程；命名空间 `mcp/<server>/<tool>`；在 API lifespan / CLI 启动时初始化与关闭。
+- **文件**：新增 `swaybot/tools/mcp_provider.py`、`tests/test_mcp_provider.py`
+- **验收**：配置 MCP server 后其工具出现在 registry 中并可调用；生命周期正确启停。
+- **备注**：旧的 `swaybot/mcp_client.py` 已在结构清理中移除，应按 provider 接口重新实现。

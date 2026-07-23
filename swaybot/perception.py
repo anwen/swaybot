@@ -2,6 +2,7 @@
 
 from .instructions import load_project_instructions
 from .memory import MemoryStore
+from .skills import SkillLibrary
 from .tools import ToolRegistry
 
 
@@ -12,9 +13,11 @@ class ContextBuilder:
         self,
         memory: MemoryStore | None,
         tools: ToolRegistry,
+        skills: SkillLibrary | None = None,
     ) -> None:
         self.memory = memory
         self.tools = tools
+        self.skills = skills
 
     def build(
         self,
@@ -41,6 +44,8 @@ class ContextBuilder:
         perception["tool_descriptions"] = self.tools.schemas()
         perception["available_tools"] = self.tools.names()
         perception["project_instructions"] = load_project_instructions()
+        if self.skills is not None:
+            perception["skill_context"] = self.skills.render_context(task)
         return perception
 
     def _memory_context(self, task: str, relevant: list) -> str:

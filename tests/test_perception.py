@@ -2,6 +2,7 @@ from swaybot.agent import Agent
 from swaybot.perception import ContextBuilder
 from swaybot.memory import Memory, MemoryStore
 from swaybot.request_context import RequestContext, current_context, set_context
+from swaybot.skills import SkillLibrary
 from swaybot.tools import build_default_registry
 
 
@@ -11,6 +12,21 @@ def test_context_builder_includes_tool_context():
     perception = builder.build("demo", 0, 3, [])
     assert "echo" in perception["available_tools"]
     assert any(item["name"] == "echo" for item in perception["tool_descriptions"])
+
+
+def test_context_builder_includes_skill_context(tmp_path):
+    skill_dir = tmp_path / "skills"
+    skill_dir.mkdir()
+    (skill_dir / "github" / "SKILL.md").parent.mkdir(parents=True)
+    (skill_dir / "github" / "SKILL.md").write_text(
+        "---\nname: github\ndescription: GitHub CLI\ntags: git\n---\nuse gh\n",
+        encoding="utf-8",
+    )
+    tools = build_default_registry()
+    skills = SkillLibrary(skill_dir).load()
+    builder = ContextBuilder(memory=None, tools=tools, skills=skills)
+    perception = builder.build("git", 0, 3, [])
+    assert "### Skill: github" in perception["skill_context"]
 
 
 def test_context_builder_includes_memory_context_and_messages():

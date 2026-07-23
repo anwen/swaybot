@@ -11,6 +11,11 @@ Project instructions:
 {{ project_instructions }}
 
 {% endif %}
+{% if skill_context %}
+Relevant skills:
+{{ skill_context }}
+
+{% endif %}
 {% if tool_descriptions %}
 Available tools (JSON schema):
 {% for tool in tool_descriptions %}

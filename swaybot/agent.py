@@ -17,6 +17,7 @@ from .memory import (
 from .metrics import LoggingMetricSink, MetricsHook
 from .reflection import Reflector, reflection_to_memory
 from .run_log import append_run, build_run_record, run_log_path_for_memory
+from .skills import SkillLibrary
 from .tools import ToolRegistry, build_default_registry
 
 
@@ -34,6 +35,7 @@ class Agent:
         permission_policy: PermissionPolicy | None = None,
         auto_compact: bool = False,
         compactor: AutoCompact | None = None,
+        skills: SkillLibrary | None = None,
     ):
         self.brain = brain or EchoBrain()
         self.tools = tools or build_default_registry()
@@ -50,7 +52,9 @@ class Agent:
             )
         self.auto_compact = auto_compact
         self.compactor = compactor
-        self.context_builder = ContextBuilder(self.memory, self.tools)
+        if skills is not None and not skills._skills:
+            skills.load()
+        self.context_builder = ContextBuilder(self.memory, self.tools, skills=skills)
 
     def _allowed(self, action_name: str) -> tuple[bool, str]:
         """Check whether the active permission policy allows ``action_name``."""

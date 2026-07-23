@@ -54,6 +54,14 @@ The minimal loop is `perceive → think → act → observe → loop`:
 
 The CLI supports `--brain {echo,llm}`, `--reflect`, `--plan`, `--explore`, `--permission-mode {read-only,workspace-write,danger}`, `--output-format {text,json}`, and memory paths via `--data-dir` / `--memory` / `--no-memory`.
 
+## Skills
+
+SwayBot can load an independent `skills/` directory as a skill library. Each skill is a Markdown file (nanobot-style `skills/<name>/SKILL.md` or flat `skills/*.md`) with YAML frontmatter (`name`, `description`, `tags`). On each turn, skills whose name, description, or tags match the task are injected into the system prompt.
+
+```bash
+python -m swaybot "interact with github" --brain llm --skills ./skills
+```
+
 ## Memory
 
 SwayBot can optionally keep a `MemoryStore` to record experiences, facts, theories, conjectures, and inspirations. Memories are scoped as either `short_term` (raw per-run experiences) or `long_term` (validated knowledge produced by reflection). Each memory carries source, evidence, credibility, surprise, and tags so the agent can later retrieve relevant long-term context or search for counterexamples.
