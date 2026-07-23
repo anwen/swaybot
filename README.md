@@ -47,8 +47,8 @@ pytest
 
 The minimal loop is `perceive → think → act → observe → loop`:
 
-- `Environment` holds the task, step counter, and observation history.
-- `Brain` decides the next action. `EchoBrain` is the default deterministic brain and requires no API key.
+- `Environment` (in `swaybot/task_state.py`) holds the task, step counter, and observation history.
+- `Brain` (in `swaybot/brain.py`) decides the next action. `EchoBrain` is the default deterministic brain and requires no API key.
 - `ToolRegistry` dispatches actions to tools. Built-ins include `echo`, `add`, `done`, `final_answer`, and optional workspace/shell/web tools (`read_file`, `write_file`, `edit_file`, `list_directory`, `search_files`, `grep`, `run_shell_command`, `web_search`, `web_fetch`).
 - `Agent` wires them together and runs until the task signals completion or the step budget is exhausted.
 

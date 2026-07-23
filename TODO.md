@@ -7,14 +7,14 @@
 ### [x] 给 LLM 大脑发送工具签名描述
 - **问题**：当前系统提示只列出工具名，LLM 不知道参数，容易传错（如 `done(result=...)`）。
 - **方案**：把 `ToolRegistry.describe()` 输出整理进 system prompt，包含参数名和简短说明。
-- **文件**：`swaybot/llm_brain.py`, `swaybot/tools.py`, `swaybot/agent.py`
+- **文件**：`swaybot/llm_brain.py`, `swaybot/tools/__init__.py`, `swaybot/agent.py`
 - **验收**：LLM 调用准确率提升，fallback 减少；测试覆盖 describe 拼接。
 - **状态**：已完成（2026-07-15）。`Agent` 把 `tool_descriptions` 注入 perception；`LLMBrain` 优先使用签名描述生成 system prompt。
 
 ### [x] 增加 `@tool` 装饰器与 JSON Schema 描述
 - **问题**：手写工具 schema 容易错，且无法从函数签名/docstring 自动推导。
 - **方案**：参考 smolagents，新增 `@tool` 装饰器、`Tool` 数据类、`ToolRegistry.schemas()`，自动从类型注解和 docstring 生成 JSON schema。
-- **文件**：`swaybot/tools.py`, `swaybot/agent.py`, `swaybot/llm_brain.py`, `tests/test_tools.py`, `pyproject.toml`
+- **文件**：`swaybot/tools/__init__.py`, `swaybot/agent.py`, `swaybot/llm_brain.py`, `tests/test_tools.py`, `pyproject.toml`
 - **验收**：`@tool` 能推断参数类型、默认值和描述；LLM system prompt 包含 JSON schema；pytest 只收集 `tests/` 目录。
 - **状态**：已完成（2026-07-15）。46 个测试全部通过。
 
@@ -90,14 +90,14 @@
 ### [x] Final answer 机制
 - **问题**：当前 Agent 靠 `done` 工具结束任务，小模型常在 max_steps 边界忘记收尾（如 LLM explore 跑了两步 `add` 都没调 `done`）。
 - **方案**：新增 `final_answer` 工具；`Environment.observe()` 将其与 `done` 同样视为终止动作；system prompt 明确 instruct 模型在得到答案时调用 `final_answer(answer=...)`。
-- **文件**：`swaybot/prompts/system.j2`, `swaybot/environment.py`, `swaybot/tools.py`, `tests/test_agent.py`, `tests/test_tools.py`
+- **文件**：`swaybot/prompts/system.j2`, `swaybot/task_state.py`, `swaybot/tools/__init__.py`, `tests/test_agent.py`, `tests/test_tools.py`
 - **验收**：调用 `final_answer` 后 Agent 提前结束并保留答案；`done` 保持兼容；78 个测试全部通过。
 - **状态**：已完成（2026-07-16）。
 
 ### [x] 工具输入校验
 - **问题**：`ToolRegistry.execute()` 直接执行，不检查参数类型、必填项，LLM 传错参数时可能报错或行为异常。
 - **方案**：在 `Tool` 中加入 `validate_arguments()`，根据 JSON schema 检查 required 和类型；`ToolRegistry.execute()` 先校验再执行；`Agent.run()` 用 try/except 捕获工具执行错误，把错误信息作为 observation 让 LLM 在下一步纠正。
-- **文件**：`swaybot/tools.py`, `swaybot/agent.py`, `tests/test_tools.py`, `tests/test_agent.py`
+- **文件**：`swaybot/tools/__init__.py`, `swaybot/agent.py`, `tests/test_tools.py`, `tests/test_agent.py`
 - **验收**：缺失必填参数或类型错误时返回可理解的错误信息，Agent 不崩溃；81 个测试全部通过。
 - **状态**：已完成（2026-07-16）。
 
@@ -147,7 +147,7 @@
 ### [ ] 主动搜索外部信息
 - **问题**：Agent 只能依赖已有记忆和内置工具，无法主动搜索互联网、本地文件或 API 获取新证据，难以满足 SOUL.md 中“主动探索世界、搜索材料”的要求。
 - **方案**：新增通用 `search` 工具族（如 `web_search`、`file_search`、`api_search`）或 MCP/搜索工具接口；`Explorer` 在生成假设时、`Reflector` 在验证假设时均可自动调用。
-- **文件**：`swaybot/tools.py`（新增工具）、`swaybot/explorer.py`、`swaybot/reflection.py`
+- **文件**：`swaybot/tools/__init__.py`（新增工具）、`swaybot/explorer.py`、`swaybot/reflection.py`
 - **验收**：`--explore` 或验证阶段能主动搜索外部信息，并将搜索结果作为 evidence 写入记忆。
 
 ### [ ] 主动寻找反例
@@ -176,7 +176,7 @@
 ### [x] 统一 ContextBuilder
 - **问题**：`Agent` 内部 `_memory_context`、`_behavior_guidance`、`_build_messages` 散落拼装，新增上下文来源时容易改动核心循环。
 - **方案**：提取 `ContextBuilder`，统一组装 system prompt、SOUL/identity、长期记忆、行为指导、短期历史、运行时上下文。
-- **文件**：新增 `swaybot/context.py`
+- **文件**：新增 `swaybot/perception.py`
 - **验收**：新增上下文来源只需修改 ContextBuilder，`Agent.run()` 保持不变。
 - **状态**：已完成（2026-07-16）。
 
@@ -190,14 +190,14 @@
 ### [x] MCP 动态工具接入
 - **问题**：每新增外部能力都要手写 wrapper，扩展成本高。
 - **方案**：实现轻量 MCP client（stdio/SSE），让 swaybot 动态发现并加载 MCP server 的工具。
-- **文件**：新增 `swaybot/mcp_client.py`、`swaybot/tools.py`
+- **文件**：`swaybot/tools/provider.py`（MCP 专用 client 已在结构清理中移除）
 - **验收**：配置 MCP server 后，其工具自动出现在 registry 中并可被调用。
 - **状态**：已完成（2026-07-16）。
 
 ### [x] WebSearch / WebFetch 工具
 - **问题**：Agent 无法联网，难以满足 SOUL.md 主动探索世界、搜索材料的要求。
 - **方案**：增加 `web_search` 与 `web_fetch` 工具，支持多 provider 适配与基础 SSRF 防护，供 `Explorer`/`Reflector` 调用。
-- **文件**：`swaybot/tools.py`（或新建 `swaybot/tools/web.py`）
+- **文件**：`swaybot/tools/__init__.py`（或新建 `swaybot/tools/web.py`）
 - **验收**：验证假设时能搜索网络并引用结果作为 evidence。
 - **状态**：已完成（2026-07-17）。
 
@@ -215,12 +215,12 @@
 - **验收**：长期记忆可版本化、可回滚、可人工审阅；运行历史与长期知识分离。
 - **状态**：已完成（2026-07-17）。
 
-### [x] 子代理与后台自动化
+### [x] 子代理与后台自动化（已清理）
 - **问题**：当前单线程顺序执行，空闲时无法并发探索，也缺少定时任务。
 - **方案**：后台 `SubagentManager` 支持并行子任务；`Automation` 支持基于时间间隔的后台心跳/定时任务。
-- **文件**：新增 `swaybot/subagent.py`、`swaybot/automation.py`
+- **文件**：新增 `swaybot/subagent.py`、`swaybot/automation.py`（均已在结构清理中移除）
 - **验收**：空闲时可并发执行多个探索任务，定时触发心跳/反思。
-- **状态**：已完成（2026-07-17）。
+- **状态**：已完成（2026-07-17），相关模块在后续结构清理中移除。
 
 ### [x] 目标权限控制（Goal Permission）
 - **问题**：Agent 可能执行危险操作（文件删除、网络写、调用付费 API），缺少按风险分级校验。
@@ -251,7 +251,7 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 - **状态**：已完成（2026-07-17）。按 session 写入 `{id}.jsonl`，路径做安全转义。
 
 ### [x] #67 OpenAI-compatible API / WebUI / Python SDK
-- **文件**：`swaybot/api.py`、`swaybot/sdk.py`
+- **文件**：`swaybot/api.py`、`swaybot/sdk.py`（Python SDK 已在结构清理中移除）
 - **状态**：已完成（2026-07-17）。FastAPI 提供 `/v1/chat/completions`、SSE 流式与 SDK 同步调用。
 
 ### [x] #68 Provider 抽象 + 原生 tool calls
@@ -263,7 +263,7 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 - **状态**：部分完成（2026-07-17）。`AgentHook` 已支持 `on_token` / `on_reasoning`，`OpenAIModel.generate` 也支持流式回调；但 CLI 与 `AsyncAgent` 尚未把 `stream=True` 传给 `agent.run`，因此实时 token/reasoning 流式默认未启用。
 
 ### [x] #70 工具插件加载器
-- **文件**：`swaybot/plugin_loader.py`
+- **文件**：`swaybot/plugin_loader.py`（已在结构清理中移除）
 - **状态**：已完成（2026-07-17）。可发现目录/模块中 `@tool` 装饰的函数。
 
 ### [x] #71 沙盒文件系统与 shell 工具
@@ -271,7 +271,7 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 - **状态**：已完成（2026-07-17）。路径限制在 workspace，shell 命令经白名单/元字符过滤。
 
 ### [x] #72 Markdown skill 系统
-- **文件**：`swaybot/skills.py`、`skills/*.md`
+- **文件**：`swaybot/skills.py`、`skills/*.md`（skills 模块已在结构清理中移除）
 - **状态**：已完成（2026-07-17）。frontmatter 解析、标签查询、上下文渲染。
 
 ### [x] #73 持续目标 / 长任务协调器
@@ -289,7 +289,7 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 - **状态**：已完成（2026-07-17）。统一 `StorageBackend` 协议与 JSON/JSONL/内存实现；`SessionManager`/`MemoryStore`/`RunLog`/`SecurityManager` 接入；新增 `InMemoryEventBus`。
 
 ### [x] Phase 2 — Generic job scheduler
-- **文件**：`swaybot/scheduler.py`、`swaybot/automation.py`、`swaybot/api.py`、`tests/test_scheduler.py`
+- **文件**：`swaybot/scheduler.py`、`swaybot/api.py`、`tests/test_scheduler.py`（`automation.py` 包装器已在结构清理中移除）
 - **状态**：已完成（2026-07-17）。async `Scheduler` 支持 interval/cron、`max_running`、取消与状态持久化；`Automation` 重写为线程包装器；API lifespan 接入。全部 225 个测试通过。
 
 ### [x] Phase 3 — State-machine-driven long-running goals
@@ -309,21 +309,21 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 ### [x] 项目级可进化指令（AGENTS.md / .swaybot/rules.md）
 - **问题**：SwayBot 的 system prompt 和项目规范硬编码在模板/代码里，难以随项目演进。
 - **方案**：参考 OpenCode 的 `AGENTS.md` 与 `.opencode` 配置做法，从当前目录向上遍历到 git 根目录，自动收集 `AGENTS.md` 和 `.swaybot/rules.md` / `.swaybot/*.md`，注入 system prompt。
-- **文件**：`swaybot/instructions.py`、`swaybot/context.py`、`swaybot/llm_brain.py`、`swaybot/prompts/system.j2`、`tests/test_instructions.py`
+- **文件**：`swaybot/instructions.py`、`swaybot/perception.py`、`swaybot/llm_brain.py`、`swaybot/prompts/system.j2`、`tests/test_instructions.py`
 - **验收**：存在 `AGENTS.md` 或 `.swaybot/rules.md` 时会被加载到 prompt；根目录规则先加载、子目录规则后加载（更具体）；无文件时行为不变。259 个测试全部通过。
 - **状态**：已完成（2026-07-17）。
 
 ### [x] 写后自动 format / lint / typecheck hook
 - **问题**：`edit_file`/`write_file` 写完后，模型无法立刻知道是否引入了语法/类型错误，容易一错再错。
 - **方案**：参考 OpenCode 的 `packages/opencode/src/format/index.ts`，在写文件后自动调用已安装的 `ruff format`、`ruff check`、`pyright`（仅 Python 文件），把诊断信息追加到工具返回值。
-- **文件**：`swaybot/code_quality.py`、`swaybot/tools/fs.py`、`tests/test_code_quality.py`
+- **文件**：`swaybot/tools/code_quality.py`、`swaybot/tools/fs.py`、`tests/test_code_quality.py`
 - **验收**：无外部工具时静默跳过；有工具时返回格式化/lint/typecheck 结果；失败时明确标记 `failed`。271 个测试全部通过。
 - **状态**：已完成（2026-07-17）。
 
 ### [x] 工具输出截断 + 溢出文件
 - **问题**：`read_file`、`grep`、`run_shell_command` 可能返回超大内容，直接撑爆上下文。
 - **方案**：参考 OpenCode 的 `packages/core/src/tool-output-store.ts`，超过阈值时把完整内容写入 `.swaybot/overflows/<uuid>.txt`，只给模型返回预览 + 文件路径。
-- **文件**：`swaybot/output_limits.py`、`swaybot/tools/fs.py`、`swaybot/tools/shell.py`、`tests/test_output_limits.py`、`tests/test_fs.py`
+- **文件**：`swaybot/tools/output_limits.py`、`swaybot/tools/fs.py`、`swaybot/tools/shell.py`、`tests/test_output_limits.py`、`tests/test_fs.py`
 - **验收**：文本/列表输出在阈值内原样返回；超出时生成溢出文件并附带路径；`read_file`、`grep`、`run_shell_command` 均接入。271 个测试全部通过。
 - **状态**：已完成（2026-07-17）。
 
@@ -337,7 +337,7 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 ### [x] 按路径文件锁
 - **问题**：`write_file`/`edit_file` 在同一进程内可能被并发调用（多子代理、并发子任务），导致写覆盖或读到半写状态。
 - **方案**：新增 `PathLockManager`，按规范化路径维护 `threading.Lock`；`write_file` 和 `edit_file` 在解析目标路径后获取锁，整个读-改-写周期受保护。
-- **文件**：`swaybot/file_locks.py`、`swaybot/tools/fs.py`、`tests/test_file_locks.py`
+- **文件**：`swaybot/tools/file_locks.py`、`swaybot/tools/fs.py`、`tests/test_file_locks.py`
 - **验收**：并发线程对同一文件递增 200 次结果正确；不同文件可并发；等价路径共享同一把锁。289 个测试全部通过。
 - **状态**：已完成（2026-07-18）。
 
@@ -350,8 +350,8 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 
 ### [x] API 入口加载项目根目录 .env
 - **问题**：CLI 会自动加载 `.env`，但 API 入口 `python -m swaybot.api` 不会，导致启动服务时还要手动 export 环境变量。
-- **方案**：把 `_load_dotenv` 抽到 `swaybot/env.py` 作为 `load_dotenv()`；CLI 和 API 入口都调用它；不覆盖已存在的环境变量。
-- **文件**：`swaybot/env.py`（新）、`swaybot/cli.py`、`swaybot/api.py`、`tests/test_env.py`
+- **方案**：把 `_load_dotenv` 抽到 `swaybot/dotenv.py` 作为 `load_dotenv()`；CLI 和 API 入口都调用它；不覆盖已存在的环境变量。
+- **文件**：`swaybot/dotenv.py`（新）、`swaybot/cli.py`、`swaybot/api.py`、`tests/test_dotenv.py`
 - **验收**：API 启动前自动读取当前目录 `.env`；注释/空行被忽略；已存在的环境变量不被覆盖。293 个测试全部通过。
 - **状态**：已完成（2026-07-18）。
 
