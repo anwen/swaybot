@@ -3,10 +3,13 @@ import inspect
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Callable, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Callable, Union, get_args, get_origin
 
 from ..logging import log_event
 from ..request_context import RequestContext, current_context
+
+if TYPE_CHECKING:
+    from .provider import ToolProvider
 
 
 def _type_to_json_schema(tp: type) -> dict:
@@ -185,10 +188,10 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
-        self._providers: dict[str, Any] = {}
+        self._providers: dict[str, "ToolProvider"] = {}
 
-    def register_provider(self, name: str, provider: Any) -> None:
-        """Add a ``ToolProvider`` under the namespace ``name``."""
+    def register_provider(self, name: str, provider: "ToolProvider") -> None:
+        """Add a :class:`~swaybot.tools.provider.ToolProvider` under the namespace ``name``."""
         self._providers[name] = provider
 
     def register(
