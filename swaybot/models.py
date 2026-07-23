@@ -1,28 +1,10 @@
 """Model abstraction for text generation backends."""
 
-from dataclasses import dataclass
 from typing import Callable, Protocol, runtime_checkable
 
 
 StreamCallback = Callable[[str], None]
 ReasoningCallback = Callable[[str], None]
-
-
-@dataclass
-class ToolCall:
-    """A native tool call returned by a model."""
-
-    id: str
-    name: str
-    arguments: dict
-
-
-@dataclass
-class ModelResponse:
-    """Structured response from a text generation backend."""
-
-    content: str = ""
-    tool_calls: list[ToolCall] | None = None
 
 
 @runtime_checkable

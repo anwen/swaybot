@@ -1,8 +1,6 @@
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-
-StreamCallback = Callable[[str], None]
-ReasoningCallback = Callable[[str], None]
+from .models import ReasoningCallback, StreamCallback
 
 
 DEFAULT_EXPLORATION_TASKS = [
