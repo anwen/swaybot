@@ -384,12 +384,15 @@ def format_action(action: dict) -> str:
     return f"{name}({args_str})"
 
 
-from .web import web_fetch, web_search
-from .fs import read_file, write_file, edit_file, list_directory, search_files, grep
-from .shell import run_shell_command
-
-
 def build_default_registry() -> ToolRegistry:
+    # Imported lazily so that ``swaybot.tools`` does not load the fs/shell/web
+    # submodules during its own initialization. fs.py and shell.py do
+    # ``from . import tool``, which previously relied on the ordering of
+    # bottom-of-file imports in this module (a partial-init cycle).
+    from .fs import edit_file, grep, list_directory, read_file, search_files, write_file
+    from .shell import run_shell_command
+    from .web import web_fetch, web_search
+
     registry = ToolRegistry()
     registry.register("echo", echo)
     registry.register("add", add)
