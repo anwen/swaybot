@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .agent import Agent
-from .context import ContextBuilder
+from .perception import ContextBuilder
 from .events import Event, EventBus, InMemoryEventBus
 from .scheduler import OneShotSchedule, Scheduler
 from .storage import InMemoryBackend, StorageBackend

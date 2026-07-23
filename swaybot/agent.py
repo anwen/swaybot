@@ -1,7 +1,7 @@
 from typing import Any
 
 from .brain import Brain, EchoBrain
-from .context import ContextBuilder
+from .perception import ContextBuilder
 from .task_state import Environment
 from .hook import AgentHook, CompositeHook
 from .request_context import RequestContext, current_context, set_context

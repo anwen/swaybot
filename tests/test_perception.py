@@ -1,5 +1,5 @@
 from swaybot.agent import Agent
-from swaybot.context import ContextBuilder
+from swaybot.perception import ContextBuilder
 from swaybot.memory import Memory, MemoryStore
 from swaybot.request_context import RequestContext, current_context, set_context
 from swaybot.tools import build_default_registry
