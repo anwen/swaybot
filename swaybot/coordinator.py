@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .agent import Agent
-from .perception import ContextBuilder
 from .events import Event, EventBus, InMemoryEventBus
 from .scheduler import OneShotSchedule, Scheduler
 from .storage import InMemoryBackend, StorageBackend
@@ -368,9 +367,13 @@ class GoalCoordinator:
         return []
 
     def _planning_perception(self, agent: Agent, goal: Goal) -> dict:
-        """Build a planning perception using the shared context builder."""
-        builder = ContextBuilder(None, agent.tools)
-        perception = builder.build(
+        """Build a planning perception using the agent's own context builder.
+
+        Reusing ``agent.context_builder`` keeps planning perception
+        consistent with the run loop: long-term memory and skills are
+        available when the brain decomposes the goal into subtasks.
+        """
+        perception = agent.context_builder.build(
             task=goal.description,
             step=0,
             max_steps=self.planning_steps,

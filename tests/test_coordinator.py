@@ -3,6 +3,7 @@ import pytest
 from swaybot.agent import Agent
 from swaybot.brain import EchoBrain
 from swaybot.coordinator import GoalCoordinator, GoalStateMachine, Goal, Subtask
+from swaybot.memory import Memory, MemoryStore
 from swaybot.storage import InMemoryBackend
 
 
@@ -50,6 +51,36 @@ def test_coordinator_plans_from_brain():
     goal = coordinator.run("do something")
     assert len(goal.subtasks) == 2
     assert goal.subtasks[0].description == "step one"
+
+
+def test_coordinator_planning_includes_long_term_memory():
+    """Planning perception reuses the agent's context builder, so long-term
+    memory is visible when the brain decomposes the goal into subtasks."""
+
+    calls = []
+
+    class CapturingBrain:
+        def think(
+            self, perception, available_tools, metadata=None,
+            stream_callback=None, reasoning_callback=None
+        ):
+            # Record only the planning call (the one with no observation
+            # history); later per-subtask calls are not planning.
+            if perception.get("planning"):
+                calls.append(perception.get("memory_context", ""))
+            return {"name": "plan", "args": {"steps": ["s"]}}
+
+    store = MemoryStore()
+    store.add(Memory(content="remember to fold subtasks", scope="long_term", tags=["fold"]))
+
+    coordinator = GoalCoordinator(
+        agent_factory=lambda _: Agent(brain=CapturingBrain(), memory=store),
+        backend=InMemoryBackend(),
+        max_subtask_steps=1,
+    )
+    coordinator.run("fold the goal")
+    assert calls, "planning call was not made"
+    assert "remember to fold subtasks" in calls[0]
 
 
 def test_coordinator_records_failed_subtask():
