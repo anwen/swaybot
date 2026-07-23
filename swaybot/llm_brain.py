@@ -2,8 +2,8 @@ import json
 from typing import Any
 
 from .brain import ReasoningCallback, StreamCallback
-from .explorer import _strip_markdown_fences, parse_exploration_response
 from .models import FallbackModel, Model, OpenAIModel
+from .parsing import parse_exploration_response, strip_markdown_fences
 from .prompts import render_prompt
 
 
@@ -158,7 +158,7 @@ def _merge_metadata(target: dict | None, source: dict) -> None:
 
 
 def _parse_action(raw: str, perception: dict) -> dict[str, Any]:
-    raw = _strip_markdown_fences(raw)
+    raw = strip_markdown_fences(raw)
 
     try:
         action = json.loads(raw)
@@ -172,7 +172,7 @@ def _parse_action(raw: str, perception: dict) -> dict[str, Any]:
 
 
 def _parse_plan(raw: str) -> dict[str, Any]:
-    raw = _strip_markdown_fences(raw)
+    raw = strip_markdown_fences(raw)
 
     try:
         plan = json.loads(raw)
