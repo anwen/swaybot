@@ -279,8 +279,9 @@ P3 的流式响应可先放一放。P4/P5 中 Final answer、工具校验、监�
 - **状态**：已完成（2026-07-17）。`GoalCoordinator` 拆解目标、串行执行子任务并持久化状态。
 
 ### [x] #74 安全加固（workspace 范围、路径穿越防护、重复违规升级）
-- **文件**：`swaybot/security.py`、各工具集成
+- **文件**：`swaybot/security.py`（聚合 re-export）、`swaybot/violations.py`（异常 + `SecurityManager`）、`swaybot/permission.py`（`PermissionMode`/`PermissionPolicy`）、`swaybot/guards.py`（`PathGuard`/`CommandGuard`）、各工具集成
 - **状态**：已完成（2026-07-17）。新增 `PathGuard`、`CommandGuard`、`SecurityManager`；文件/Shell 工具复用统一安全层；新增 `tests/test_security.py`。全部 203 个测试通过。
+- **备注**：2026-07-24 将 `security.py`（288 行）按职责拆为 `violations.py`/`permission.py`/`guards.py`，`security.py` 保留为 re-export 入口，所有 `from swaybot.security import ...` 不变。
 
 ## Harness 生产模式借鉴
 
