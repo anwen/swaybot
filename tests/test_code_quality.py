@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from swaybot.code_quality import run_quality_hooks
+from swaybot.tools.code_quality import run_quality_hooks
 
 
 def test_quality_hooks_run_configured_commands(tmp_path):
@@ -18,7 +18,7 @@ def test_quality_hooks_run_configured_commands(tmp_path):
 def test_quality_hooks_skip_missing_commands(tmp_path, monkeypatch):
     target = tmp_path / "demo.py"
     target.write_text("x = 1", encoding="utf-8")
-    monkeypatch.setattr("swaybot.code_quality.shutil.which", lambda _name: None)
+    monkeypatch.setattr("swaybot.tools.code_quality.shutil.which", lambda _name: None)
     report = run_quality_hooks(target)
     assert report == ""
 

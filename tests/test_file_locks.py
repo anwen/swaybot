@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from swaybot.file_locks import PathLockManager
+from swaybot.tools.file_locks import PathLockManager
 
 
 def test_path_lock_synchronizes_concurrent_writes(tmp_path: Path) -> None:

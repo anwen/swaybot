@@ -1,4 +1,4 @@
-from swaybot.output_limits import truncate_lines, truncate_text, write_overflow
+from swaybot.tools.output_limits import truncate_lines, truncate_text, write_overflow
 
 
 def test_truncate_text_returns_short_text_unchanged(tmp_path):
