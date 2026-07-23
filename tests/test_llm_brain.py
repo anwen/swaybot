@@ -17,7 +17,7 @@ def _mock_response(content: str):
     return response
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_system_prompt_includes_tool_schemas(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -61,7 +61,7 @@ def test_llm_brain_system_prompt_includes_tool_schemas(mock_openai):
     assert "done" in system_content
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_system_prompt_falls_back_to_tool_names(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -81,7 +81,7 @@ def test_llm_brain_system_prompt_falls_back_to_tool_names(mock_openai):
     assert "done" in system_content
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_parses_json_action(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -97,7 +97,7 @@ def test_llm_brain_parses_json_action(mock_openai):
     assert action == {"name": "add", "args": {"a": 1, "b": 2}}
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_strips_markdown_fences(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -113,7 +113,7 @@ def test_llm_brain_strips_markdown_fences(mock_openai):
     assert action == {"name": "done", "args": {}}
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_fallback_on_invalid_json(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response("not json")
@@ -128,7 +128,7 @@ def test_llm_brain_fallback_on_invalid_json(mock_openai):
     assert "not json" in action["args"]["message"]
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_fallback_on_api_error(mock_openai):
     client = MagicMock()
     client.chat.completions.create.side_effect = RuntimeError("connection failed")
@@ -151,13 +151,13 @@ def test_llm_brain_requires_api_key(monkeypatch):
         LLMBrain(api_key=None, base_url="http://localhost/v1")
 
 
-@patch("swaybot.llm_brain.OpenAI", None)
+@patch("swaybot.models.OpenAI", None)
 def test_llm_brain_requires_openai_package():
     with pytest.raises(ImportError):
         LLMBrain(api_key="test-key", base_url="http://localhost/v1")
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_uses_messages_when_present(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -186,7 +186,7 @@ def test_llm_brain_uses_messages_when_present(mock_openai):
     assert messages[2]["role"] == "assistant"
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_parses_planning_response_as_list(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -208,7 +208,7 @@ def test_llm_brain_parses_planning_response_as_list(mock_openai):
     assert action == {"name": "plan", "args": {"steps": ["search", "summarize", "finish"]}}
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_parses_planning_response_as_object(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -224,7 +224,7 @@ def test_llm_brain_parses_planning_response_as_object(mock_openai):
     assert action == {"name": "plan", "args": {"steps": ["a", "b"]}}
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_planning_fallback_on_invalid_json(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response("not a plan")
@@ -238,7 +238,7 @@ def test_llm_brain_planning_fallback_on_invalid_json(mock_openai):
     assert action == {"name": "plan", "args": {"steps": []}}
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_system_prompt_includes_behavior_guidance(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -263,7 +263,7 @@ def test_llm_brain_system_prompt_includes_behavior_guidance(mock_openai):
     assert "Always verify" in system_content
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_retries_then_succeeds(mock_openai):
     client = MagicMock()
     client.chat.completions.create.side_effect = [
@@ -287,7 +287,7 @@ def test_llm_brain_retries_then_succeeds(mock_openai):
     assert client.chat.completions.create.call_count == 3
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_fallback_after_retries_exhausted(mock_openai):
     client = MagicMock()
     client.chat.completions.create.side_effect = RuntimeError("timeout")
@@ -309,7 +309,7 @@ def test_llm_brain_fallback_after_retries_exhausted(mock_openai):
     assert client.chat.completions.create.call_count == 3
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_populates_metadata(mock_openai):
     client = MagicMock()
     response = _mock_response('{"name": "done", "args": {}}')
@@ -346,7 +346,7 @@ def _mock_tool_call_response(name: str, arguments: dict):
     return response
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_passes_native_tools_when_supported(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_response(
@@ -382,7 +382,7 @@ def test_llm_brain_passes_native_tools_when_supported(mock_openai):
     assert call_kwargs["tools"][0]["function"]["name"] == "add"
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_parses_native_tool_call(mock_openai):
     client = MagicMock()
     client.chat.completions.create.return_value = _mock_tool_call_response(
@@ -417,7 +417,7 @@ def test_llm_brain_parses_native_tool_call(mock_openai):
     assert action == {"name": "add", "args": {"a": 2, "b": 3}}
 
 
-@patch("swaybot.llm_brain.OpenAI")
+@patch("swaybot.models.OpenAI")
 def test_llm_brain_uses_env_variables(mock_openai, monkeypatch):
     monkeypatch.setenv("SWAYBOT_API_KEY", "env-key")
     monkeypatch.setenv("SWAYBOT_API_BASE", "http://env/v1")
