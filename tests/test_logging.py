@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from swaybot.environment import Environment
+from swaybot.task_state import Environment
 from swaybot.logging import JSONFormatter, StructuredLoggingHook, log_event
 from swaybot.request_context import RequestContext, set_context
 

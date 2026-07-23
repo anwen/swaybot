@@ -20,7 +20,7 @@ from .async_agent import AsyncAgent
 from .bus import InboundMessage, MessageBus, OutboundMessage
 from .request_context import RequestContext, current_context, set_context
 from .coordinator import Goal, GoalCoordinator
-from .env import load_dotenv
+from .dotenv import load_dotenv
 from .logging import JSONFormatter, get_event_logger
 from .scheduler import Scheduler
 from .security import PermissionPolicy, permission_level_to_mode

@@ -1,7 +1,7 @@
 import pytest
 
 from swaybot.agent import Agent
-from swaybot.environment import Environment
+from swaybot.task_state import Environment
 from swaybot.subagent import SubagentManager
 
 

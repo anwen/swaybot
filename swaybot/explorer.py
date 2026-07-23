@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from .agent import Agent
 from .brain import DEFAULT_EXPLORATION_TASKS, EchoBrain
-from .environment import Environment
+from .task_state import Environment
 from .llm_brain import parse_exploration_response
 from .reflection import Reflector
 

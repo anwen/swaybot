@@ -1,6 +1,6 @@
 import json
 
-from swaybot.environment import Environment
+from swaybot.task_state import Environment
 from swaybot.logging import JSONFormatter
 from swaybot.metrics import (
     InMemoryMetricSink,

@@ -6,8 +6,8 @@ from typing import Any
 
 from .agent import Agent
 from .brain import EchoBrain
-from .environment import Environment
-from .env import load_dotenv
+from .task_state import Environment
+from .dotenv import load_dotenv
 from .explorer import Explorer
 from .memory import MemoryStore
 from .reflection import Reflector

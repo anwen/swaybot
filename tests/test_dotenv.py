@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from swaybot.env import load_dotenv
+from swaybot.dotenv import load_dotenv
 
 
 def test_load_dotenv_reads_key_value_pairs(tmp_path, monkeypatch):
