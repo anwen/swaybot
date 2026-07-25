@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from .agent import Agent
 from .brain import DEFAULT_EXPLORATION_TASKS, EchoBrain
+from .memory import format_memory_bullets
 from .parsing import parse_exploration_response
 from .reflection import Reflector
 from .task_state import Environment
@@ -86,12 +87,7 @@ class Explorer:
         long_term = self.agent.memory.query(scope="long_term", limit=10)
         if not long_term:
             return ""
-        lines = []
-        for mem in long_term:
-            content = getattr(mem, "content", "")
-            if content:
-                lines.append(f"- {content}")
-        return "\n".join(lines)
+        return format_memory_bullets(long_term)
 
     def _candidate_hypotheses_from_memory(self) -> list[str]:
         """Pull unresolved questions and contradictions from long-term memory."""

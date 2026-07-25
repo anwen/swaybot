@@ -1,7 +1,7 @@
 """Build the perception context fed to the brain each turn."""
 
 from .instructions import load_project_instructions
-from .memory import MemoryStore
+from .memory import MemoryStore, format_memory_bullets
 from .skills import SkillLibrary
 from .tools import ToolRegistry
 
@@ -51,9 +51,7 @@ class ContextBuilder:
     def _memory_context(self, task: str, relevant: list) -> str:
         if not relevant:
             return ""
-        return "\n".join(
-            f"- {getattr(m, 'content', str(m))}" for m in relevant
-        )
+        return format_memory_bullets(relevant)
 
     def _behavior_guidance(self, task: str, relevant: list) -> str:
         lines: list[str] = []

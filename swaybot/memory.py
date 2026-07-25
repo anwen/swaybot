@@ -537,6 +537,16 @@ def _load_step(item: dict) -> MemoryStep:
         return Memory(content=json.dumps(data, ensure_ascii=False))
 
 
+def format_memory_bullets(memories: list[MemoryStep]) -> str:
+    """Render a list of memory steps as bullet points of their content."""
+    lines = []
+    for m in memories:
+        content = getattr(m, "content", "")
+        if content:
+            lines.append(f"- {content}")
+    return "\n".join(lines)
+
+
 _STOP_WORDS = {
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
     "to", "of", "and", "or", "for", "in", "on", "at", "by", "with", "from",
