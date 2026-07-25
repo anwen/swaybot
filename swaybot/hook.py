@@ -71,6 +71,12 @@ class CompositeHook:
             hook.after_run(task, env, reflections)
 
     def on_token(self, token: str) -> None:
+        """Dispatch to hooks that implement ``on_token``.
+
+        Hooks are allowed to omit optional methods (on_token, on_reasoning,
+        on_metric) even though the Protocol declares them — partial
+        implementations are common in practice.
+        """
         for hook in self.hooks:
             if hasattr(hook, "on_token"):
                 hook.on_token(token)
