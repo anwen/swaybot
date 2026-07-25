@@ -307,15 +307,6 @@ class ToolRegistry:
         )
         return result
 
-    def _tool_for_action(self, action: dict) -> Tool:
-        name = action.get("name") or ""
-        if not name:
-            raise ValueError("action is missing a tool name")
-        t = self.get(name)
-        if t is None:
-            raise ValueError(f"Unknown tool: {name}")
-        return t
-
     def execute_batch(self, actions: list[dict]) -> list[object]:
         """Execute a list of actions respecting concurrency metadata.
 
@@ -326,7 +317,12 @@ class ToolRegistry:
         results: list[object] = [None] * len(actions)
         i = 0
         while i < len(actions):
-            t = self._tool_for_action(actions[i])
+            name = actions[i].get("name") or ""
+            if not name:
+                raise ValueError("action is missing a tool name")
+            t = self.get(name)
+            if t is None:
+                raise ValueError(f"Unknown tool: {name}")
 
             if t.exclusive or not t.concurrency_safe:
                 results[i] = self.execute(actions[i])
@@ -336,8 +332,13 @@ class ToolRegistry:
             group: list[tuple[int, dict]] = []
             while i < len(actions):
                 action = actions[i]
-                t = self._tool_for_action(action)
-                if t.exclusive or not t.concurrency_safe:
+                a_name = action.get("name") or ""
+                if not a_name:
+                    raise ValueError("action is missing a tool name")
+                a_tool = self.get(a_name)
+                if a_tool is None:
+                    raise ValueError(f"Unknown tool: {a_name}")
+                if a_tool.exclusive or not a_tool.concurrency_safe:
                     break
                 group.append((i, action))
                 i += 1
