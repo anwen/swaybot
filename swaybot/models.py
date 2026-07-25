@@ -257,7 +257,7 @@ class OpenAIModel:
                 if stream_callback:
                     stream_callback(token)
         content = "".join(content_parts)
-        self._record_stream_metadata(metadata, messages, content, start)
+        self._record_base_metadata(metadata, messages, content, start)
         return content
 
     def _record_completion_metadata(
@@ -278,15 +278,6 @@ class OpenAIModel:
                 "completion_tokens": getattr(usage, "completion_tokens", None),
                 "total_tokens": getattr(usage, "total_tokens", None),
             }
-
-    def _record_stream_metadata(
-        self,
-        metadata: dict | None,
-        messages: list[dict],
-        content: str,
-        start: float,
-    ) -> None:
-        self._record_base_metadata(metadata, messages, content, start)
 
     def _record_base_metadata(
         self,
