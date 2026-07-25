@@ -4,8 +4,9 @@ import inspect
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Callable, Protocol, runtime_checkable
+
+from .utils import utc_now_iso
 
 
 _logger = logging.getLogger(__name__)
@@ -18,9 +19,7 @@ class Event:
     type: str
     payload: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=utc_now_iso)
     context: dict[str, Any] | None = None
 
 

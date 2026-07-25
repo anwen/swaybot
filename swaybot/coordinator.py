@@ -4,13 +4,13 @@ import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .agent import Agent
 from .events import Event, EventBus, InMemoryEventBus
 from .scheduler import OneShotSchedule, Scheduler
 from .storage import InMemoryBackend, StorageBackend
+from .utils import utc_now_iso
 
 
 GOAL_PENDING = "pending"
@@ -35,9 +35,7 @@ class Subtask:
     description: str = ""
     status: str = SUBTASK_PENDING
     result: str = ""
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=utc_now_iso)
 
 
 @dataclass
@@ -49,12 +47,8 @@ class Goal:
     context: str = ""
     subtasks: list[Subtask] = field(default_factory=list)
     state: str = GOAL_PENDING
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-    updated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=utc_now_iso)
+    updated_at: str = field(default_factory=utc_now_iso)
 
 
 class GoalStateMachine:
@@ -140,7 +134,7 @@ class GoalStateMachine:
 
     @staticmethod
     def _touch(goal: Goal) -> None:
-        goal.updated_at = datetime.now(timezone.utc).isoformat()
+        goal.updated_at = utc_now_iso()
 
     @classmethod
     def _deserialize(cls, data: dict[str, Any]) -> Goal:

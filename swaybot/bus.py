@@ -2,10 +2,10 @@
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Callable
 
 from .events import Event, EventBus, InMemoryEventBus
+from .utils import utc_now_iso
 
 
 @dataclass
@@ -15,9 +15,7 @@ class InboundMessage:
     role: str = "user"
     content: str = ""
     session_id: str = ""
-    posted_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    posted_at: str = field(default_factory=utc_now_iso)
 
 
 @dataclass
@@ -28,9 +26,7 @@ class OutboundMessage:
     content: str = ""
     session_id: str = ""
     final: bool = False
-    posted_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    posted_at: str = field(default_factory=utc_now_iso)
 
 
 class MessageBus:

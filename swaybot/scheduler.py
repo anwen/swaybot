@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from .storage import InMemoryBackend, StorageBackend
+from .utils import utc_now_iso
 
 
 @dataclass
@@ -218,7 +219,7 @@ class Scheduler:
             logging.getLogger(__name__).exception("Job %s failed", job.id)
         finally:
             job.running_count -= 1
-            job.last_run = datetime.now(timezone.utc).isoformat()
+            job.last_run = utc_now_iso()
             if isinstance(job.schedule, OneShotSchedule):
                 job.enabled = False
             self._persist_state()

@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .storage import JSONLBackend, StorageBackend
 from .tools import format_action
+from .utils import utc_now_iso
 
 TOKEN_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
 
@@ -73,7 +73,7 @@ def build_run_record(
         "task": task,
         "hypothesis": hypothesis or "",
         "max_steps": max_steps,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": utc_now_iso(),
         "steps": steps,
         "final_answer": final_answer,
         "reflections": reflections or [],

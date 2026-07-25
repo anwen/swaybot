@@ -3,12 +3,12 @@
 import asyncio
 import re
 from dataclasses import asdict
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .bus import InboundMessage, OutboundMessage
 from .storage import StorageBackend, default_session_backend
+from .utils import utc_now_iso
 
 
 class SessionError(ValueError):
@@ -74,7 +74,7 @@ class SessionManager:
                 f"unsupported message type: {type(message).__name__}"
             )
         data.setdefault(
-            "timestamp", datetime.now(timezone.utc).isoformat()
+            "timestamp", utc_now_iso()
         )
         return data
 

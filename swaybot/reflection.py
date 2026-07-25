@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 
 from .memory import MemoryStore, ReflectionStep
+from .utils import utc_now_iso
 
 
 @dataclass
@@ -13,9 +13,7 @@ class Reflection:
     confidence: float = 0.5
     evidence: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=utc_now_iso)
 
 
 class Reflector:

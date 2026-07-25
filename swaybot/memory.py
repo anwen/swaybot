@@ -2,7 +2,6 @@ import json
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, ClassVar
 
@@ -13,6 +12,7 @@ from .storage import (
     _resolve_file_backend,
     default_memory_backend,
 )
+from .utils import utc_now_iso
 
 _STEP_REGISTRY: dict[str, type["MemoryStep"]] = {}
 
@@ -30,9 +30,7 @@ class MemoryStep(ABC):
     scope: str = "short_term"
     source: str = ""
     tags: list[str] = field(default_factory=list)
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=utc_now_iso)
     step_kind: ClassVar[str] = ""
 
     def __init_subclass__(cls, **kwargs):
