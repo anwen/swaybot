@@ -7,3 +7,5 @@ __pycache__
 .pytest_cache
 external/
 .swaybot_workspace/
+bfcl_results/
+tau3_results/

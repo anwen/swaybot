@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
+from types import SimpleNamespace
 
 
 def main() -> None:
@@ -115,6 +115,29 @@ def _run_server(host: str, port: int) -> None:
     uvicorn.run(app, host=host, port=port)
 
 
+def _register_swaybot_model(model_name: str) -> None:
+    """Register a custom BFCL model config that talks to our local server.
+
+    BFCL's model mapping is static, so we inject a SwayBot entry that uses the
+    generic OpenAI chat-completions handler. The actual LLM backend is selected
+    by SwayBot's own environment variables (SWAYBOT_API_BASE, SWAYBOT_MODEL).
+    """
+    from bfcl_eval.constants.model_config import MODEL_CONFIG_MAPPING, ModelConfig
+    from bfcl_eval.model_handler.api_inference.openai_completion import (
+        OpenAICompletionsHandler,
+    )
+
+    MODEL_CONFIG_MAPPING[model_name] = ModelConfig(
+        model_name=model_name,
+        display_name=f"{model_name} (SwayBot)",
+        url="",
+        org="SwayBot",
+        license="",
+        model_handler=OpenAICompletionsHandler,
+        is_fc_model=True,
+    )
+
+
 def _run_oneshot(args: argparse.Namespace) -> None:
     """Start server in background, run BFCL, then shut down."""
     import threading
@@ -145,50 +168,59 @@ def _run_oneshot(args: argparse.Namespace) -> None:
     import time
     time.sleep(2)
 
-    # Set BFCL environment variables
-    os.environ["REMOTE_OPENAI_BASE_URL"] = f"http://{args.host}:{args.port}/v1"
-    os.environ["REMOTE_OPENAI_API_KEY"] = args.api_key or "swaybot"
+    # BFCL writes results under BFCL_PROJECT_ROOT.
     if args.bfcl_project_root:
         os.environ["BFCL_PROJECT_ROOT"] = args.bfcl_project_root
 
-    # Run BFCL generate
-    print(f"Running bfcl generate --model {args.model} --test-category {args.test_category}")
-    gen_cmd = [
-        sys.executable, "-m", "bfcl_eval",
-        "generate",
-        "--model", args.model,
-        "--test-category", args.test_category,
-    ]
-    try:
-        result = subprocess.run(gen_cmd, capture_output=True, text=True)
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr)
-        if result.returncode != 0:
-            print(f"bfcl generate failed with code {result.returncode}", file=sys.stderr)
-    except FileNotFoundError:
-        print(
-            "Error: bfcl-eval not found. Install it with:\n"
-            "  pip install bfcl-eval",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    # The OpenAI-compatible client used by BFCL should talk to our local server.
+    # LLMBrain itself is configured separately via SWAYBOT_* env vars.
+    os.environ["OPENAI_BASE_URL"] = f"http://{args.host}:{args.port}/v1"
+    os.environ["OPENAI_API_KEY"] = args.api_key or "swaybot"
 
-    # Run BFCL evaluate
-    print("Running bfcl evaluate")
-    eval_cmd = [
-        sys.executable, "-m", "bfcl_eval",
-        "evaluate",
-    ]
+    # Register a custom model config for SwayBot so bfcl_eval knows how to call it.
+    _register_swaybot_model(args.model)
+
+    # Run BFCL generate directly in-process so our model-config patch is visible.
+    print(f"Running bfcl generate --model {args.model} --test-category {args.test_category}")
+    from bfcl_eval._llm_response_generation import main as generation_main
+    gen_args = SimpleNamespace(
+        model=[args.model],
+        test_category=[args.test_category],
+        temperature=0.001,
+        include_input_log=False,
+        exclude_state_log=False,
+        num_gpus=1,
+        num_threads=None,
+        gpu_memory_utilization=0.9,
+        backend="sglang",
+        skip_server_setup=False,
+        local_model_path=None,
+        result_dir=args.bfcl_project_root or "",
+        allow_overwrite=False,
+        run_ids=False,
+    )
     try:
-        result = subprocess.run(eval_cmd, capture_output=True, text=True)
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr)
-    except FileNotFoundError:
-        print("bfcl evaluate failed", file=sys.stderr)
+        generation_main(gen_args)
+    except Exception as exc:
+        print(f"bfcl generate failed: {exc}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+
+    # Run BFCL evaluate directly in-process.
+    print("Running bfcl evaluate")
+    from bfcl_eval.eval_checker.eval_runner import main as evaluation_main
+    try:
+        evaluation_main(
+            model=[args.model],
+            test_categories=[args.test_category],
+            result_dir=args.bfcl_project_root or None,
+            score_dir=None,
+            partial_eval=False,
+        )
+    except Exception as exc:
+        print(f"bfcl evaluate failed: {exc}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
 
     print("Done. Server shutting down.")
 

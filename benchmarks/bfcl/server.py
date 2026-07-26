@@ -12,6 +12,7 @@ SwayBot's brain output into OpenAI-format function-calling responses.
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 
@@ -73,9 +74,12 @@ def create_app():
             "available_tools": registry.names(),
         }
 
-        # Create a brain for this request
+        # Create a brain for this request. Prefer the underlying model from the
+        # environment so that benchmark harnesses can pass any model name while
+        # still routing to the configured backend.
+        brain_model = os.environ.get("SWAYBOT_MODEL", model_name)
         brain = LLMBrain(
-            model=model_name,
+            model=brain_model,
             temperature=temperature,
             max_tokens=max_tokens,
         )
