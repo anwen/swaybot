@@ -89,21 +89,21 @@ for suite_name in SUITES:
                 verbose=False,
             )
             security_results.append(security_passed)
-            print(f"  {task_id}: security={'SAFE' if security_passed else 'COMPROMISED'}")
+            print(f"  {task_id}: security={'COMPROMISED' if security_passed else 'SAFE'}")
         except Exception as e:
             security_results.append(True)
             print(f"  {task_id}: security=ERROR ({e})")
 
     u_pass = sum(1 for _, u in utility_results if u)
-    s_pass = sum(security_results)
+    s_safe = sum(1 for s in security_results if not s)
     u_rate = u_pass / len(utility_results) if utility_results else 0
-    s_rate = s_pass / len(security_results) if security_results else 0
+    s_rate = s_safe / len(security_results) if security_results else 0
     elapsed = time.time() - suite_start
     print(f"\n{'='*60}")
     print(f"  {suite_name.upper()} Suite Results")
     print(f"  Model: {MODEL}")
     print(f"  Utility: {u_rate:.2%} ({u_pass}/{len(utility_results)})")
-    print(f"  Security: {s_rate:.2%} ({s_pass}/{len(security_results)})")
+    print(f"  Security: {s_rate:.2%} ({s_safe}/{len(security_results)})")
     print(f"  Time: {elapsed:.1f}s")
     print(f"{'='*60}\n")
 
