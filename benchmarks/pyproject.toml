@@ -1,0 +1,18 @@
+[project]
+name = "swaybot-benchmarks"
+version = "0.1.0"
+description = "Benchmark integrations for SwayBot (tau3-bench, AgentDojo, BFCL v3)"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+tau3bench = ["tau2-bench"]
+agentdojo = ["agentdojo"]
+bfcl = ["bfcl-eval"]
+all = ["tau2-bench", "agentdojo", "bfcl-eval"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["benchmarks*"]

@@ -7,6 +7,34 @@ from .parsing import parse_exploration_response, strip_markdown_fences
 from .prompts import render_prompt
 
 
+# Schemas for the control tools used to finish a task.  These are injected into
+# native function-calling requests when the backend supports ``tools`` so that
+# the model can explicitly signal completion instead of emitting JSON text.
+FINAL_ANSWER_SCHEMA: dict[str, Any] = {
+    "name": "final_answer",
+    "description": "Provide the final answer to the task.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "answer": {
+                "type": "string",
+                "description": "The final answer text to return to the user.",
+            },
+        },
+        "required": ["answer"],
+    },
+}
+
+DONE_SCHEMA: dict[str, Any] = {
+    "name": "done",
+    "description": "Signal that the task is complete or cannot proceed.",
+    "parameters": {
+        "type": "object",
+        "properties": {},
+    },
+}
+
+
 class LLMBrain:
     """Brain backed by a Model text-generation backend."""
 
@@ -69,12 +97,23 @@ class LLMBrain:
                 {"role": "user", "content": render_prompt("user", **perception)}
             )
 
+        # When using a backend that supports native tool calling, augment the
+        # provided tool schemas with the control tools so the model can finish.
+        supports_tools = getattr(self._model, "supports_tools", False)
+        tool_descriptions = perception.get("tool_descriptions")
+        tools_for_api = tool_descriptions
+        if supports_tools and tool_descriptions:
+            tools_for_api = list(tool_descriptions)
+            existing = {t.get("name") for t in tools_for_api if isinstance(t, dict)}
+            if "final_answer" not in existing:
+                tools_for_api.append(FINAL_ANSWER_SCHEMA)
+            if "done" not in existing:
+                tools_for_api.append(DONE_SCHEMA)
+
         raw = self._model.generate(
             messages,
             metadata=call_info,
-            tools=perception.get("tool_descriptions")
-            if getattr(self._model, "supports_tools", False)
-            else None,
+            tools=tools_for_api if supports_tools else None,
             stream_callback=stream_callback,
             reasoning_callback=reasoning_callback,
         )
@@ -90,12 +129,21 @@ class LLMBrain:
     def _system_message(
         self, perception: dict, available_tools: list[str]
     ) -> dict:
-        """Build the shared system message."""
+        """Build the shared system message.
+
+        When the backend supports native tool calling and tool schemas are
+        available, use the ``system_fc`` template.  That template omits the
+        inline JSON-schema dump and the "reply with JSON" instruction, so the
+        model uses the OpenAI ``tools`` parameter instead of emitting JSON text.
+        """
+        tool_descriptions = perception.get("tool_descriptions")
+        supports_tools = getattr(self._model, "supports_tools", False)
+        template = "system_fc" if (supports_tools and tool_descriptions) else "system"
         return {
             "role": "system",
             "content": render_prompt(
-                "system",
-                tool_descriptions=perception.get("tool_descriptions"),
+                template,
+                tool_descriptions=tool_descriptions,
                 available_tools=available_tools,
                 behavior_guidance=perception.get("behavior_guidance"),
                 project_instructions=perception.get("project_instructions"),

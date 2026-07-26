@@ -17,13 +17,11 @@ def _mock_response(content: str):
     return response
 
 
-@patch("swaybot.models.OpenAI")
-def test_llm_brain_system_prompt_includes_tool_schemas(mock_openai):
-    client = MagicMock()
-    client.chat.completions.create.return_value = _mock_response(
-        '{"name": "done", "args": {}}'
-    )
-    mock_openai.return_value = client
+def test_llm_brain_fc_system_prompt_omits_inline_schemas():
+    """Native FC mode should use system_fc and not embed JSON schemas."""
+    backend = MagicMock()
+    backend.supports_tools = True
+    backend.generate.return_value = '{"name": "done", "args": {}}'
 
     schemas = [
         {
@@ -42,7 +40,7 @@ def test_llm_brain_system_prompt_includes_tool_schemas(mock_openai):
         },
     ]
 
-    brain = _make_brain()
+    brain = LLMBrain(backend=backend)
     brain.think(
         {
             "task": "test",
@@ -53,12 +51,49 @@ def test_llm_brain_system_prompt_includes_tool_schemas(mock_openai):
         },
         ["add", "done"],
     )
-    call_kwargs = client.chat.completions.create.call_args.kwargs
-    messages = call_kwargs["messages"]
+    messages = backend.generate.call_args.args[0]
     system_content = messages[0]["content"]
-    assert "Add two numbers" in system_content
+    assert "Reply with a single JSON object" not in system_content
+    assert "Available tools (JSON schema)" not in system_content
+    assert "Use the provided tools" in system_content
+    assert "call the 'final_answer' tool" in system_content
+    assert "call the 'done' tool" in system_content
+
+
+def test_llm_brain_text_system_prompt_includes_inline_schemas():
+    """Text-based backends still get the legacy inline-schema prompt."""
+    backend = MagicMock()
+    backend.supports_tools = False
+    backend.generate.return_value = '{"name": "done", "args": {}}'
+
+    schemas = [
+        {
+            "name": "add",
+            "description": "Add two numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                "required": ["a", "b"],
+            },
+        },
+    ]
+
+    brain = LLMBrain(backend=backend)
+    brain.think(
+        {
+            "task": "test",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "tool_descriptions": schemas,
+        },
+        ["add", "done"],
+    )
+    messages = backend.generate.call_args.args[0]
+    system_content = messages[0]["content"]
+    assert "Reply with a single JSON object" in system_content
+    assert "Available tools (JSON schema)" in system_content
     assert '"type": "number"' in system_content
-    assert "done" in system_content
 
 
 @patch("swaybot.models.OpenAI")
@@ -380,6 +415,117 @@ def test_llm_brain_passes_native_tools_when_supported(mock_openai):
     assert "tools" in call_kwargs
     assert call_kwargs["tools"][0]["type"] == "function"
     assert call_kwargs["tools"][0]["function"]["name"] == "add"
+
+
+def test_llm_brain_injects_control_tools_for_native_fc():
+    backend = MagicMock()
+    backend.supports_tools = True
+    backend.generate.return_value = '{"name": "done", "args": {}}'
+
+    schemas = [
+        {
+            "name": "add",
+            "description": "Add two numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                "required": ["a", "b"],
+            },
+        }
+    ]
+
+    brain = LLMBrain(backend=backend)
+    brain.think(
+        {
+            "task": "test",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "tool_descriptions": schemas,
+        },
+        ["add", "done"],
+    )
+    tools = backend.generate.call_args.kwargs["tools"]
+    names = [t["name"] for t in tools]
+    assert names == ["add", "final_answer", "done"]
+
+
+def test_llm_brain_does_not_duplicate_control_tools():
+    backend = MagicMock()
+    backend.supports_tools = True
+    backend.generate.return_value = '{"name": "done", "args": {}}'
+
+    schemas = [
+        {
+            "name": "done",
+            "description": "Finish.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "final_answer",
+            "description": "Answer.",
+            "parameters": {
+                "type": "object",
+                "properties": {"answer": {"type": "string"}},
+                "required": ["answer"],
+            },
+        },
+        {
+            "name": "add",
+            "description": "Add two numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                "required": ["a", "b"],
+            },
+        },
+    ]
+
+    brain = LLMBrain(backend=backend)
+    brain.think(
+        {
+            "task": "test",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "tool_descriptions": schemas,
+        },
+        ["add", "done"],
+    )
+    tools = backend.generate.call_args.kwargs["tools"]
+    names = [t["name"] for t in tools]
+    assert names == ["done", "final_answer", "add"]
+
+
+def test_llm_brain_does_not_inject_control_tools_without_native_fc():
+    backend = MagicMock()
+    backend.supports_tools = False
+    backend.generate.return_value = '{"name": "done", "args": {}}'
+
+    schemas = [
+        {
+            "name": "add",
+            "description": "Add two numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                "required": ["a", "b"],
+            },
+        }
+    ]
+
+    brain = LLMBrain(backend=backend)
+    brain.think(
+        {
+            "task": "test",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "tool_descriptions": schemas,
+        },
+        ["add", "done"],
+    )
+    assert backend.generate.call_args.kwargs["tools"] is None
 
 
 @patch("swaybot.models.OpenAI")
