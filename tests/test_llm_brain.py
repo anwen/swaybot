@@ -159,8 +159,79 @@ def test_llm_brain_fallback_on_invalid_json(mock_openai):
         {"task": "fail", "step": 0, "max_steps": 3, "history": []},
         ["echo", "done"],
     )
+    # Prose that can't be parsed as a tool call is treated as the final
+    # answer (full text), not an echo-truncated stub, so the turn completes
+    # instead of looping on a "you got cut off" complaint.
+    assert action["name"] == "final_answer"
+    assert "not json" in action["args"]["answer"]
+
+
+@patch("swaybot.models.OpenAI")
+def test_llm_brain_prose_becomes_full_final_answer(mock_openai):
+    """Prose output should become final_answer with the FULL text, not 200 chars."""
+    client = MagicMock()
+    long_prose = "Here is my answer. " * 200  # ~3200 chars, well over 200
+    client.chat.completions.create.return_value = _mock_response(long_prose)
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    action = brain.think(
+        {"task": "answer me", "step": 0, "max_steps": 10, "history": []},
+        ["echo", "done"],
+    )
+    assert action["name"] == "final_answer"
+    # The full prose is preserved, not truncated to 200 chars.
+    assert len(action["args"]["answer"]) > 200
+    assert long_prose.strip()[:500] in action["args"]["answer"]
+
+
+def test_llm_brain_fallback_preserves_full_prose():
+    """_fallback should not truncate the echo message to 200 chars."""
+    from swaybot.llm_brain import _fallback
+
+    long_prose = "x" * 1000
+    action = _fallback(
+        {"step": 0, "max_steps": 10}, long_prose
+    )
     assert action["name"] == "echo"
-    assert "not json" in action["args"]["message"]
+    assert len(action["args"]["message"]) == 1000
+
+
+def test_llm_brain_fallback_caps_pathological_output():
+    """_fallback should cap only truly enormous output (safety valve)."""
+    from swaybot.llm_brain import _fallback
+
+    huge = "y" * 10000
+    action = _fallback({"step": 0, "max_steps": 10}, huge)
+    assert action["name"] == "echo"
+    assert len(action["args"]["message"]) == 4000
+
+
+def test_llm_brain_fallback_done_at_max_steps():
+    """At the final step, _fallback should signal done, not echo."""
+    from swaybot.llm_brain import _fallback
+
+    action = _fallback({"step": 9, "max_steps": 10}, "some prose")
+    assert action["name"] == "done"
+
+
+@patch("swaybot.models.OpenAI")
+def test_llm_brain_records_finish_reason(mock_openai):
+    """OpenAIModel should record finish_reason into metadata."""
+    client = MagicMock()
+    response = _mock_response('{"name": "done", "args": {}}')
+    response.choices[0].finish_reason = "stop"
+    client.chat.completions.create.return_value = response
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    metadata: dict = {}
+    brain.think(
+        {"task": "test", "step": 0, "max_steps": 3, "history": []},
+        ["done"],
+        metadata=metadata,
+    )
+    assert metadata["finish_reason"] == "stop"
 
 
 @patch("swaybot.models.OpenAI")
@@ -561,6 +632,46 @@ def test_llm_brain_parses_native_tool_call(mock_openai):
         ["add", "done"],
     )
     assert action == {"name": "add", "args": {"a": 2, "b": 3}}
+
+
+def test_extract_tool_call_json_inside_tag():
+    """_extract_tool_call should parse JSON inside <tool_call> tags."""
+    from swaybot.llm_brain import _extract_tool_call
+
+    raw = '<tool_call> {"name": "get_user", "args": {"id": "123"}} </tool_call>'
+    action = _extract_tool_call(raw)
+    assert action == {"name": "get_user", "args": {"id": "123"}}
+
+
+def test_extract_tool_call_xml_parameters():
+    """_extract_tool_call should parse Qwen XML parameter blocks."""
+    from swaybot.llm_brain import _extract_tool_call
+
+    raw = """<tool_call>
+<function=get_user_details>
+<parameter=user_id>
+u_42
+</parameter>
+</function>
+</tool_call>"""
+    action = _extract_tool_call(raw)
+    assert action == {"name": "get_user_details", "args": {"user_id": "u_42"}}
+
+
+def test_extract_tool_call_returns_none_for_plain_json():
+    """_extract_tool_call should not interfere with plain JSON actions."""
+    from swaybot.llm_brain import _extract_tool_call
+
+    assert _extract_tool_call('{"name": "done", "args": {}}') is None
+
+
+def test_extract_tool_call_numeric_parameter():
+    """_extract_tool_call should preserve plain numeric values as strings."""
+    from swaybot.llm_brain import _extract_tool_call
+
+    raw = "<tool_call><function=add><parameter=a>3</parameter><parameter=b>4</parameter></function></tool_call>"
+    action = _extract_tool_call(raw)
+    assert action == {"name": "add", "args": {"a": "3", "b": "4"}}
 
 
 @patch("swaybot.models.OpenAI")

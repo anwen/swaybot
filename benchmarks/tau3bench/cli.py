@@ -37,9 +37,14 @@ def main() -> None:
              "Omit to use EchoBrain (no LLM calls).",
     )
     parser.add_argument(
+        "--user",
+        default="user_simulator",
+        help="User simulator constructor to use (default: user_simulator)",
+    )
+    parser.add_argument(
         "--llm-user",
         default="gpt-4o",
-        help="LLM model for the user simulator (default: gpt-4o)",
+        help="LLM model name for the user simulator (default: gpt-4o)",
     )
     parser.add_argument(
         "--api-key",
@@ -70,6 +75,17 @@ def main() -> None:
         help="Maximum agent steps per task (default: 100)",
     )
     parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Run only the first N tasks in the domain",
+    )
+    parser.add_argument(
+        "--retrieval-config",
+        default=None,
+        help="Retrieval config for banking_knowledge (e.g. bm25, no_knowledge)",
+    )
+    parser.add_argument(
         "--save-dir",
         default=None,
         help="Directory to save results",
@@ -91,40 +107,73 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # Import and register the SwayBot agent factory
-    from benchmarks.tau3bench.registry import create_swaybot_agent
+    # Import to register the SwayBot agent factory with tau2's registry.
+    from benchmarks.tau3bench import registry  # noqa: F401
 
     # Load tasks
     task_ids = args.task_ids if args.task_ids else None
     tasks = get_tasks(args.domain, task_ids=task_ids)
+    if args.limit:
+        tasks = tasks[: args.limit]
     if not tasks:
         print(f"No tasks found for domain '{args.domain}'", file=sys.stderr)
         sys.exit(1)
 
     print(f"Running {len(tasks)} task(s) from domain '{args.domain}'")
 
-    config = TextRunConfig(
+    config_kwargs = dict(
         domain=args.domain,
         agent="swaybot",
-        user="llm_user",
+        user=args.user,
         llm_agent=args.llm_agent or "",
         llm_user=args.llm_user,
         max_steps=args.max_steps,
         num_trials=args.num_trials,
     )
+    if args.retrieval_config:
+        config_kwargs["retrieval_config"] = args.retrieval_config
+
+    config = TextRunConfig(**config_kwargs)
 
     # Run each task
     results = []
     for task in tasks:
-        result = run_single_task(config, task)
+        try:
+            result = run_single_task(config, task)
+        except Exception as exc:
+            # A single task must not abort the whole domain run.  The remote
+            # endpoint throws intermittent 500s / connection errors, and the
+            # NL-assertion evaluator can raise JSONDecodeError on non-JSON judge
+            # output.  Record reward 0 and continue so we still get a domain
+            # average over the surviving tasks.
+            print(f"  Task {task.id}: reward=0.0 (error: {type(exc).__name__}: {exc})")
+            results.append(None)
+            continue
         results.append(result)
-        reward = getattr(result, "reward", None)
+        reward = _reward_from_result(result)
         print(f"  Task {task.id}: reward={reward}")
 
     # Summary
-    rewards = [getattr(r, "reward", 0) for r in results]
+    rewards = [_reward_from_result(r) for r in results if r is not None]
+    failed = sum(1 for r in results if r is None)
     avg_reward = sum(rewards) / len(rewards) if rewards else 0
-    print(f"\nAverage reward: {avg_reward:.4f} over {len(results)} tasks")
+    if failed:
+        print(
+            f"\nAverage reward: {avg_reward:.4f} over {len(rewards)} tasks "
+            f"({failed} task(s) failed with errors and scored 0)"
+        )
+    else:
+        print(f"\nAverage reward: {avg_reward:.4f} over {len(results)} tasks")
+
+
+def _reward_from_result(result) -> float:
+    """Extract the scalar reward from a tau2 SimulationRun result."""
+    if result is None:
+        return 0.0
+    reward_info = getattr(result, "reward_info", None)
+    if reward_info is not None:
+        return float(getattr(reward_info, "reward", 0.0))
+    return float(getattr(result, "reward", 0.0))
 
 
 if __name__ == "__main__":

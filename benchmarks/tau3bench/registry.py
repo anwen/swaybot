@@ -17,38 +17,34 @@ try:
     from tau2.registry import registry
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
-        "tau2-bench is required. Install it with: pip install tau2-bench"
+        "tau2-bench is required. Install it with: pip install 'tau2[knowledge] @ git+https://github.com/sierra-research/tau2-bench'"
     ) from exc
 
 
 def create_swaybot_agent(
+    tools: list[Any],
+    domain_policy: str,
     *,
-    instructions: str | None = None,
-    tools: list[Any] | None = None,
-    llm_agent: str | None = None,
-    api_key: str | None = None,
-    base_url: str | None = None,
+    llm: str | None = None,
+    llm_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> SwayBotHalfDuplexAgent:
     """Factory function that creates a SwayBotHalfDuplexAgent.
 
-    If *llm_agent* is provided (e.g. ``"gpt-4o"``), an ``LLMBrain``
-    is constructed; otherwise an ``EchoBrain`` is used.
-    """
-    brain: Brain
-    if llm_agent:
-        brain = LLMBrain(
-            api_key=api_key,
-            base_url=base_url,
-            model=llm_agent,
-        )
-    else:
-        brain = EchoBrain()
+    tau2's ``build_agent`` calls registered factories with
+    ``tools``, ``domain_policy``, ``llm``, ``llm_args``, and ``task``.
+    If *llm* is provided, an ``LLMBrain`` is constructed; otherwise an
+    ``EchoBrain`` is used.
 
+    LLMBrain picks up the API key / base URL from the environment
+    (``SWAYBOT_API_KEY``, ``SWAYBOT_API_BASE``) when they are not passed
+    explicitly.
+    """
     return SwayBotHalfDuplexAgent(
-        brain=brain,
-        instructions=instructions,
         tools=tools,
+        domain_policy=domain_policy,
+        llm=llm,
+        llm_args=llm_args,
     )
 
 

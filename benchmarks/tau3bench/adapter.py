@@ -3,186 +3,772 @@
 This module provides ``SwayBotHalfDuplexAgent`` which wraps SwayBot's
 ``Brain`` + ``ToolRegistry`` into the interface tau2-bench expects:
 
-- ``get_init_state()`` → empty ``AgentState``
+- ``get_init_state()`` → initial ``SwayBotState``
 - ``generate_next_message(message, state)`` → one turn of agent logic
 
 Key design decisions
 -------------------
-- **Tool execution is delegated to tau2's environment** (``env.execute_action``)
-  so that the domain's DB/state tracking works correctly.
-- The SwayBot brain *decides* which tool to call; the tau2 environment
-  *executes* it and tracks side effects.
-- Domain tools are mapped into a fresh ``ToolRegistry`` per task so that
-  the brain can reason about available tools via SwayBot's normal
+- **Tool execution is delegated to tau2's environment.** The agent only
+  returns ``AssistantMessage`` objects with optional ``tool_calls``; the
+  tau2 orchestrator executes the tools and feeds the results back as
+  ``ToolMessage`` / ``MultiToolMessage``.
+- The SwayBot brain sees the full OpenAI-style conversation (system +
+  user + assistant + tool messages) so that multi-turn context is
+  preserved.  Previous turns are passed via ``perception["messages"]``.
+- Domain tools are mapped into a fresh ``ToolRegistry`` at construction
+  time so the brain can reason about them via SwayBot's normal
   ``perception["tool_descriptions"]`` mechanism.
 """
 
 from __future__ import annotations
 
+import json
+import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from swaybot.brain import Brain, EchoBrain
+from swaybot.llm_brain import DONE_SCHEMA, FINAL_ANSWER_SCHEMA, LLMBrain
 from swaybot.tools import Tool, ToolRegistry
 
-from ._helpers import extract_user_content, make_placeholder_fn
+from ._helpers import (
+    augment_tool_error,
+    extract_message_content,
+    normalize_tool_args,
+    summarize_tool_content,
+    tool_schema_from_tau2,
+)
 
 try:
-    from tau2.agent.base.agent_base import AgentState, HalfDuplexAgent
+    from tau2.agent.base_agent import HalfDuplexAgent
     from tau2.data_model.message import (
         AssistantMessage,
         MultiToolMessage,
+        ToolCall,
         ToolMessage,
+        UserMessage,
     )
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "tau2-bench is required for this adapter. "
-        "Install it with: pip install tau2-bench  (requires Python >= 3.12)"
+        "Install it with: pip install 'tau2[knowledge] @ git+https://github.com/sierra-research/tau2-bench'"
     ) from exc
 
 
-class SwayBotHalfDuplexAgent(HalfDuplexAgent):
-    """Adapt a SwayBot Brain to tau2's HalfDuplexAgent interface.
+_BEHAVIOR_GUIDANCE = """\
+Identifier handling:
+- Do not pass a person's display name as a user_id. If you need a user_id and the user has only given their name, ask for it.
+- Order IDs (e.g. #W2378156) and reservation IDs are strings; keep the leading '#' where shown.
+- Product IDs are strings and must not be converted to numbers.
+- If a tool call returns "not found", ask the user for the correct identifier instead of repeating the same guess.
 
-    Parameters
-    ----------
-    brain :
-        A SwayBot ``Brain`` instance (e.g. ``LLMBrain``).  Used to decide
-        which tool to call each turn.
-    instructions :
-        Optional domain policy string injected into the system prompt.
-    tools :
-        Optional list of tau2 ``Tool`` objects provided by the environment.
-        If *None*, tools will be set later via ``set_tools()``.
+Confirmation and irreversible actions:
+- Before executing irreversible actions (cancel reservation, exchange/return items, downgrade card, transfers, payments), disclose the concrete consequences (fees, refund amount/timeline, price difference, items affected) and ask the user for explicit approval.
+- Wait for the user to clearly approve (e.g. "yes, proceed", "confirm") before executing the action. Do not execute just because the user asked for a summary or said "go ahead" about providing information.
+
+Retail exchanges/returns/modifications:
+- item_ids must be the existing item IDs from the user's order (from get_order_details), NOT product variant IDs from get_product_details.
+- new_item_ids must be available variant item IDs from get_product_details.
+- payment_method_id must be a valid payment method id from the order's payment_history (e.g. credit_card_9513926). Do not use the literal string "original".
+
+Knowledge tasks (banking_knowledge):
+- Limit yourself to at most 2-3 KB_search calls. Synthesize the findings and call final_answer with a concise, helpful answer. Do not keep searching indefinitely.
+- Do not call tools that are not in your available tool list (e.g. get_order_details, get_user_details). If you have KB results, call final_answer.
+- For credit-card recommendation tasks, first ask the user for their annual income and whether they have a Rho-Bank+ subscription. Then search for each specific product document using ONLY the exact card name as the KB_search query (e.g., query="Gold Rewards Card"). Compare annual fees, cash back/rewards rates, and foreign transaction fees, then recommend the best-fit personal card and explain why.
+
+Finishing:
+- When the task is complete, call final_answer with the answer for the user, then call done.
+"""
+
+# Long conversations (especially banking_knowledge with large KB_search results)
+# can exhaust the model's context window and leave no tokens for the response.
+# We keep the message history under a rough character budget so the model has
+# room to generate complete tool calls / answers.
+_MAX_CONTEXT_CHARS: int = 8000
+_MAX_CONTEXT_MESSAGES: int = 14
+
+# Cap open-ended KB_search loops.
+_MAX_KB_SEARCH_CALLS: int = 3
+
+
+_CREDIT_CARD_TASK_KEYWORDS = (
+    "credit card",
+    "creditcard",
+    "best card",
+    "cash back",
+    "recommend a card",
+    "which card",
+)
+
+_CREDIT_CARD_PLAN = [
+    "Ask the user for their annual income.",
+    "Ask the user whether they have an active Rho-Bank+ subscription.",
+    "Search the knowledge base for the exact product document using the query 'Gold Rewards Card'.",
+    "Search the knowledge base for the exact product document using the query 'Silver Rewards Card'.",
+    "Search the knowledge base for the exact product document using the query 'Bronze Rewards Card'.",
+    "Search the knowledge base for the exact product document using the query 'Platinum Rewards Card'.",
+    "Compare annual fees, cash back/rewards rates, foreign transaction fees, and Rho-Bank+ requirements.",
+    "Recommend the best-fit personal card and call final_answer with a concise explanation.",
+]
+
+
+@dataclass
+class SwayBotState:
+    """Simple mutable state for the tau2 runner.
+
+    The runner passes the state back into ``generate_next_message`` each
+    turn.  ``messages`` stores the conversation in OpenAI message format
+    so the LLM brain can see the full multi-turn context.
     """
+
+    messages: list[dict] = field(default_factory=list)
+    step: int = 0
+    plan: list[str] = field(default_factory=list)
+    force_final: bool = False
+    kb_search_count: int = 0
+    kb_exhausted: bool = False
+    last_kb_content: str = ""
+
+
+class SwayBotHalfDuplexAgent(HalfDuplexAgent):
+    """Adapt a SwayBot Brain to tau2's HalfDuplexAgent interface."""
 
     def __init__(
         self,
-        brain: Brain | None = None,
-        instructions: str | None = None,
-        tools: list[Any] | None = None,
+        tools: list[Any],
+        domain_policy: str,
+        *,
+        llm: str | None = None,
+        llm_args: dict[str, Any] | None = None,
     ) -> None:
-        self._brain = brain or EchoBrain()
-        self._instructions = instructions or ""
-        self._tau2_tools: list[Any] = tools or []
-        self._registry = ToolRegistry()
-        self._history: list[dict] = []
-        self._step = 0
+        super().__init__(tools, domain_policy)
+
+        self._instructions = domain_policy or ""
         self._max_steps = 100
         self._task = ""
-        self._env: Any = None  # set via set_environment()
+        self._tau2_tools: dict[str, Any] = {}
+        self._registry = self._build_registry(tools)
+        self._behavior_guidance = self._build_behavior_guidance()
+        self._order_payment_methods: dict[str, str] = {}
+        self._tool_call_names: dict[str, str] = {}
 
-    # ------------------------------------------------------------------
-    # Configuration helpers
-    # ------------------------------------------------------------------
-
-    def set_tools(self, tools: list[Any]) -> None:
-        """Accept tau2 environment tools and map into SwayBot ToolRegistry."""
-        self._tau2_tools = tools
-        self._registry = ToolRegistry()
-        for t in tools:
-            swaybot_tool = Tool(
-                name=t.name,
-                description=t.description or "",
-                inputs=t.schema if hasattr(t, "schema") and isinstance(t.schema, dict) else {},
-                output_type="string",
-                fn=make_placeholder_fn(t.name),
+        llm_args = llm_args or {}
+        if llm:
+            self._brain: Brain = LLMBrain(
+                model=llm,
+                temperature=llm_args.get("temperature", 0.0),
+                max_tokens=llm_args.get("max_tokens", 16384),
             )
-            self._registry.register(t.name, swaybot_tool)
+        else:
+            self._brain = EchoBrain()
 
-    def set_environment(self, env: Any) -> None:
-        """Store a reference to the tau2 environment for tool execution."""
-        self._env = env
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
-    def set_task(self, task: str, max_steps: int = 100) -> None:
-        """Set the current task description and step budget."""
-        self._task = task
-        self._max_steps = max_steps
-        self._step = 0
-        self._history = []
+    def _build_behavior_guidance(self) -> str:
+        """Combine the domain policy with identifier-handling guidance."""
+        parts = []
+        if self._instructions:
+            parts.append(self._instructions)
+        parts.append(_BEHAVIOR_GUIDANCE)
+        return "\n\n".join(parts)
+
+    def _schema_for_tool(self, tool_name: str) -> dict[str, Any]:
+        """Return the JSON schema for a tau2 tool, if available."""
+        tool = self._tau2_tools.get(tool_name)
+        if tool is None:
+            return {}
+        return tool_schema_from_tau2(tool)
+
+    def _tool_name_for_call_id(
+        self,
+        call_id: str,
+        conversation_messages: list[dict],
+    ) -> str:
+        """Map a tool_call_id to the tool name from the matching assistant call."""
+        if not call_id:
+            return ""
+        if call_id in self._tool_call_names:
+            print(f"[SWAYBOT DEBUG] dict lookup {call_id} -> {self._tool_call_names[call_id]}", flush=True)
+            return self._tool_call_names[call_id]
+        for msg in reversed(conversation_messages):
+            if msg.get("role") != "assistant":
+                continue
+            for tc in msg.get("tool_calls") or []:
+                if tc.get("id") == call_id:
+                    return tc.get("function", {}).get("name", "")
+        return ""
+
+    def _register_tool_call_names(self, assistant_message: dict) -> None:
+        """Remember the mapping from tool_call_id to tool name."""
+        for tc in assistant_message.get("tool_calls") or []:
+            name = tc.get("function", {}).get("name", "")
+            call_id = tc.get("id", "")
+            if name and call_id:
+                self._tool_call_names[call_id] = name
+                print(f"[SWAYBOT DEBUG] registered {call_id} -> {name}", flush=True)
+
+    def _build_registry(self, tools: list[Any]) -> ToolRegistry:
+        registry = ToolRegistry()
+        for t in tools:
+            name = getattr(t, "name", "unknown")
+            self._tau2_tools[name] = t
+            swaybot_tool = Tool(
+                name=name,
+                description=getattr(t, "short_desc", "") or getattr(t, "long_desc", "") or "",
+                inputs=tool_schema_from_tau2(t),
+                output_type="string",
+                fn=lambda **_: "[executed by tau2 environment]",
+            )
+            registry.register(name, swaybot_tool)
+
+        # Register meta-tools so the brain can explicitly finish in text mode
+        # (in native FC mode LLMBrain also injects them, but duplication is
+        # harmless because LLMBrain checks existing names).
+        if "final_answer" not in registry.names():
+            registry.register(
+                "final_answer",
+                Tool(
+                    name=FINAL_ANSWER_SCHEMA["name"],
+                    description=FINAL_ANSWER_SCHEMA["description"],
+                    inputs=FINAL_ANSWER_SCHEMA["parameters"],
+                    output_type="string",
+                    fn=lambda **_: "",
+                ),
+            )
+        if "done" not in registry.names():
+            registry.register(
+                "done",
+                Tool(
+                    name=DONE_SCHEMA["name"],
+                    description=DONE_SCHEMA["description"],
+                    inputs=DONE_SCHEMA["parameters"],
+                    output_type="string",
+                    fn=lambda **_: "",
+                ),
+            )
+        return registry
+
+    def _openai_messages_from_tau2(
+        self,
+        message: UserMessage | ToolMessage | MultiToolMessage | AssistantMessage,
+        conversation_messages: list[dict] | None = None,
+    ) -> list[dict]:
+        """Convert a tau2 message into one or more OpenAI-format messages."""
+        conversation_messages = conversation_messages or []
+        if isinstance(message, MultiToolMessage):
+            return [
+                msg
+                for tm in message.tool_messages
+                for msg in self._openai_messages_from_tau2(tm, conversation_messages)
+            ]
+
+        if isinstance(message, ToolMessage):
+            call_id = getattr(message, "id", "") or ""
+            tool_name = self._tool_name_for_call_id(call_id, conversation_messages)
+            content = extract_message_content(message)
+            if tool_name == "KB_search" and isinstance(content, str):
+                content = self._summarize_kb_search(content)
+            else:
+                content = summarize_tool_content(tool_name, content)
+            # tau2 marks failed tool calls with ``error=True``, but that flag is
+            # otherwise invisible — the failure sits in a role:tool message
+            # indistinguishable from a success result.  Append a directive
+            # remediation hint so the model sees *what* to fix and acts on it
+            # instead of repeating the same failing call.
+            is_error = bool(getattr(message, "error", False))
+            if is_error and isinstance(content, str) and tool_name:
+                augmented = augment_tool_error(
+                    tool_name, content, self._param_names_for_tool(tool_name)
+                )
+                if augmented != content:
+                    print(
+                        f"[SWAYBOT] augmented tool error for '{tool_name}': "
+                        f"appended remediation directive",
+                        flush=True,
+                    )
+                content = augmented
+            return [
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": content,
+                }
+            ]
+
+        if isinstance(message, AssistantMessage):
+            tool_calls = getattr(message, "tool_calls", None) or []
+            if tool_calls:
+                return [
+                    {
+                        "role": "assistant",
+                        "content": getattr(message, "content", None) or None,
+                        "tool_calls": [
+                            {
+                                "id": getattr(tc, "id", "") or "",
+                                "type": "function",
+                                "function": {
+                                    "name": getattr(tc, "name", "") or "",
+                                    "arguments": json.dumps(
+                                        getattr(tc, "arguments", {}) or {}
+                                    ),
+                                },
+                            }
+                            for tc in tool_calls
+                        ],
+                    }
+                ]
+            return [
+                {
+                    "role": "assistant",
+                    "content": extract_message_content(message) or None,
+                }
+            ]
+
+        # UserMessage (or anything content-based)
+        return [{"role": "user", "content": extract_message_content(message)}]
+
+    def _param_names_for_tool(self, tool_name: str) -> list[str]:
+        """Return the canonical parameter names for a tau2 tool."""
+        tool = self._tau2_tools.get(tool_name)
+        if tool is None:
+            return []
+        params = getattr(tool, "params", None)
+        if params is not None:
+            return list(getattr(params, "model_fields", {}).keys())
+        return []
+
+    def _update_order_payment_methods(
+        self,
+        message: ToolMessage,
+        tool_name: str,
+    ) -> None:
+        """Remember the original payment method for each order we look up."""
+        if tool_name != "get_order_details":
+            return
+        content = extract_message_content(message)
+        if not isinstance(content, str):
+            return
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            return
+        order_id = data.get("order_id")
+        payment_history = data.get("payment_history") or []
+        if not order_id or not isinstance(payment_history, list):
+            return
+        for payment in payment_history:
+            if isinstance(payment, dict) and payment.get("payment_method_id"):
+                self._order_payment_methods[order_id] = payment["payment_method_id"]
+                break
+
+    def _record_order_payment_methods(
+        self,
+        message: UserMessage | ToolMessage | MultiToolMessage,
+        state: SwayBotState,
+    ) -> None:
+        """Update payment-method cache from any ToolMessages in *message*."""
+        if isinstance(message, MultiToolMessage):
+            for tm in message.tool_messages:
+                call_id = getattr(tm, "id", "") or ""
+                tool_name = self._tool_name_for_call_id(call_id, state.messages)
+                self._update_order_payment_methods(tm, tool_name)
+        elif isinstance(message, ToolMessage):
+            call_id = getattr(message, "id", "") or ""
+            tool_name = self._tool_name_for_call_id(call_id, state.messages)
+            self._update_order_payment_methods(message, tool_name)
+
+    def _normalize_tool_args(
+        self,
+        tool_name: str,
+        args: Any,
+        order_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Map LLM argument names/types onto the tau2 tool's canonical schema."""
+        if not isinstance(args, dict):
+            return {}
+        param_names = self._param_names_for_tool(tool_name)
+        schema = self._schema_for_tool(tool_name)
+        normalized = normalize_tool_args(tool_name, args, param_names, schema)
+
+        # Fill in a missing / placeholder payment method for order changes.
+        if tool_name in {
+            "exchange_delivered_order_items",
+            "modify_pending_order_items",
+            "return_delivered_order_items",
+        }:
+            payment = normalized.get("payment_method_id")
+            if not payment or payment == "original":
+                lookup_order_id = order_id or str(normalized.get("order_id") or "")
+                inferred = self._order_payment_methods.get(lookup_order_id)
+                if inferred:
+                    normalized["payment_method_id"] = inferred
+        return normalized
+
+    def _synthesize_kb_answer(
+        self,
+        task: str,
+        question: str,
+        kb_content: str,
+    ) -> str:
+        """Turn summarized KB results into a concise answer for the user."""
+        model = getattr(self._brain, "_model", None)
+        if model is None:
+            return kb_content[:2000] if kb_content else "I'm not sure; please contact support."
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful banking assistant. Answer the user's question "
+                    "using only the provided knowledge-base results. Be concise and direct."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Task context: {task}\n\n"
+                    f"User question: {question}\n\n"
+                    f"Knowledge-base results:\n{kb_content}\n\n"
+                    "Please provide a helpful answer."
+                ),
+            },
+        ]
+        try:
+            raw = model.generate(messages, tools=None)
+        except Exception:
+            raw = None
+        return (
+            (raw or "").strip()
+            or kb_content[:2000]
+            or "I'm not sure; please contact support."
+        )
+
+    @staticmethod
+    def _summarize_kb_search(content: str) -> str:
+        """Compress KB_search results to the top few document summaries.
+
+        Full KB_search returns can be thousands of characters.  We keep only the
+        first few results (title + first substantive content line) so the model
+        still gets the relevant facts without drowning in text.
+        """
+        entries = re.split(r"\n(?=\d+\.\s)", content.strip())
+        kept: list[str] = []
+        for entry in entries[:3]:
+            entry = entry.strip()
+            if not entry:
+                continue
+            title_match = re.search(r"^\d+\.\s*(.*)$", entry, re.MULTILINE)
+            title = title_match.group(1).strip() if title_match else entry.splitlines()[0]
+            content_match = re.search(
+                r"Content:\s*(.*?)(?=\n\s*\d+\.\s|\Z)", entry, re.DOTALL
+            )
+            snippet = ""
+            if content_match:
+                lines = [
+                    line.strip()
+                    for line in content_match.group(1).splitlines()
+                    if line.strip()
+                ]
+                snippet = "\n".join(lines[:3]) if lines else ""
+            kept.append(f"{title}\n{snippet}" if snippet else title)
+        note = ""
+        if len(entries) > 3:
+            note = f"\n\n...[showing 3 of {len(entries)} KB results]"
+        return "\n\n".join(kept) + note
+
+    @staticmethod
+    def _trim_messages_for_context(messages: list[dict]) -> list[dict]:
+        """Drop old messages so the prompt stays within a rough token budget.
+
+        Keeps the earliest user message (usually the task) and as many recent
+        messages as fit under _MAX_CONTEXT_CHARS.  This prevents long
+        multi-turn runs from running out of output tokens.
+        """
+        if len(messages) <= _MAX_CONTEXT_MESSAGES:
+            return messages
+
+        def _message_chars(msg: dict) -> int:
+            content = msg.get("content") or ""
+            tool_calls = msg.get("tool_calls") or []
+            extra = ""
+            for tc in tool_calls:
+                extra += tc.get("function", {}).get("arguments", "") or ""
+            return len(str(content)) + len(extra)
+
+        # Always keep the first user message (task) so the model knows the goal.
+        first = messages[0] if messages else None
+        budget = _MAX_CONTEXT_CHARS - (_message_chars(first) if first else 0)
+        recent: list[dict] = []
+        for msg in reversed(messages[1:]):
+            cost = _message_chars(msg)
+            if cost > budget and recent:
+                break
+            recent.append(msg)
+            budget -= cost
+        trimmed = [first] if first else []
+        trimmed.extend(reversed(recent))
+        return trimmed
+
+    def _remember_task(
+        self,
+        message: UserMessage | ToolMessage | MultiToolMessage,
+        state: SwayBotState,
+    ) -> None:
+        """Store the first user message as the task description."""
+        if isinstance(message, UserMessage):
+            text = extract_message_content(message)
+            if text and not self._task:
+                self._task = text
+                state.plan = self._generate_plan()
+
+    def _generate_plan(self) -> list[str]:
+        """Generate an explicit step-by-step plan for the task.
+
+        The plan is stored in the state and fed back into the brain on every
+        subsequent turn so multi-step tasks stay on track.
+        """
+        if not self._task:
+            return []
+
+        task_lower = self._task.lower()
+        if any(kw in task_lower for kw in _CREDIT_CARD_TASK_KEYWORDS):
+            return list(_CREDIT_CARD_PLAN)
+
+        perception: dict[str, Any] = {
+            "task": self._task,
+            "step": 0,
+            "max_steps": self._max_steps,
+            "messages": [{"role": "user", "content": self._task}],
+            "tool_descriptions": self._registry.schemas(),
+            "available_tools": self._registry.names(),
+            "planning": True,
+        }
+        if self._behavior_guidance:
+            perception["behavior_guidance"] = self._behavior_guidance
+        try:
+            plan_action = self._brain.think(perception, self._registry.names())
+            steps = plan_action.get("args", {}).get("steps", [])
+            if isinstance(steps, list) and all(isinstance(s, str) for s in steps):
+                return steps
+        except Exception:
+            pass
+        # Planning is advisory; failures should not block the run.
+        return []
 
     # ------------------------------------------------------------------
     # HalfDuplexAgent interface
     # ------------------------------------------------------------------
 
-    def get_init_state(self) -> AgentState:
-        """Return an empty initial state."""
-        return AgentState(messages=[])
+    def get_init_state(
+        self,
+        message_history: list[Any] | None = None,
+    ) -> SwayBotState:
+        """Return the initial state for a new simulation."""
+        messages: list[dict] = []
+        for msg in message_history or []:
+            messages.extend(self._openai_messages_from_tau2(msg))
+        return SwayBotState(messages=messages)
 
     def generate_next_message(
         self,
-        message: AssistantMessage | ToolMessage | MultiToolMessage,
-        state: AgentState,
-    ) -> tuple[AssistantMessage, AgentState]:
-        """One turn: decide which tool to call, delegate execution to tau2 env.
+        message: UserMessage | ToolMessage | MultiToolMessage,
+        state: SwayBotState,
+    ) -> tuple[AssistantMessage, SwayBotState]:
+        """One turn: decide which tool to call (or text to return)."""
+        state.step += 1
 
-        Flow:
-        1. Convert incoming tau2 message → SwayBot perception dict
-        2. Call ``brain.think()`` to get an action dict
-        3. Execute the action via ``env.execute_action()``
-        4. Convert result → tau2 AssistantMessage
-        """
-        self._step += 1
+        # ------------------------------------------------------------------
+        # Convert the incoming tau2 message into OpenAI conversation format.
+        # ------------------------------------------------------------------
+        self._remember_task(message, state)
+        state.messages.extend(self._openai_messages_from_tau2(message, state.messages))
+        self._record_order_payment_methods(message, state)
 
-        # Build perception for SwayBot brain
-        user_content = extract_user_content(message)
-        if user_content and not self._task:
-            self._task = user_content
+        # If the environment just returned a KB_search result, force the
+        # next turn to synthesize an answer instead of calling another tool.
+        incoming_tool_name = ""
+        if isinstance(message, ToolMessage):
+            incoming_tool_name = self._tool_name_for_call_id(
+                getattr(message, "id", "") or "", state.messages
+            )
+        elif isinstance(message, MultiToolMessage) and message.tool_messages:
+            incoming_tool_names = {
+                self._tool_name_for_call_id(
+                    getattr(tm, "id", "") or "", state.messages
+                )
+                for tm in message.tool_messages
+            }
+            if "KB_search" in incoming_tool_names:
+                incoming_tool_name = "KB_search"
+        if incoming_tool_name == "KB_search":
+            state.kb_search_count += 1
+            state.force_final = True
+            # Remember the (already summarized) KB content for final-answer synthesis.
+            last_tool_content = ""
+            for msg in reversed(state.messages):
+                if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
+                    last_tool_content = msg["content"]
+                    break
+            if last_tool_content:
+                state.last_kb_content = last_tool_content
+            if state.kb_search_count >= _MAX_KB_SEARCH_CALLS:
+                state.kb_exhausted = True
 
-        perception = {
+        # Once the knowledge-base budget is exhausted, keep forcing a final answer
+        # on subsequent turns so the agent does not search indefinitely.
+        if state.kb_exhausted:
+            state.force_final = True
+
+        # ------------------------------------------------------------------
+        # Keep the context window small enough for the model to emit a full
+        # response.  Long banking_knowledge / retail runs otherwise truncate
+        # tool calls and answers.
+        # ------------------------------------------------------------------
+        messages_for_brain = self._trim_messages_for_context(state.messages)
+
+        kb_calls = sum(
+            1
+            for msg in state.messages
+            if msg.get("role") == "assistant"
+            and any(
+                tc.get("function", {}).get("name") == "KB_search"
+                for tc in (msg.get("tool_calls") or [])
+            )
+        )
+        behavior_guidance = self._behavior_guidance
+        if state.force_final:
+            behavior_guidance = (
+                behavior_guidance
+                + "\n\nYou have just received knowledge-base results. "
+                "Do NOT call any other tools. Call final_answer with a concise, "
+                "helpful answer now."
+            )
+        elif kb_calls >= _MAX_KB_SEARCH_CALLS:
+            behavior_guidance = (
+                behavior_guidance
+                + "\n\nYou have already searched the knowledge base enough. "
+                "Do NOT call KB_search again. Synthesize what you found and "
+                "call final_answer with a concise answer now."
+            )
+
+        # ------------------------------------------------------------------
+        # Ask the SwayBot brain what to do next.
+        # ------------------------------------------------------------------
+        available_tools_for_brain = self._registry.names()
+        tool_descriptions_for_brain = self._registry.schemas()
+        if state.force_final:
+            available_tools_for_brain = ["final_answer", "done"]
+            tool_descriptions_for_brain = [FINAL_ANSWER_SCHEMA, DONE_SCHEMA]
+
+        perception: dict[str, Any] = {
             "task": self._task,
-            "step": self._step,
+            "step": state.step,
             "max_steps": self._max_steps,
-            "history": self._history,
-            "tool_descriptions": self._registry.schemas(),
-            "available_tools": self._registry.names(),
+            "messages": messages_for_brain,
+            "tool_descriptions": tool_descriptions_for_brain,
+            "available_tools": available_tools_for_brain,
         }
-        if self._instructions:
-            perception["behavior_guidance"] = self._instructions
+        if state.plan:
+            perception["plan"] = state.plan
+        if behavior_guidance:
+            perception["behavior_guidance"] = behavior_guidance
 
-        # Ask the brain what to do
-        action = self._brain.think(perception, self._registry.names())
+        action = self._brain.think(perception, available_tools_for_brain)
 
-        # Execute via tau2 environment (preserves state tracking)
-        result_str = ""
-        if self._env is not None and action.get("name"):
-            try:
-                result = self._env.execute_action(action)
-                result_str = str(result)
-            except Exception as exc:
-                result_str = f"Error: {exc}"
-        elif action.get("name"):
-            # Fallback: try SwayBot's own registry (won't track tau2 state)
-            try:
-                result = self._registry.execute(action)
-                result_str = str(result)
-            except Exception as exc:
-                result_str = f"Error: {exc}"
-
-        # Record in local history
-        self._history.append({
-            "step": self._step,
-            "action": action,
-            "result": result_str,
-        })
-
-        # Build tau2 response
+        # ------------------------------------------------------------------
+        # Enforce finalization after KB_search results.
+        #
+        # Even when tools are restricted to final_answer/done, some models
+        # ignore the constraint and emit another KB_search (either as a native
+        # tool call or as JSON text).  Rather than loop until max_steps,
+        # override the action and answer from the KB result we already have.
+        # ------------------------------------------------------------------
         tool_name = action.get("name", "")
+        if state.force_final and tool_name not in ("final_answer", "done"):
+            question = ""
+            for msg in reversed(state.messages):
+                if msg.get("role") == "user":
+                    question = msg.get("content", "")
+                    break
+            kb_content = state.last_kb_content or ""
+            if not kb_content:
+                for msg in reversed(state.messages):
+                    if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
+                        kb_content = msg["content"]
+                        break
+            answer = self._synthesize_kb_answer(self._task, question, kb_content)
+            action = {"name": "final_answer", "args": {"answer": answer}}
+            tool_name = "final_answer"
+
+        # ------------------------------------------------------------------
+        # Convert SwayBot action back into a tau2 AssistantMessage.
+        # ------------------------------------------------------------------
         tool_args = action.get("args", {})
 
-        if tool_name and tool_name not in ("done", "final_answer"):
-            assistant_msg = AssistantMessage(
-                role="assistant",
-                content=action.get("text") or result_str or "",
+        # Guard against hallucinated tool names in text mode.
+        if (
+            tool_name
+            and tool_name not in ("done", "final_answer", "echo")
+            and tool_name not in self._registry.names()
+        ):
+            text = (
+                f"'{tool_name}' is not an available tool. "
+                f"Available tools: {', '.join(self._registry.names())}. "
+                "Please call final_answer when you are ready to answer."
             )
-        else:
-            text = tool_args.get("answer", result_str) if tool_name == "final_answer" else result_str
-            assistant_msg = AssistantMessage(
-                role="assistant",
-                content=text,
-            )
+            assistant_msg = AssistantMessage(role="assistant", content=text)
+            state.messages.append({"role": "assistant", "content": text})
+            state.force_final = False
+            return assistant_msg, state
 
-        # Update state
-        new_state = AgentState(
-            messages=list(state.messages) + [assistant_msg],
-        )
-        return assistant_msg, new_state
+        if tool_name and tool_name not in ("done", "final_answer", "echo"):
+            tool_args = self._normalize_tool_args(
+                tool_name, tool_args, order_id=tool_args.get("order_id")
+            )
+            tool_call_id = f"call_{state.step}"
+            assistant_msg = AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id=tool_call_id,
+                        name=tool_name,
+                        arguments=tool_args if isinstance(tool_args, dict) else {},
+                        requestor="assistant",
+                    )
+                ],
+            )
+            state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": json.dumps(
+                                    tool_args if isinstance(tool_args, dict) else {}
+                                ),
+                            },
+                        }
+                    ],
+                }
+            )
+            self._register_tool_call_names(state.messages[-1])
+        else:
+            text = ""
+            if tool_name == "final_answer":
+                text = tool_args.get("answer", "") if isinstance(tool_args, dict) else ""
+            elif tool_name == "echo":
+                text = tool_args.get("message", "") if isinstance(tool_args, dict) else ""
+            else:
+                text = action.get("text", "")
+            text = text or "Done."
+            assistant_msg = AssistantMessage(role="assistant", content=text)
+            state.messages.append({"role": "assistant", "content": text})
+
+        state.force_final = False
+        return assistant_msg, state

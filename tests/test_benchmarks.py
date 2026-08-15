@@ -6,6 +6,9 @@ They test the standalone helper functions from ``_helpers`` modules
 which have no third-party dependencies.
 """
 
+import json
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # tau3-bench helper tests
@@ -25,40 +28,414 @@ class TestTau3BenchHelpers:
         assert "send_money" in result
         assert "tau2 environment" in result
 
-    def test_extract_user_content_assistant(self):
-        """extract_user_content should handle AssistantMessage-like objects."""
-        from benchmarks.tau3bench._helpers import extract_user_content
+    def test_extract_message_content_assistant(self):
+        """extract_message_content should handle content-based messages."""
+        from benchmarks.tau3bench._helpers import extract_message_content
 
         class FakeMsg:
             content = "hello world"
 
-        assert extract_user_content(FakeMsg()) == "hello world"
+        assert extract_message_content(FakeMsg()) == "hello world"
 
-    def test_extract_user_content_empty(self):
-        """extract_user_content should return empty string for objects with no content."""
-        from benchmarks.tau3bench._helpers import extract_user_content
+    def test_extract_message_content_empty(self):
+        """extract_message_content should return empty string for objects with no content."""
+        from benchmarks.tau3bench._helpers import extract_message_content
 
         class FakeMsg:
             pass
 
-        assert extract_user_content(FakeMsg()) == ""
+        assert extract_message_content(FakeMsg()) == ""
 
-    def test_extract_user_content_tool_calls(self):
-        """extract_user_content should handle MultiToolMessage-like objects."""
-        from benchmarks.tau3bench._helpers import extract_user_content
+    def test_extract_message_content_multi_tool(self):
+        """extract_message_content should aggregate MultiToolMessage tool_messages."""
+        from benchmarks.tau3bench._helpers import extract_message_content
 
-        class FakeFn:
-            arguments = '{"key": "val"}'
+        class FakeToolMsg:
+            content = "result a"
 
-        class FakeTC:
-            function = FakeFn()
-
-        class FakeMsg:
-            tool_calls = [FakeTC()]
+        class FakeMultiToolMsg:
+            tool_messages = [FakeToolMsg(), FakeToolMsg()]
             content = ""
 
-        result = extract_user_content(FakeMsg())
-        assert "key" in result
+        result = extract_message_content(FakeMultiToolMsg())
+        assert result == "result a\nresult a"
+
+    def test_normalize_tool_args_zip_alias(self):
+        """normalize_tool_args should map zip_code/zipcode to zip."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        result = normalize_tool_args(
+            "find_user",
+            {"zip_code": "12345", "name": "Alice"},
+            ["name", "zip"],
+        )
+        assert result == {"name": "Alice", "zip": "12345"}
+
+    def test_normalize_tool_args_string_encoded_array(self):
+        """normalize_tool_args should decode JSON-string arrays."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        result = normalize_tool_args(
+            "exchange_delivered_order_items",
+            {
+                "exchange_items": '["id1", "id2"]',
+                "exchange_new_items": '["id3"]',
+                "exchange_payment_method_id": "pm_1",
+            },
+            ["item_ids", "new_item_ids", "payment_method_id"],
+        )
+        assert result == {
+            "item_ids": ["id1", "id2"],
+            "new_item_ids": ["id3"],
+            "payment_method_id": "pm_1",
+        }
+
+    def test_normalize_tool_args_unknown_key_passthrough(self):
+        """normalize_tool_args should preserve unknown keys unchanged."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        result = normalize_tool_args(
+            "foo",
+            {"known": "x", "unknown_key": "y"},
+            ["known"],
+        )
+        assert result["known"] == "x"
+        assert result["unknown_key"] == "y"
+
+    def test_normalize_tool_args_empty_params(self):
+        """normalize_tool_args should return args unchanged when param list is empty."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        result = normalize_tool_args("foo", {"a": 1}, [])
+        assert result == {"a": 1}
+
+    def test_normalize_tool_args_non_dict(self):
+        """normalize_tool_args should return empty dict for non-dict args."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        assert normalize_tool_args("foo", "not a dict", ["a"]) == {}
+
+    def test_normalize_tool_args_customer_name_alias(self):
+        """normalize_tool_args should map name/user_name to customer_name."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        result = normalize_tool_args(
+            "get_user_information_by_name",
+            {"name": "Alice Smith"},
+            ["customer_name"],
+        )
+        assert result == {"customer_name": "Alice Smith"}
+
+    def test_normalize_tool_args_schema_preserves_string_ids(self):
+        """String-typed fields should stay strings even when numeric."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "string"},
+                "zip": {"type": "string"},
+            },
+        }
+        result = normalize_tool_args(
+            "get_product",
+            {"product_id": "12345", "zip": "02142"},
+            ["product_id", "zip"],
+            schema,
+        )
+        assert result == {"product_id": "12345", "zip": "02142"}
+        assert isinstance(result["product_id"], str)
+        assert isinstance(result["zip"], str)
+
+    def test_normalize_tool_args_schema_coerces_numeric_fields(self):
+        """Integer/number fields should be coerced from strings."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "quantity": {"type": "integer"},
+                "price": {"type": "number"},
+            },
+        }
+        result = normalize_tool_args(
+            "add_to_cart",
+            {"quantity": "3", "price": "19.99"},
+            ["quantity", "price"],
+            schema,
+        )
+        assert result == {"quantity": 3, "price": 19.99}
+
+    def test_summarize_tool_content_short_text_unchanged(self):
+        """Short tool results should pass through unchanged."""
+        from benchmarks.tau3bench._helpers import summarize_tool_content
+
+        text = '{"status": "ok"}'
+        assert summarize_tool_content("foo", text) == text
+
+    def test_summarize_tool_content_generic_truncation(self):
+        """Long non-JSON text should be truncated with a marker."""
+        from benchmarks.tau3bench._helpers import summarize_tool_content
+
+        long_text = "x " * 2000
+        result = summarize_tool_content("foo", long_text)
+        assert len(result) < len(long_text)
+        assert "truncated" in result
+
+    def test_summarize_product_variants_keeps_available_only(self):
+        """Product details should keep only available variants."""
+        from benchmarks.tau3bench._helpers import summarize_tool_content
+
+        data = {
+            "name": "Widget",
+            "variants": {
+                "a": {"available": True, "price": 10, "description": "x" * 1000},
+                "b": {"available": False, "price": 20, "description": "y" * 1000},
+                "c": {"available": True, "price": 30, "description": "z" * 1000},
+            },
+        }
+        result = summarize_tool_content("get_product_details", data)
+        parsed = json.loads(result)
+        assert set(parsed["variants"].keys()) == {"a", "c"}
+
+    def test_summarize_product_variants_caps_count(self):
+        """Product details should cap available variants at five."""
+        from benchmarks.tau3bench._helpers import summarize_tool_content
+
+        variants = {
+            f"v{i}": {"available": True, "price": i, "description": "x" * 200}
+            for i in range(20)
+        }
+        data = {"name": "Widget", "variants": variants}
+        result = summarize_tool_content("get_product_details", data)
+        parsed = json.loads(result)
+        assert len(parsed["variants"]) == 5
+        assert "_variants_note" in parsed
+
+    def test_summarize_user_details_truncates_orders(self):
+        """User details should truncate very long order/payment lists."""
+        from benchmarks.tau3bench._helpers import summarize_tool_content
+
+        data = {
+            "name": "Alice",
+            "orders": {f"o{i}": {"total": i, "items": "x" * 200} for i in range(50)},
+        }
+        result = summarize_tool_content("get_user_details", data)
+        parsed = json.loads(result)
+        assert len(parsed["orders"]) == 3
+        assert "_orders_note" in parsed
+
+    def test_summarize_order_details_caps_items(self):
+        """Order details should cap items at ten."""
+        from benchmarks.tau3bench._helpers import summarize_tool_content
+
+        data = {
+            "order_id": "o1",
+            "items": [{"id": f"item{i}", "desc": "x" * 200} for i in range(15)],
+        }
+        result = summarize_tool_content("get_order_details", data)
+        parsed = json.loads(result)
+        assert len(parsed["items"]) == 10
+        assert "_items_note" in parsed
+
+    def test_augment_tool_error_missing_args_appends_directive(self):
+        """Missing-arg errors should get a directive naming the missing args."""
+        from benchmarks.tau3bench._helpers import augment_tool_error
+
+        content = (
+            "Error: KnowledgeTools.log_verification() missing 7 required "
+            "positional arguments: 'name', 'user_id', 'address', 'email', "
+            "'phone_number', 'date_of_birth', and 'time_verified'"
+        )
+        params = ["name", "user_id", "address", "email", "phone_number",
+                  "date_of_birth", "time_verified"]
+        result = augment_tool_error("log_verification", content, params)
+        assert result.startswith(content)
+        assert "You must call 'log_verification' again." in result
+        assert "Required arguments are:" in result
+        assert "name, user_id, address" in result
+        assert "'name', 'user_id', 'address'" in result
+
+    def test_augment_tool_error_unexpected_kwarg_appends_directive(self):
+        """Unexpected-kwarg errors should name the bad arg and valid args."""
+        from benchmarks.tau3bench._helpers import augment_tool_error
+
+        content = (
+            "Error: update_reservation_flights() got an unexpected keyword "
+            "argument 'payment_method_id'"
+        )
+        params = ["trip_id", "payment_id", "payment1", "payment2", "payment3"]
+        result = augment_tool_error(
+            "update_reservation_flights", content, params
+        )
+        assert result.startswith(content)
+        assert "'payment_method_id' is not a valid argument" in result
+        assert "Valid arguments are:" in result
+        assert "payment_id" in result
+
+    def test_augment_tool_error_passthrough_non_error(self):
+        """Non-error (success) content should pass through unchanged."""
+        from benchmarks.tau3bench._helpers import augment_tool_error
+
+        content = '{"status": "ok", "order_id": "12345"}'
+        result = augment_tool_error("get_order_details", content, ["order_id"])
+        assert result == content
+
+    def test_augment_tool_error_generic_fallback(self):
+        """Error text without a recognizable pattern gets the generic hint."""
+        from benchmarks.tau3bench._helpers import augment_tool_error
+
+        content = "Error: something unusual happened"
+        params = ["a", "b"]
+        result = augment_tool_error("some_tool", content, params)
+        assert result.startswith(content)
+        assert "previous call to 'some_tool' failed" in result
+        assert "a, b" in result
+
+    def test_augment_tool_error_idempotent(self):
+        """Augmenting an already-augmented error should not duplicate."""
+        from benchmarks.tau3bench._helpers import augment_tool_error
+
+        content = "Error: foo() missing 1 required positional argument: 'x'"
+        params = ["x", "y"]
+        once = augment_tool_error("foo", content, params)
+        twice = augment_tool_error("foo", once, params)
+        assert once == twice
+
+    def test_normalize_tool_args_reverse_alias_payment_method_id(self):
+        """Airline wants payment_id; model emits payment_method_id → remapped."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        result = normalize_tool_args(
+            "update_reservation_flights",
+            {"trip_id": "t1", "payment_method_id": "pm_123"},
+            ["trip_id", "payment_id", "payment1", "payment2", "payment3"],
+        )
+        assert "payment_id" in result
+        assert result["payment_id"] == "pm_123"
+        assert "payment_method_id" not in result
+
+    def test_normalize_tool_args_reverse_alias_gb_amount(self):
+        """Telecom refuel_data wants gb_amount; model emits amount_gb → remapped."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        result = normalize_tool_args(
+            "refuel_data",
+            {"customer_id": "c1", "amount_gb": 5},
+            ["customer_id", "gb_amount"],
+        )
+        assert "gb_amount" in result
+        assert result["gb_amount"] == 5
+        assert "amount_gb" not in result
+
+    def test_normalize_tool_args_no_reverse_when_variant_is_valid(self):
+        """Retail payment_method_id IS valid — reverse alias must not fire."""
+        from benchmarks.tau3bench._helpers import normalize_tool_args
+
+        result = normalize_tool_args(
+            "exchange_delivered_order_items",
+            {"order_id": "o1", "payment_method_id": "pm_1", "item_ids": ["i1"]},
+            ["order_id", "payment_method_id", "item_ids", "new_item_ids"],
+        )
+        assert "payment_method_id" in result
+        assert result["payment_method_id"] == "pm_1"
+
+    def test_tool_schema_from_tau2_unwraps_openai_function_wrapper(self):
+        """tau2 openai_schema is {type, function:{parameters}} — must extract the inner parameters."""
+        from benchmarks.tau3bench._helpers import tool_schema_from_tau2
+
+        class FakeParams:
+            @staticmethod
+            def model_json_schema():
+                return {"properties": {"fallback": {"type": "string"}}}
+
+        class FakeTool:
+            openai_schema = {
+                "type": "function",
+                "function": {
+                    "name": "refuel_data",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "gb_amount": {"type": "number"},
+                            "customer_id": {"type": "string"},
+                        },
+                        "required": ["gb_amount", "customer_id"],
+                    },
+                },
+            }
+            params = FakeParams
+
+        schema = tool_schema_from_tau2(FakeTool())
+        # Must return the inner parameters dict, not {} nor the whole wrapper.
+        assert "properties" in schema
+        assert "gb_amount" in schema["properties"]
+        assert schema["properties"]["gb_amount"]["type"] == "number"
+
+    def test_normalize_tool_args_coerces_number_from_openai_schema(self):
+        """End-to-end: a number-typed param under the openai wrapper coerces str→float."""
+        from benchmarks.tau3bench._helpers import tool_schema_from_tau2, normalize_tool_args
+
+        class FakeTool:
+            openai_schema = {
+                "type": "function",
+                "function": {
+                    "name": "refuel_data",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "gb_amount": {"type": "number"},
+                            "customer_id": {"type": "string"},
+                            "line_id": {"type": "string"},
+                        },
+                        "required": ["customer_id", "line_id", "gb_amount"],
+                    },
+                },
+            }
+            params = None
+
+        schema = tool_schema_from_tau2(FakeTool())
+        result = normalize_tool_args(
+            "refuel_data",
+            {"customer_id": "C1001", "line_id": "L1002", "gb_amount": "2"},
+            ["customer_id", "line_id", "gb_amount"],
+            schema,
+        )
+        assert result["gb_amount"] == 2.0
+        assert isinstance(result["gb_amount"], float)
+        assert result["customer_id"] == "C1001"
+
+    def test_tool_fallback_generate_retries_without_tools(self):
+        """tau2 generate wrapper should fall back to text mode on tool rejection."""
+        from benchmarks.tau3bench import _tool_fallback_generate
+
+        calls = []
+
+        def fake_generate(model, messages, tools=None, tool_choice=None, **kwargs):
+            calls.append((tools, tool_choice))
+            if tools is not None:
+                raise RuntimeError(
+                    '"auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set'
+                )
+            return "ok"
+
+        result = _tool_fallback_generate(
+            fake_generate, "m", [], tools=["dummy"], tool_choice="auto"
+        )
+        assert result == "ok"
+        assert len(calls) == 2
+        assert calls[0] == (["dummy"], "auto")
+        assert calls[1] == (None, None)
+
+    def test_tool_fallback_generate_reraises_non_tool_errors(self):
+        """Non-tool-related errors should not trigger a retry."""
+        from benchmarks.tau3bench import _tool_fallback_generate
+
+        def fake_generate(model, messages, tools=None, tool_choice=None, **kwargs):
+            raise RuntimeError("connection refused")
+
+        with pytest.raises(RuntimeError, match="connection refused"):
+            _tool_fallback_generate(fake_generate, "m", [], tools=["dummy"])
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +688,47 @@ class TestBFCLHelpers:
         fn = make_noop_fn("search")
         assert fn.__name__ == "search"
         assert fn() == ""
+
+    def test_resolve_tool_name_maps_underscores_to_dots(self):
+        """resolve_tool_name should map math_factorial back to math.factorial."""
+        from benchmarks.bfcl._helpers import build_registry, resolve_tool_name
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "math.factorial",
+                    "description": "Factorial",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+        registry = build_registry(tools)
+        assert resolve_tool_name(registry, "math_factorial") == "math.factorial"
+
+    def test_resolve_tool_name_exact_match(self):
+        """resolve_tool_name should return exact matches unchanged."""
+        from benchmarks.bfcl._helpers import build_registry, resolve_tool_name
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Weather",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+        registry = build_registry(tools)
+        assert resolve_tool_name(registry, "get_weather") == "get_weather"
+
+    def test_normalize_tool_name(self):
+        """normalize_tool_name should replace dots and dashes with underscores."""
+        from benchmarks.bfcl._helpers import normalize_tool_name
+
+        assert normalize_tool_name("math.factorial") == "math_factorial"
+        assert normalize_tool_name("my-tool") == "my_tool"
 
 
 # ---------------------------------------------------------------------------

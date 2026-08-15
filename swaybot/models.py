@@ -123,6 +123,15 @@ class OpenAIModel:
         self.backoff = backoff
         self.timeout = timeout
 
+        # Some OpenAI-compatible deployments do not support native function
+        # calling.  Let users (or benchmark configs) force text-mode generation.
+        if os.environ.get("SWAYBOT_FORCE_TEXT_MODE", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            self.supports_tools = False
+
         if not self.api_key:
             raise ValueError(
                 "OpenAI model requires an API key. "
@@ -143,7 +152,28 @@ class OpenAIModel:
             api_key=cast(str, self.api_key),
             base_url=cast(str, self.base_url),
             timeout=self.timeout,
+            http_client=self._build_http_client(),
         )
+
+    def _build_http_client(self):
+        """Build an httpx.Client tuned for OpenAI-compatible endpoints.
+
+        Two adjustments matter for self-hosted OpenAI-compatible gateways:
+
+        * ``trust_env=False`` — httpx otherwise honors ``HTTP_PROXY`` /
+          ``HTTPS_PROXY`` / ``ALL_PROXY`` / ``NO_PROXY`` and any system proxy
+          configuration.  Even when those vars are unset in the shell, macOS
+          system proxy / PAC settings can leak in and cause intermittent
+          ``SSL: UNEXPECTED_EOF_WHILE_READING`` errors against the gateway.
+        * ``http2=False`` — some gateways negotiate HTTP/2 badly under the
+          default h2 transport; pinning HTTP/1.1 avoids that failure mode.
+
+        Retries are handled at the ``generate`` level, not the transport.
+        """
+        import httpx
+
+        transport = httpx.HTTPTransport(retries=0, http2=False)
+        return httpx.Client(http2=False, transport=transport, trust_env=False)
 
     def generate(
         self,
@@ -179,10 +209,12 @@ class OpenAIModel:
                 # Some providers accept chat completions but reject native tool-calling.
                 # Drop the tools parameter and retry immediately; the system prompt
                 # still describes available tools as JSON schema.
-                if (
-                    openai_tools
-                    and "tool" in last_error.lower()
-                    and "not supported" in last_error.lower()
+                lowered = last_error.lower()
+                if openai_tools and (
+                    ("tool" in lowered and "not supported" in lowered)
+                    or "tool choice requires" in lowered
+                    or "enable-auto-tool-choice" in lowered
+                    or "tool_call_parser" in lowered
                 ):
                     openai_tools = []
                     continue
@@ -219,7 +251,8 @@ class OpenAIModel:
         start: float,
         reasoning_callback,
     ) -> str:
-        message = response.choices[0].message
+        choice = response.choices[0]
+        message = choice.message
         content = message.content or ""
         reasoning = getattr(message, "reasoning_content", None)
         if reasoning and reasoning_callback:
@@ -230,6 +263,8 @@ class OpenAIModel:
             if action is not None:
                 content = json.dumps(action)
         self._record_completion_metadata(metadata, messages, content, start, response)
+        if metadata is not None:
+            metadata["finish_reason"] = getattr(choice, "finish_reason", None)
         return content
 
     def _stream_generate(

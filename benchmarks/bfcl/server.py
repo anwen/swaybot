@@ -18,7 +18,12 @@ import uuid
 
 from swaybot.llm_brain import LLMBrain
 
-from ._helpers import build_registry, extract_task, messages_to_history
+from ._helpers import (
+    build_registry,
+    extract_task,
+    messages_to_history,
+    resolve_tool_name,
+)
 
 
 def create_app():
@@ -88,7 +93,8 @@ def create_app():
         action = brain.think(perception, registry.names())
 
         # Build OpenAI-format response
-        tool_name = action.get("name", "")
+        returned_name = action.get("name", "")
+        tool_name = resolve_tool_name(registry, returned_name)
         tool_args = action.get("args", {})
 
         if tool_name and tool_name not in ("done", "final_answer", "echo"):

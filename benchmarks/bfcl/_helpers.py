@@ -31,6 +31,30 @@ def build_registry(tools: list[dict]) -> ToolRegistry:
     return registry
 
 
+def normalize_tool_name(name: str) -> str:
+    """Return a canonical form of a tool name for fuzzy matching.
+
+    Some model backends replace dots/ dashes with underscores in tool names.
+    """
+    return name.replace(".", "_").replace("-", "_")
+
+
+def resolve_tool_name(registry: ToolRegistry, returned_name: str) -> str:
+    """Map a model-returned tool name back to the original registered name.
+
+    BFCL uses names like ``math.factorial``; the model may emit
+    ``math_factorial``.  If *returned_name* is not an exact match, try the
+    normalized form against the registry.
+    """
+    if returned_name in registry.names():
+        return returned_name
+    normalized = normalize_tool_name(returned_name)
+    for original in registry.names():
+        if normalize_tool_name(original) == normalized:
+            return original
+    return returned_name
+
+
 def make_noop_fn(name: str):
     """No-op function — BFCL executes tools itself."""
     def _noop(**kwargs):

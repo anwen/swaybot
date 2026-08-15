@@ -124,7 +124,20 @@ class LLMBrain:
             if error_detail:
                 message = f"{message}: {error_detail}"
             return _fallback(perception, message)
-        return _parse_action(raw, perception)
+        action = _parse_action(raw, perception)
+        # If the model returned prose instead of a tool call, treat the prose as
+        # the final answer rather than echo-truncating it.  This commonly happens
+        # with reasoning models: reasoning tokens exhaust the output budget so
+        # the final_answer tool call is never emitted (finish_reason=length), and
+        # the model's visible content is a prose answer that _parse_action can't
+        # parse as JSON/XML.  Wrapping it as final_answer lets the turn complete
+        # with the full answer instead of looping on a 200-char echo.
+        if action.get("name") == "echo" and raw and raw.strip():
+            prose = raw.strip()
+            if len(prose) > 4000:
+                prose = prose[:4000]
+            action = {"name": "final_answer", "args": {"answer": prose}}
+        return action
 
     def _system_message(
         self, perception: dict, available_tools: list[str]
@@ -205,8 +218,71 @@ def _merge_metadata(target: dict | None, source: dict) -> None:
         target.update(source)
 
 
+def _extract_tool_call(raw: str) -> dict[str, Any] | None:
+    """Normalize Qwen/DeepSeek-style XML tool calls into JSON actions.
+
+    Models fine-tuned for ``<tool_call>`` formatting sometimes emit either
+    ``<tool_call>{"name": ..., "args": ...}</tool_call>`` or a nested
+    ``<function=name><parameter=key>value</parameter>...</function>`` block.
+    We convert both into SwayBot's standard ``{"name": ..., "args": ...}``.
+    """
+    text = raw.strip()
+    if not text.startswith("<") or "tool_call" not in text:
+        return None
+
+    # Variant 1: <tool_call> { "name": "...", "args": {...} } </tool_call>
+    stripped = text
+    for tag in ("<tool_call>", "</tool_call>", "<tool_call>", "</tool_call>"):
+        stripped = stripped.replace(tag, "")
+    stripped = stripped.strip()
+    try:
+        data = json.loads(stripped)
+        if isinstance(data, dict) and "name" in data:
+            return {"name": data["name"], "args": data.get("args", {})}
+    except json.JSONDecodeError:
+        pass
+
+    # Variant 2: <function=name><parameter=key>value</parameter>...</function>
+    import re
+
+    func_match = re.search(r"<function=([^>\s]+)>", text)
+    if not func_match:
+        return None
+    name = func_match.group(1)
+    args: dict[str, Any] = {}
+    for param_match in re.finditer(
+        r"<parameter=([^>\s]+)>\s*(.*?)\s*</parameter>", text, re.DOTALL
+    ):
+        key = param_match.group(1)
+        value_text = param_match.group(2).strip()
+        # XML parameter values are plain text. Only interpret values that are
+        # clearly JSON literals (objects, arrays, booleans, null). Plain
+        # numbers are kept as strings so ID fields such as product_id/zip
+        # are not accidentally coerced to integers.
+        lowered = value_text.lower()
+        if value_text.startswith(("{", "[")) or lowered in (
+            "true",
+            "false",
+            "null",
+        ):
+            try:
+                value = json.loads(value_text)
+            except json.JSONDecodeError:
+                value = value_text
+        else:
+            value = value_text
+        args[key] = value
+    return {"name": name, "args": args}
+
+
 def _parse_action(raw: str, perception: dict) -> dict[str, Any]:
     raw = strip_markdown_fences(raw)
+
+    # Some Qwen/DeepSeek-style models emit tool calls in XML tags even in
+    # text mode. Try to normalize those into the standard JSON action shape.
+    tool_action = _extract_tool_call(raw)
+    if tool_action is not None:
+        return tool_action
 
     try:
         action = json.loads(raw)
@@ -240,4 +316,13 @@ def _parse_plan(raw: str) -> dict[str, Any]:
 def _fallback(perception: dict, raw: str) -> dict[str, Any]:
     if perception["step"] + 1 >= perception["max_steps"]:
         return {"name": "done", "args": {}}
-    return {"name": "echo", "args": {"message": raw[:200]}}
+    # The model emitted prose instead of a parseable tool call. This is common
+    # for reasoning models whose visible-content budget is eaten by reasoning
+    # tokens, so the final_answer tool call is never emitted. Rather than
+    # truncate to 200 chars (which causes a "you got cut off" -> re-emit loop),
+    # pass the full prose through as the user-facing message so the turn
+    # completes. A generous cap only guards against pathological output.
+    message = (raw or "").strip()
+    if len(message) > 4000:
+        message = message[:4000]
+    return {"name": "echo", "args": {"message": message}}
