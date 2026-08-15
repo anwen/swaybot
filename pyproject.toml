@@ -1,6 +1,6 @@
 [project]
 name = "swaybot"
-version = "0.1.0"
+version = "0.2.0"
 description = "A lightweight agent that learns to grow and evolve on its own."
 readme = "README.md"
 license = {text = "MIT"}
