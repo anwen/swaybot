@@ -13,12 +13,13 @@ def test_canonicalize_nested():
     assert _canonicalize({"x": {"b": 1, "a": 2}}) == _canonicalize({"x": {"a": 2, "b": 1}})
 
 
-def test_different_args_do_not_trigger():
+def test_different_args_do_not_trigger_exact():
+    """Different args must not trigger the EXACT-repeat channel (default thresholds)."""
     guard = RepeatCallGuard(thresholds=[3])
     assert guard.observe(_call(id=1)) is None
-    assert guard.observe(_call(id=2)) is None  # different args -> reset
+    assert guard.observe(_call(id=2)) is None  # different args -> exact chain resets
     assert guard.observe(_call(id=2)) is None
-    # now two in a row for id=2; third triggers
+    # now two in a row for id=2; third triggers exact
     assert guard.observe(_call(id=2)) is not None
 
 
@@ -73,6 +74,11 @@ def test_invalid_thresholds_rejected():
         RepeatCallGuard(thresholds=[1])
     with pytest.raises(ValueError):
         RepeatCallGuard(thresholds=[3, 3])
+    # name_only_thresholds validated the same way
+    with pytest.raises(ValueError):
+        RepeatCallGuard(name_only_thresholds=[])
+    with pytest.raises(ValueError):
+        RepeatCallGuard(name_only_thresholds=[1, 1])
 
 
 def test_preview_truncation():
@@ -84,3 +90,61 @@ def test_preview_truncation():
     assert msg is not None
     assert "+5" not in msg or "more chars" in msg
     assert len(msg) < 700  # bounded
+
+
+# --- name-only channel (catches argument rotation) -------------------------
+
+
+def test_name_only_fires_on_rotating_args():
+    """The airline-task-7 pattern: same tool name, different args every call.
+    Exact-repeat must NOT fire; name-only must fire at its threshold."""
+    guard = RepeatCallGuard(thresholds=[10], name_only_thresholds=[5])
+    ids = ["XEHM4B", "59XX6W", "7WPL39", "3EMQJ6", "ZZZ999"]
+    notices = []
+    for i in ids[:4]:
+        notices.append(guard.observe(_call(id=i)))
+    assert not any(notices)  # first 4: below name-only threshold of 5
+    fifth = guard.observe(_call(id="LAST1"))
+    assert fifth is not None
+    assert "repeatedly" in fifth or "repeating" in fifth.lower()
+
+
+def test_name_only_gentle_then_detailed():
+    guard = RepeatCallGuard(thresholds=[99], name_only_thresholds=[5, 7])
+    for i in range(4):
+        assert guard.observe(_call(id=i)) is None
+    gentle = guard.observe(_call(id=4))
+    assert gentle is not None
+    assert "different arguments" in gentle
+    assert guard.observe(_call(id=5)) is None  # 6, no threshold
+    detailed = guard.observe(_call(id=6))
+    assert detailed is not None
+    assert "consecutive_calls: 7" in detailed
+
+
+def test_exact_takes_precedence_over_name_only():
+    """When both channels fire on the same call, exact-repeat wins (more specific)."""
+    guard = RepeatCallGuard(thresholds=[3], name_only_thresholds=[3])
+    c = _call(id=1)
+    guard.observe(c)
+    guard.observe(c)
+    msg = guard.observe(c)  # both exact (3) and name-only (3) hit
+    assert "exact same tool call" in msg  # exact gentle reminder, not name-only
+
+
+def test_name_only_resets_on_name_change():
+    guard = RepeatCallGuard(thresholds=[99], name_only_thresholds=[3])
+    guard.observe(_call(id=1))
+    guard.observe({"name": "other_tool", "args": {"id": 1}})  # name changes
+    # name-only counter restarted for "other_tool"
+    assert guard.observe({"name": "other_tool", "args": {"id": 2}}) is None
+    assert guard.observe({"name": "other_tool", "args": {"id": 3}}) is not None
+
+
+def test_reset_clears_name_only_chain():
+    guard = RepeatCallGuard(thresholds=[99], name_only_thresholds=[3])
+    guard.observe(_call(id=1))
+    guard.observe(_call(id=2))
+    guard.reset()
+    assert guard.observe(_call(id=3)) is None
+    assert guard.observe(_call(id=4)) is None

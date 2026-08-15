@@ -744,6 +744,68 @@ def test_extract_tool_call_numeric_parameter():
     assert action == {"name": "add", "args": {"a": "3", "b": "4"}}
 
 
+def test_llm_brain_repeat_guard_name_only_notices_rotating_calls():
+    """The brain-level guard must fire a notice when the SAME tool name is
+    called repeatedly with DIFFERENT arguments (the airline task-7 pattern),
+    and fold that notice into the next turn's behavior_guidance."""
+    backend = MagicMock()
+    backend.supports_tools = True
+    raws = [
+        '{"name": "get_reservation_details", "args": {"id": "AAA"}}',
+        '{"name": "get_reservation_details", "args": {"id": "BBB"}}',
+        '{"name": "get_reservation_details", "args": {"id": "CCC"}}',
+        '{"name": "get_reservation_details", "args": {"id": "DDD"}}',
+        '{"name": "get_reservation_details", "args": {"id": "EEE"}}',
+        '{"name": "final_answer", "args": {"answer": "done"}}',
+    ]
+    backend.generate.side_effect = list(raws)
+    brain = LLMBrain(backend=backend)
+    # Lower the name-only threshold so the test is fast.
+    brain.repeat_guard = __import__(
+        "swaybot.loop_guards", fromlist=["RepeatCallGuard"]
+    ).RepeatCallGuard(thresholds=[99], name_only_thresholds=[5])
+
+    schemas = [
+        {"name": "get_reservation_details", "parameters": {"type": "object"}},
+        {"name": "final_answer", "parameters": {"type": "object"}},
+    ]
+    perception = {
+        "task": "cancel a reservation",
+        "step": 0,
+        "max_steps": 50,
+        "history": [],
+        "tool_descriptions": schemas,
+    }
+    notices = []
+    for _ in raws:
+        brain.think(dict(perception), ["get_reservation_details", "final_answer"])
+        sys_content = backend.generate.call_args.args[0][0]["content"]
+        notices.append(
+            "repeating" in sys_content.lower()
+            or "repeatedly" in sys_content.lower()
+            or "repeated tool call" in sys_content.lower()
+        )
+    # Calls 0-3: below threshold -> no notice. Call 4: 5th same-name call ->
+    # notice produced, folded into call 5's system prompt.
+    assert not any(notices[:4])
+    assert notices[4] or notices[5]
+
+
+def test_llm_brain_repeat_guard_disabled_when_none():
+    """Setting repeat_guard=None must not raise and must not inject notices."""
+    backend = MagicMock()
+    backend.supports_tools = True
+    backend.generate.return_value = '{"name": "done", "args": {}}'
+    brain = LLMBrain(backend=backend)
+    brain.repeat_guard = None
+    perception = {
+        "task": "t", "step": 0, "max_steps": 3, "history": [],
+        "tool_descriptions": [{"name": "done", "parameters": {"type": "object"}}],
+    }
+    action = brain.think(dict(perception), ["done"])
+    assert action["name"] == "done"
+
+
 @patch("swaybot.models.OpenAI")
 def test_llm_brain_uses_env_variables(mock_openai, monkeypatch):
     monkeypatch.setenv("SWAYBOT_API_KEY", "env-key")

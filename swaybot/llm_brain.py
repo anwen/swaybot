@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 from .brain import ReasoningCallback, StreamCallback
+from .loop_guards import RepeatCallGuard
 from .models import FallbackModel, Model, OpenAIModel
 from .parsing import parse_exploration_response, strip_markdown_fences
 from .prompts import render_prompt
@@ -68,6 +69,14 @@ class LLMBrain:
         self.api_key = getattr(backend, "api_key", None)
         self.base_url = getattr(backend, "base_url", None)
         self.model = getattr(backend, "model", None)
+        # Advisory repeat-call detector wired into the brain itself (not the
+        # Agent._run loop) so it fires on every think() path, including the
+        # tau3bench adapter which calls brain.think() directly and bypasses
+        # Agent. observe() runs after the action is chosen; the resulting
+        # notice is folded into the NEXT perception's behavior_guidance.
+        # Disabled by passing repeat_guard=None.
+        self.repeat_guard: RepeatCallGuard | None = RepeatCallGuard()
+        self._repeat_notice: str | None = None
 
     def think(
         self,
@@ -88,6 +97,10 @@ class LLMBrain:
             )
             _merge_metadata(metadata, call_info)
             return exploration
+
+        # Fold any pending repeat-call notice into this turn's behavior guidance
+        # so the model sees the nudge before choosing its next action.
+        perception = self._with_repeat_notice(perception)
 
         messages = [self._system_message(perception, available_tools)]
         if perception.get("messages"):
@@ -123,8 +136,9 @@ class LLMBrain:
             message = "LLM call failed after retries"
             if error_detail:
                 message = f"{message}: {error_detail}"
-            return _fallback(perception, message)
-        action = _parse_action(raw, perception)
+            action = _fallback(perception, message)
+        else:
+            action = _parse_action(raw, perception)
         # If the model returned prose instead of a tool call, treat the prose as
         # the final answer rather than echo-truncating it.  This commonly happens
         # with reasoning models: reasoning tokens exhaust the output budget so
@@ -137,7 +151,35 @@ class LLMBrain:
             if len(prose) > 4000:
                 prose = prose[:4000]
             action = {"name": "final_answer", "args": {"answer": prose}}
+        # Observe the FINAL action (after any rewrite) so the repeat guard sees
+        # what the agent actually commits to, and can produce a notice for the
+        # next think() call. Done last so fallbacks/rewrites are counted too.
+        self._observe_action(action)
         return action
+
+    def _with_repeat_notice(self, perception: dict) -> dict:
+        """Fold the pending repeat-call notice into behavior_guidance.
+
+        Returns a shallow copy so the caller's perception dict is not mutated.
+        The notice is consumed (cleared) once folded.
+        """
+        notice = self._repeat_notice
+        self._repeat_notice = None
+        if not notice:
+            return perception
+        guidance = perception.get("behavior_guidance")
+        new_guidance = f"{guidance}\n{notice}" if guidance else notice
+        updated = dict(perception)
+        updated["behavior_guidance"] = new_guidance
+        return updated
+
+    def _observe_action(self, action: dict) -> None:
+        """Feed the chosen action to the repeat guard; stash any notice."""
+        if self.repeat_guard is None:
+            return
+        notice = self.repeat_guard.observe(action)
+        if notice:
+            self._repeat_notice = notice
 
     def _system_message(
         self, perception: dict, available_tools: list[str]
