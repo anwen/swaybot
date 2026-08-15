@@ -4,6 +4,7 @@ from .brain import Brain, EchoBrain
 from .perception import ContextBuilder
 from .task_state import Environment
 from .hook import AgentHook, CompositeHook
+from .loop_guards import RepeatCallGuard
 from .request_context import RequestContext, current_context, set_context
 from .security import PermissionPolicy, permission_level_to_mode
 from .memory import (
@@ -52,6 +53,11 @@ class Agent:
             )
         self.auto_compact = auto_compact
         self.compactor = compactor
+        # Advisory repeat-call detector: observes the action stream and produces
+        # a "you are repeating yourself" notice the loop injects into the next
+        # perception. Observe-only; never vetoes or rewrites an action.
+        self.repeat_guard: RepeatCallGuard | None = RepeatCallGuard()
+        self._repeat_notice: str | None = None
         if skills is not None and not skills._skills:
             skills.load()
         self.context_builder = ContextBuilder(self.memory, self.tools, skills=skills)
@@ -104,8 +110,10 @@ class Agent:
             self._create_plan(task, max_steps)
         while not env.done:
             perception = self.context_builder.build(
-                task, env.step, max_steps, env.history
+                task, env.step, max_steps, env.history, notice=self._repeat_notice
             )
+            # Consume the notice after folding it into this step's perception.
+            self._repeat_notice = None
             self.hooks.before_iteration(task, env.step, perception)
             action, call_info = self._think(perception, stream)
             result, error = self._execute_action(action, request_context)
@@ -120,6 +128,9 @@ class Agent:
             )
             if self.memory is not None:
                 self._persist_step(task, env.step, action, result, call_info)
+            if self.repeat_guard is not None:
+                notice = self.repeat_guard.observe(action)
+                self._repeat_notice = notice
 
         reflections = self._reflect(task, env.history, hypothesis, reflect)
         self._append_run_log(task, max_steps, run_steps, hypothesis, reflections)

@@ -25,6 +25,7 @@ class ContextBuilder:
         step: int,
         max_steps: int,
         history: list[dict],
+        notice: str | None = None,
     ) -> dict:
         """Return a perception dict ready for ``Brain.think``."""
         perception: dict = {
@@ -37,10 +38,15 @@ class ContextBuilder:
             relevant = self.memory.query_relevant(task, scope="long_term", limit=5)
             memory_context = self._memory_context(task, relevant)
             perception["memory_context"] = memory_context
-            perception["behavior_guidance"] = self._behavior_guidance(task, relevant)
+            guidance = self._behavior_guidance(task, relevant)
+            if notice:
+                guidance = f"{guidance}\n{notice}".strip() if guidance else notice
+            perception["behavior_guidance"] = guidance
             perception["messages"] = self._build_messages(
                 task, relevant, memory_context
             )
+        elif notice:
+            perception["behavior_guidance"] = notice
         perception["tool_descriptions"] = self.tools.schemas()
         perception["available_tools"] = self.tools.names()
         perception["project_instructions"] = load_project_instructions()
