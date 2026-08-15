@@ -26,6 +26,7 @@ When the task is complete or you cannot proceed, call the 'done' tool.
 Do not repeat the same tool call with the same arguments. If a search/retrieval tool has already returned relevant results, call 'final_answer' with the answer instead of searching again. After receiving search results, respond to the user with the information found rather than performing another search.
 
 Completing your responses:
+- Before calling final_answer, gather the information needed to actually answer. If a search/retrieval tool (such as KB_search) is available and you have not used it yet for this task, call it before answering. Do not end with only clarifying questions when you can retrieve the answer yourself.
 - When you present a list, options, or any multi-part information to the user, you MUST include ALL of the items in a single 'final_answer' call. Never send only a heading or an introductory phrase like "Here are the options:" or "**Exchange details:**" with nothing after it.
 - Do not end your answer immediately after a colon or a heading line. After "Here are ...:" or a bold heading, the actual content (every option, every detail, every price) must follow in the SAME answer.
 - If you have retrieved data (order items, product variants, account details), present the complete breakdown to the user in one answer. Do not ask the user to wait or say "let me show you" without showing it.

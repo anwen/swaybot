@@ -96,6 +96,22 @@ def test_llm_brain_text_system_prompt_includes_inline_schemas():
     assert '"type": "number"' in system_content
 
 
+def test_llm_brain_fc_prompt_requires_retrieval_before_answer():
+    """The FC prompt must tell the model to search before final_answer."""
+    backend = MagicMock()
+    backend.supports_tools = True
+    backend.generate.return_value = '{"name": "done", "args": {}}'
+    brain = LLMBrain(backend=backend)
+    brain.think(
+        {"task": "test", "step": 0, "max_steps": 3, "history": [],
+         "tool_descriptions": [{"name": "done", "parameters": {"type": "object", "properties": {}}}]},
+        ["done"],
+    )
+    system_content = backend.generate.call_args.args[0][0]["content"]
+    assert "before calling final_answer" in system_content.lower()
+    assert "search/retrieval tool" in system_content.lower()
+
+
 @patch("swaybot.models.OpenAI")
 def test_llm_brain_system_prompt_falls_back_to_tool_names(mock_openai):
     client = MagicMock()
