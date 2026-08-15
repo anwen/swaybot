@@ -650,6 +650,60 @@ def test_llm_brain_parses_native_tool_call(mock_openai):
     assert action == {"name": "add", "args": {"a": 2, "b": 3}}
 
 
+def _mock_truncated_tool_call_response(prose: str, broken_args: str):
+    """A response truncated mid-tool-call: finish_reason=length, prose present,
+    and a tool_call whose arguments string was cut (invalid JSON)."""
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].finish_reason = "length"
+    message = response.choices[0].message
+    message.content = prose
+    tool_call = MagicMock()
+    tool_call.id = "call_1"
+    tool_call.function.name = "final_answer"
+    tool_call.function.arguments = broken_args  # e.g. '{"answer": "howev'
+    message.tool_calls = [tool_call]
+    return response
+
+
+@patch("swaybot.models.OpenAI")
+def test_length_truncation_drops_broken_tool_call(mock_openai):
+    """finish_reason=length with prose + a half-formed tool_call must prefer the
+    prose and NOT execute the truncated tool call."""
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_truncated_tool_call_response(
+        "I need to clarify our compensation policy for flights.",
+        '{"answer": "howev',  # truncated mid-string -> invalid JSON
+    )
+    mock_openai.return_value = client
+
+    brain = _make_brain()
+    action = brain.think(
+        {
+            "task": "refund policy",
+            "step": 0,
+            "max_steps": 3,
+            "history": [],
+            "tool_descriptions": [
+                {
+                    "name": "final_answer",
+                    "description": "Answer.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"answer": {"type": "string"}},
+                        "required": ["answer"],
+                    },
+                }
+            ],
+        },
+        ["final_answer", "done"],
+    )
+    # The broken tool_call was dropped; the prose became a final_answer via
+    # think()'s prose->final_answer path (not the truncated tool_call).
+    assert action["name"] == "final_answer"
+    assert "compensation policy" in action["args"]["answer"]
+
+
 def test_extract_tool_call_json_inside_tag():
     """_extract_tool_call should parse JSON inside <tool_call> tags."""
     from swaybot.llm_brain import _extract_tool_call

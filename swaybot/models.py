@@ -257,14 +257,26 @@ class OpenAIModel:
         reasoning = getattr(message, "reasoning_content", None)
         if reasoning and reasoning_callback:
             reasoning_callback(reasoning)
+        finish_reason = getattr(choice, "finish_reason", None)
         tool_calls = getattr(message, "tool_calls", None)
+        # A length truncation may leave tool_calls with an arguments string that
+        # was cut mid-JSON; executing it would run a half-formed call. When the
+        # stop reason is 'length', prefer the (complete) visible content and
+        # drop tool_calls so think()'s prose->final_answer path handles it.
+        if (
+            finish_reason == "length"
+            and isinstance(tool_calls, list)
+            and tool_calls
+            and content.strip()
+        ):
+            tool_calls = None
         if isinstance(tool_calls, list) and tool_calls:
             action = self._tool_call_to_action(tool_calls[0])
             if action is not None:
                 content = json.dumps(action)
         self._record_completion_metadata(metadata, messages, content, start, response)
         if metadata is not None:
-            metadata["finish_reason"] = getattr(choice, "finish_reason", None)
+            metadata["finish_reason"] = finish_reason
         return content
 
     def _stream_generate(
