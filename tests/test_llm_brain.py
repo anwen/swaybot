@@ -791,6 +791,57 @@ def test_llm_brain_repeat_guard_name_only_notices_rotating_calls():
     assert notices[4] or notices[5]
 
 
+def test_llm_brain_nonconvergence_guard_fires_on_rotating_tools():
+    """NonConvergenceGuard must fire when DIFFERENT tools are called repeatedly
+    with no final_answer (the airline task-7 pattern that RepeatCallGuard
+    misses), and fold the notice into the next turn's system prompt."""
+    backend = MagicMock()
+    backend.supports_tools = True
+    # Rotate two tools, never final_answer, 6 turns.
+    raws = [
+        '{"name": "get_reservation_details", "args": {"id": "A"}}',
+        '{"name": "get_flight_status", "args": {}}',
+        '{"name": "get_reservation_details", "args": {"id": "B"}}',
+        '{"name": "get_flight_status", "args": {}}',
+        '{"name": "get_reservation_details", "args": {"id": "C"}}',
+        '{"name": "get_flight_status", "args": {}}',
+    ]
+    backend.generate.side_effect = list(raws)
+    brain = LLMBrain(backend=backend)
+    # Lower threshold so the test is fast.
+    brain.nonconvergence_guard = __import__(
+        "swaybot.loop_guards", fromlist=["NonConvergenceGuard"]
+    ).NonConvergenceGuard(thresholds=[4])
+    # Disable the repeat guard so only the non-convergence channel can fire.
+    brain.repeat_guard = None
+
+    schemas = [
+        {"name": "get_reservation_details", "parameters": {"type": "object"}},
+        {"name": "get_flight_status", "parameters": {"type": "object"}},
+    ]
+    perception = {
+        "task": "cancel a reservation",
+        "step": 0,
+        "max_steps": 50,
+        "history": [],
+        "tool_descriptions": schemas,
+    }
+    notices = []
+    for _ in raws:
+        brain.think(dict(perception), ["get_reservation_details", "get_flight_status"])
+        sys_content = backend.generate.call_args.args[0][0]["content"]
+        # Match markers unique to the NonConvergenceGuard notice, NOT the base
+        # template's "final_answer" instruction.
+        notices.append(
+            "several tools" in sys_content.lower()
+            or "non-convergence" in sys_content.lower()
+            or "consecutive tool calls without" in sys_content.lower()
+        )
+    # 4th non-terminal call produces a notice folded into the 5th turn's prompt.
+    assert not any(notices[:3])
+    assert any(notices[4:])
+
+
 def test_llm_brain_repeat_guard_disabled_when_none():
     """Setting repeat_guard=None must not raise and must not inject notices."""
     backend = MagicMock()

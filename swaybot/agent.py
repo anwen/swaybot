@@ -102,12 +102,13 @@ class Agent:
     ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
         run_steps: list[dict] = []
-        # Reset the brain's repeat-call guard chain when the task changes: a
-        # repeat across a fresh user/task turn is not a loop.
+        # Reset the brain's guard chains when the task changes: a repeat or
+        # non-convergence streak across a fresh user/task turn is not a loop.
         if task != self._last_task:
-            guard = getattr(self.brain, "repeat_guard", None)
-            if guard is not None:
-                guard.reset()
+            for attr in ("repeat_guard", "nonconvergence_guard"):
+                guard = getattr(self.brain, attr, None)
+                if guard is not None:
+                    guard.reset()
             self._last_task = task
         if self.memory is not None:
             self.memory.add(

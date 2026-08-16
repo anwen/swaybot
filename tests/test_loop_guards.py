@@ -1,4 +1,4 @@
-from swaybot.loop_guards import RepeatCallGuard, _canonicalize
+from swaybot.loop_guards import NonConvergenceGuard, RepeatCallGuard, _canonicalize
 
 
 def _call(name="get_reservation_details", **args):
@@ -148,3 +148,89 @@ def test_reset_clears_name_only_chain():
     guard.reset()
     assert guard.observe(_call(id=3)) is None
     assert guard.observe(_call(id=4)) is None
+
+
+# --- NonConvergenceGuard ----------------------------------------------------
+
+
+def test_nonconvergence_fires_after_threshold_tool_calls():
+    """A run of N tool calls with no final_answer must nudge at the threshold."""
+    guard = NonConvergenceGuard(thresholds=[5])
+    for _ in range(4):
+        assert guard.observe(_call(id=1)) is None
+    msg = guard.observe(_call(id=1))  # 5th non-terminal call
+    assert msg is not None
+    assert "final_answer" in msg
+
+
+def test_nonconvergence_rotating_tools_still_fires():
+    """The airline-task-7 pattern: DIFFERENT tools, no final_answer. This is the
+    case RepeatCallGuard misses (no single tool repeats) but NonConvergenceGuard
+    must catch."""
+    guard = NonConvergenceGuard(thresholds=[4])
+    seq = [
+        {"name": "get_reservation_details", "args": {"id": "A"}},
+        {"name": "get_flight_status", "args": {}},
+        {"name": "get_reservation_details", "args": {"id": "B"}},
+        {"name": "get_flight_status", "args": {}},
+    ]
+    notices = [guard.observe(a) for a in seq]
+    assert not any(notices[:3])
+    assert notices[3] is not None  # 4th non-terminal -> nudge
+    assert "converge" in notices[3].lower() or "final_answer" in notices[3]
+
+
+def test_nonconvergence_resets_on_final_answer():
+    """A final_answer resets the counter; subsequent tool calls start from 0."""
+    guard = NonConvergenceGuard(thresholds=[5])
+    for _ in range(4):
+        guard.observe(_call(id=1))
+    assert guard.observe({"name": "final_answer", "args": {"answer": "x"}}) is None
+    # Counter reset; 4 more tool calls should NOT fire (threshold is 5).
+    for _ in range(4):
+        assert guard.observe(_call(id=1)) is None
+    assert guard.observe(_call(id=1)) is not None  # 5th after reset
+
+
+def test_nonconvergence_resets_on_done():
+    """done is also terminal."""
+    guard = NonConvergenceGuard(thresholds=[3])
+    guard.observe(_call(id=1))
+    guard.observe(_call(id=2))
+    assert guard.observe({"name": "done", "args": {}}) is None  # reset
+    assert guard.observe(_call(id=1)) is None
+    assert guard.observe(_call(id=1)) is None  # only 2 since reset
+
+
+def test_nonconvergence_gentle_then_detailed():
+    guard = NonConvergenceGuard(thresholds=[5, 8])
+    for _ in range(4):
+        assert guard.observe(_call(id=1)) is None
+    gentle = guard.observe(_call(id=1))
+    assert gentle is not None
+    assert "several tools" in gentle  # gentle form
+    guard.observe(_call(id=1))  # 6
+    guard.observe(_call(id=1))  # 7
+    detailed = guard.observe(_call(id=1))  # 8
+    assert detailed is not None
+    assert "8 consecutive" in detailed
+
+
+def test_nonconvergence_reset_clears_counter():
+    guard = NonConvergenceGuard(thresholds=[3])
+    guard.observe(_call(id=1))
+    guard.observe(_call(id=2))
+    guard.reset()
+    assert guard.observe(_call(id=1)) is None
+    assert guard.observe(_call(id=1)) is None  # only 2 since reset
+
+
+def test_nonconvergence_invalid_thresholds():
+    import pytest
+
+    with pytest.raises(ValueError):
+        NonConvergenceGuard(thresholds=[])
+    with pytest.raises(ValueError):
+        NonConvergenceGuard(thresholds=[1])
+    with pytest.raises(ValueError):
+        NonConvergenceGuard(thresholds=[3, 3])

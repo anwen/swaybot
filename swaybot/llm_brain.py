@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 from .brain import ReasoningCallback, StreamCallback
-from .loop_guards import RepeatCallGuard
+from .loop_guards import NonConvergenceGuard, RepeatCallGuard
 from .models import FallbackModel, Model, OpenAIModel
 from .parsing import parse_exploration_response, strip_markdown_fences
 from .prompts import render_prompt
@@ -69,13 +69,17 @@ class LLMBrain:
         self.api_key = getattr(backend, "api_key", None)
         self.base_url = getattr(backend, "base_url", None)
         self.model = getattr(backend, "model", None)
-        # Advisory repeat-call detector wired into the brain itself (not the
-        # Agent._run loop) so it fires on every think() path, including the
-        # tau3bench adapter which calls brain.think() directly and bypasses
-        # Agent. observe() runs after the action is chosen; the resulting
-        # notice is folded into the NEXT perception's behavior_guidance.
-        # Disabled by passing repeat_guard=None.
+        # Advisory guards wired into the brain itself (not the Agent._run
+        # loop) so they fire on every think() path, including the tau3bench
+        # adapter which calls brain.think() directly and bypasses Agent.
+        # observe() runs after the action is chosen; the resulting notice is
+        # folded into the NEXT perception's behavior_guidance. Disabled by
+        # passing the guard as None.
         self.repeat_guard: RepeatCallGuard | None = RepeatCallGuard()
+        # Non-convergence guard catches runs that rotate across DIFFERENT tools
+        # (so no single tool repeats) yet never emit final_answer — the airline
+        # task-7 failure mode. Independent of repeat_guard's identity keying.
+        self.nonconvergence_guard: NonConvergenceGuard | None = NonConvergenceGuard()
         self._repeat_notice: str | None = None
 
     def think(
@@ -174,10 +178,15 @@ class LLMBrain:
         return updated
 
     def _observe_action(self, action: dict) -> None:
-        """Feed the chosen action to the repeat guard; stash any notice."""
-        if self.repeat_guard is None:
-            return
-        notice = self.repeat_guard.observe(action)
+        """Feed the chosen action to the repeat + non-convergence guards; stash
+        any notice for the next think() call."""
+        # Prefer the repeat guard's notice (more specific: it identifies the
+        # offending tool/args); fall back to the non-convergence nudge.
+        notice: str | None = None
+        if self.repeat_guard is not None:
+            notice = self.repeat_guard.observe(action)
+        if notice is None and self.nonconvergence_guard is not None:
+            notice = self.nonconvergence_guard.observe(action)
         if notice:
             self._repeat_notice = notice
 

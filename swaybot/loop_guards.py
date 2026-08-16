@@ -185,3 +185,66 @@ class RepeatCallGuard:
 
         # Exact-repeat notice is more specific (it knows the args match); prefer it.
         return exact_notice or name_notice
+
+
+# Names that signal completion. Any of these resets the non-convergence counter
+# (see NonConvergenceGuard): a final_answer/done means the run did converge.
+_TERMINAL_ACTIONS = frozenset({"final_answer", "done"})
+
+
+_GENTLE_NONCONVERGENCE = (
+    "You have called several tools in a row without producing a final answer. "
+    "Review the information you have already gathered — you likely have enough "
+    "to respond. Synthesize what you know and call final_answer now instead of "
+    "calling another tool."
+)
+
+
+class NonConvergenceGuard:
+    """Advisory detector for runs that keep calling tools without converging.
+
+    Unlike :class:`RepeatCallGuard` (which keys on tool identity), this guard
+    keys on *whether the run is progressing toward completion*: every tool call
+    that is not a terminal action (``final_answer``/``done``) increments a
+    counter; a terminal action resets it. When the counter crosses a threshold
+    the guard emits a "you've called N tools without answering — converge now"
+    notice.
+
+    This catches the failure mode the repeat guards cannot: a model that
+    *rotates across different tools* (e.g. ``get_reservation_details`` ->
+    ``get_flight_status`` -> ``get_reservation_details`` -> ...) never trips a
+    consecutive-repeat chain, yet still never emits ``final_answer``. Observed
+    on airline task 7: 22 tool calls across two rotating tools, no final_answer.
+    """
+
+    def __init__(self, thresholds: list[int] | None = None) -> None:
+        if thresholds is None:
+            thresholds = [10, 15]
+        self._thresholds, self._threshold_set = _validate_thresholds(thresholds)
+        self._count: int = 0
+
+    def reset(self) -> None:
+        """Clear the counter; a new user/task turn restarts convergence tracking."""
+        self._count = 0
+
+    def observe(self, action: dict) -> str | None:
+        """Advance the counter for one action; return a reminder at thresholds.
+
+        Terminal actions (``final_answer``/``done``) reset the counter and
+        return ``None``. Non-terminal tool calls increment it; crossing a
+        threshold produces a convergence nudge.
+        """
+        name = action.get("name", "")
+        if name in _TERMINAL_ACTIONS:
+            self._count = 0
+            return None
+        self._count += 1
+        if self._count not in self._threshold_set:
+            return None
+        if self._count == self._thresholds[0]:
+            return _GENTLE_NONCONVERGENCE
+        return (
+            f"Non-convergence detected: {self._count} consecutive tool calls "
+            "without a final_answer. You have gathered enough information. Stop "
+            "calling tools and call final_answer with your answer now."
+        )
