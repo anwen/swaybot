@@ -819,16 +819,18 @@ def test_llm_brain_nonconvergence_guard_fires_on_rotating_tools():
         {"name": "get_reservation_details", "parameters": {"type": "object"}},
         {"name": "get_flight_status", "parameters": {"type": "object"}},
     ]
-    perception = {
+    base_perception = {
         "task": "cancel a reservation",
-        "step": 0,
         "max_steps": 50,
         "history": [],
         "tool_descriptions": schemas,
     }
     notices = []
-    for _ in raws:
-        brain.think(dict(perception), ["get_reservation_details", "get_flight_status"])
+    for i, _ in enumerate(raws):
+        # The step must advance each turn — the guard now counts on the step
+        # delta, not on how many times observe() was called.
+        perception = dict(base_perception, step=i)
+        brain.think(perception, ["get_reservation_details", "get_flight_status"])
         sys_content = backend.generate.call_args.args[0][0]["content"]
         # Match markers unique to the NonConvergenceGuard notice, NOT the base
         # template's "final_answer" instruction.
@@ -837,7 +839,7 @@ def test_llm_brain_nonconvergence_guard_fires_on_rotating_tools():
             or "non-convergence" in sys_content.lower()
             or "consecutive tool calls without" in sys_content.lower()
         )
-    # 4th non-terminal call produces a notice folded into the 5th turn's prompt.
+    # By turn 4 the step-delta count crosses 4 -> notice folded into turn 5.
     assert not any(notices[:3])
     assert any(notices[4:])
 

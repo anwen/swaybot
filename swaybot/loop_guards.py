@@ -205,8 +205,8 @@ class NonConvergenceGuard:
 
     Unlike :class:`RepeatCallGuard` (which keys on tool identity), this guard
     keys on *whether the run is progressing toward completion*: every tool call
-    that is not a terminal action (``final_answer``/``done``) increments a
-    counter; a terminal action resets it. When the counter crosses a threshold
+    that is not a terminal action (``final_answer``/``done``) advances the
+    run; a terminal action resets it. When the run length crosses a threshold
     the guard emits a "you've called N tools without answering — converge now"
     notice.
 
@@ -214,7 +214,17 @@ class NonConvergenceGuard:
     *rotates across different tools* (e.g. ``get_reservation_details`` ->
     ``get_flight_status`` -> ``get_reservation_details`` -> ...) never trips a
     consecutive-repeat chain, yet still never emits ``final_answer``. Observed
-    on airline task 7: 22 tool calls across two rotating tools, no final_answer.
+    on airline task 7: 17+ tool calls across two rotating tools, no
+    final_answer.
+
+    **Counting anchor**: the guard counts on the task ``step`` (set via
+    :meth:`set_step` from ``perception["step"]``), NOT on how many times
+    :meth:`observe` is called. In the tau3bench half-duplex adapter, a single
+    task advances the step every inbound message, but some messages take a
+    force_final / echo shortcut and never reach ``observe`` — a call-count
+    anchor would undercount and never fire. The step anchor reflects true
+    task progress and is provided by both the ``Agent._run`` loop and the
+    benchmark adapter.
     """
 
     def __init__(self, thresholds: list[int] | None = None) -> None:
@@ -222,23 +232,50 @@ class NonConvergenceGuard:
             thresholds = [10, 15]
         self._thresholds, self._threshold_set = _validate_thresholds(thresholds)
         self._count: int = 0
+        # Last step observed. ``observe`` advances the counter by the step
+        # delta so a missed observe() (shortcut path) doesn't lose the count.
+        self._last_step: int | None = None
+        self._step: int | None = None
 
     def reset(self) -> None:
         """Clear the counter; a new user/task turn restarts convergence tracking."""
         self._count = 0
+        self._last_step = None
+        self._step = None
+
+    def set_step(self, step: int) -> None:
+        """Record the current task step (called from think() each turn).
+
+        The step is monotonic within a task and provided by the host loop. We
+        store it so :meth:`observe` can compute how many steps elapsed since
+        the last observed action (handles shortcut paths that skip observe).
+        """
+        self._step = step
 
     def observe(self, action: dict) -> str | None:
         """Advance the counter for one action; return a reminder at thresholds.
 
         Terminal actions (``final_answer``/``done``) reset the counter and
-        return ``None``. Non-terminal tool calls increment it; crossing a
-        threshold produces a convergence nudge.
+        return ``None``. Non-terminal tool calls advance it by the step delta
+        (so skipped shortcut turns still count); crossing a threshold produces
+        a convergence nudge.
         """
         name = action.get("name", "")
         if name in _TERMINAL_ACTIONS:
             self._count = 0
+            self._last_step = self._step
             return None
-        self._count += 1
+        # Advance by the number of steps elapsed since the last observed action
+        # (>= 1). Falls back to +1 when no step has been set (e.g. unit tests
+        # that call observe() directly without set_step()).
+        step = self._step
+        if self._last_step is not None and step is not None and step > self._last_step:
+            delta = step - self._last_step
+        else:
+            delta = 1
+        self._count += delta
+        if step is not None:
+            self._last_step = step
         if self._count not in self._threshold_set:
             return None
         if self._count == self._thresholds[0]:

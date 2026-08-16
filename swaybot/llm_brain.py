@@ -106,6 +106,16 @@ class LLMBrain:
         # so the model sees the nudge before choosing its next action.
         perception = self._with_repeat_notice(perception)
 
+        # Feed the current step to the non-convergence guard so it counts on the
+        # REAL task progress (perception["step"]) rather than on how many times
+        # think() happened to be called. In the tau3bench half-duplex adapter,
+        # think() is called once per inbound message but some messages take a
+        # force_final / echo shortcut and never reach _observe_action — so a
+        # call-count anchor undercounts. The step anchor reflects true progress.
+        step = perception.get("step", 0)
+        if self.nonconvergence_guard is not None:
+            self.nonconvergence_guard.set_step(step)
+
         messages = [self._system_message(perception, available_tools)]
         if perception.get("messages"):
             messages.extend(perception["messages"])

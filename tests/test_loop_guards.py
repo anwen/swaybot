@@ -156,9 +156,10 @@ def test_reset_clears_name_only_chain():
 def test_nonconvergence_fires_after_threshold_tool_calls():
     """A run of N tool calls with no final_answer must nudge at the threshold."""
     guard = NonConvergenceGuard(thresholds=[5])
-    for _ in range(4):
-        assert guard.observe(_call(id=1)) is None
-    msg = guard.observe(_call(id=1))  # 5th non-terminal call
+    msg = None
+    for i in range(5):
+        guard.set_step(i)
+        msg = guard.observe(_call(id=1))
     assert msg is not None
     assert "final_answer" in msg
 
@@ -174,7 +175,10 @@ def test_nonconvergence_rotating_tools_still_fires():
         {"name": "get_reservation_details", "args": {"id": "B"}},
         {"name": "get_flight_status", "args": {}},
     ]
-    notices = [guard.observe(a) for a in seq]
+    notices = []
+    for i, a in enumerate(seq):
+        guard.set_step(i)
+        notices.append(guard.observe(a))
     assert not any(notices[:3])
     assert notices[3] is not None  # 4th non-terminal -> nudge
     assert "converge" in notices[3].lower() or "final_answer" in notices[3]
@@ -183,46 +187,79 @@ def test_nonconvergence_rotating_tools_still_fires():
 def test_nonconvergence_resets_on_final_answer():
     """A final_answer resets the counter; subsequent tool calls start from 0."""
     guard = NonConvergenceGuard(thresholds=[5])
-    for _ in range(4):
+    for i in range(4):
+        guard.set_step(i)
         guard.observe(_call(id=1))
+    guard.set_step(4)
     assert guard.observe({"name": "final_answer", "args": {"answer": "x"}}) is None
     # Counter reset; 4 more tool calls should NOT fire (threshold is 5).
-    for _ in range(4):
+    for i in range(5, 9):
+        guard.set_step(i)
         assert guard.observe(_call(id=1)) is None
+    guard.set_step(9)
     assert guard.observe(_call(id=1)) is not None  # 5th after reset
 
 
 def test_nonconvergence_resets_on_done():
     """done is also terminal."""
     guard = NonConvergenceGuard(thresholds=[3])
+    guard.set_step(0)
     guard.observe(_call(id=1))
+    guard.set_step(1)
     guard.observe(_call(id=2))
+    guard.set_step(2)
     assert guard.observe({"name": "done", "args": {}}) is None  # reset
+    guard.set_step(3)
     assert guard.observe(_call(id=1)) is None
+    guard.set_step(4)
     assert guard.observe(_call(id=1)) is None  # only 2 since reset
 
 
 def test_nonconvergence_gentle_then_detailed():
     guard = NonConvergenceGuard(thresholds=[5, 8])
-    for _ in range(4):
-        assert guard.observe(_call(id=1)) is None
-    gentle = guard.observe(_call(id=1))
+    msg = None
+    for i in range(5):  # steps 0..4 -> count reaches 5 at step 4
+        guard.set_step(i)
+        msg = guard.observe(_call(id=1))
+    gentle = msg
     assert gentle is not None
     assert "several tools" in gentle  # gentle form
-    guard.observe(_call(id=1))  # 6
-    guard.observe(_call(id=1))  # 7
-    detailed = guard.observe(_call(id=1))  # 8
+    detailed = None
+    for i in range(5, 8):  # steps 5..7 -> count 6,7,8
+        guard.set_step(i)
+        detailed = guard.observe(_call(id=1))
+    # step 7 advances count to 8 -> detailed fires
     assert detailed is not None
     assert "8 consecutive" in detailed
 
 
 def test_nonconvergence_reset_clears_counter():
     guard = NonConvergenceGuard(thresholds=[3])
+    guard.set_step(0)
     guard.observe(_call(id=1))
+    guard.set_step(1)
     guard.observe(_call(id=2))
     guard.reset()
+    guard.set_step(0)
     assert guard.observe(_call(id=1)) is None
+    guard.set_step(1)
     assert guard.observe(_call(id=1)) is None  # only 2 since reset
+
+
+def test_nonconvergence_counts_skipped_steps():
+    """If the host loop advances the step between two observe() calls (because a
+    shortcut path skipped observe), the guard must count the skipped steps too.
+    This is the half-duplex adapter scenario: think() is not called every step,
+    so the step delta > 1 must still advance the counter correctly."""
+    guard = NonConvergenceGuard(thresholds=[5])
+    guard.set_step(0)
+    guard.observe(_call(id=1))  # count 1
+    guard.set_step(1)
+    guard.observe(_call(id=1))  # count 2
+    # steps 2,3,4 were shortcut paths (no observe); step jumps to 4
+    guard.set_step(4)
+    guard.observe(_call(id=1))  # count 2 + (4-1) = 5 -> fires
+    assert guard._count == 5
 
 
 def test_nonconvergence_invalid_thresholds():
@@ -234,3 +271,12 @@ def test_nonconvergence_invalid_thresholds():
         NonConvergenceGuard(thresholds=[1])
     with pytest.raises(ValueError):
         NonConvergenceGuard(thresholds=[3, 3])
+
+
+def test_nonconvergence_works_without_set_step():
+    """When set_step is never called (legacy/direct observe), the guard falls
+    back to +1 per observe, preserving the original behavior."""
+    guard = NonConvergenceGuard(thresholds=[3])
+    assert guard.observe(_call(id=1)) is None
+    assert guard.observe(_call(id=1)) is None
+    assert guard.observe(_call(id=1)) is not None  # 3rd
