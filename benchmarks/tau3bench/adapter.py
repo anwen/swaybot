@@ -71,6 +71,12 @@ Retail exchanges/returns/modifications:
 - new_item_ids must be available variant item IDs from get_product_details.
 - payment_method_id must be a valid payment method id from the order's payment_history (e.g. credit_card_9513926). Do not use the literal string "original".
 
+Costs and arithmetic:
+- When the user asks for the total cost of upcoming flights, compute and STATE that total BEFORE you perform any cancellations the user requested. Once you cancel a reservation it is no longer "upcoming", so if you cancel first you will report a reduced, wrong total. Answer the cost question first, then do the cancellations.
+- The total of "upcoming flights" = the booking payment of EVERY reservation whose flights are in the future at the moment the user asks — INCLUDING reservations the user is cancelling in this same conversation. Do NOT exclude them. Example: the user has upcoming reservations A, B, C, D and asks you to cancel A and B and also asks the total cost of upcoming flights → the total is booking(A)+booking(B)+booking(C)+booking(D), all four, computed before you cancel A and B.
+- A reservation's "cost" is its original booking payment — the FIRST entry in its payment_history. When a reservation was upgraded mid-conversation, its payment_history gains a second entry for the surcharge; for total-cost questions use only the booking payment (first entry), never the sum of all entries. Do NOT include modification surcharges (upgrade fees, extra-bag fees) you applied this conversation — those are separate charges.
+- Call the `calculate` tool for any arithmetic over tool data (sums, differences, products). Never state a computed figure you did not calculate with the tool.
+
 Knowledge tasks (banking_knowledge):
 - Limit yourself to at most 2-3 KB_search calls. Synthesize the findings and call final_answer with a concise, helpful answer. Do not keep searching indefinitely.
 - Do not call tools that are not in your available tool list (e.g. get_order_details, get_user_details). If you have KB results, call final_answer.
