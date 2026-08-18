@@ -28,7 +28,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from swaybot.brain import Brain, EchoBrain
-from swaybot.llm_brain import DONE_SCHEMA, FINAL_ANSWER_SCHEMA, LLMBrain
+from swaybot.llm_brain import (
+    DONE_SCHEMA,
+    FINAL_ANSWER_SCHEMA,
+    LLMBrain,
+    _PROSE_TOOL_TAG_RE,
+)
 from swaybot.tools import Tool, ToolRegistry
 
 from ._helpers import (
@@ -82,7 +87,7 @@ Knowledge tasks (banking_knowledge):
 - The `shell` sandbox browses raw knowledge documents via filesystem commands. It is for inspecting a document you cannot get via KB_search — NOT a general-purpose tool, and NOT the way to answer the user. Prefer KB_search_bm25 (ranked retrieval) over `shell`. If you find yourself running `ls`/`cat`/`grep` more than once or twice, stop and use KB_search_bm25 or a transactional tool instead.
 - Limit yourself to at most 2-3 KB_search calls for pure knowledge questions. Synthesize the findings and call final_answer. Do not keep searching indefinitely.
 - Do not call tools that are not in your available tool list (e.g. get_order_details, get_user_details). If you have KB results, call final_answer.
-- For credit-card recommendation tasks, first ask the user for their annual income and whether they have a Rho-Bank+ subscription. Then search for each specific product document using ONLY the exact card name as the KB_search query (e.g., query="Gold Rewards Card"). Compare annual fees, cash back/rewards rates, and foreign transaction fees, then recommend the best-fit personal card and explain why.
+- For credit-card recommendation tasks, first ask the user for their annual income and whether they have a Rho-Bank+ subscription. Then search for each specific product document using ONLY the exact card name as the KB_search query (e.g., query="Gold Rewards Card"). Compare annual fees, cash back/rewards rates, and foreign transaction fees, then recommend the best-fit personal card and explain why. Call `KB_search_bm25` with `k=20` so you see enough candidate documents — the best-fit card is often not bm25's top-3 result.
 - For account-action tasks (referral bonus, email change, card application), first verify the user's identity (get_user_information_by_name/email, then log_verification with two matching pieces), then perform the action (submit_referral, change_user_email, apply_for_credit_card). Do not answer from the knowledge base alone when the user wants you to change something on their account.
 
 Finishing:
@@ -114,6 +119,15 @@ _MAX_SHELL_CALLS: int = 5
 # retrieval tool whose abuse we cap separately.
 _KB_SEARCH_PREFIX = "KB_search"
 _RETRIEVAL_SANDBOX_TOOLS = frozenset({"shell"})
+
+# Under force_final the only tools the model may call are final_answer/done.
+# When it still tries to search, it emits the blocked tool name as *prose
+# without angle brackets* — e.g. "KB_search_bm25 k 20 query personal credit
+# card annual fee" — which _PROSE_TOOL_TAG_RE (which needs ``<...>``) does not
+# match, so think()'s tag-stripper leaves the residue verbatim in the
+# final_answer text. Detect that residue: a final_answer that *starts with* a
+# retrieval tool name is the model attempting a blocked call, not an answer.
+_TOOL_RESIDUE_RE = re.compile(r"^\s*(?:KB_search_\w+|shell)\b", re.IGNORECASE)
 
 
 def _is_kb_search(tool_name: str) -> bool:
@@ -436,6 +450,50 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                     normalized["payment_method_id"] = inferred
         return normalized
 
+    def _collect_kb_content(self, messages: list[dict]) -> str:
+        """Gather ALL accumulated KB_search results from the conversation.
+
+        For multi-document comparison tasks (e.g. "which credit card has the
+        highest cash back") the best-fit document is often in an *earlier*
+        KB_search result, not the most recent one. Using only the last result
+        (``state.last_kb_content``) can drop exactly the card the agent needs
+        to recommend. We therefore walk the full message history, find every
+        ``tool`` message whose matching assistant tool_call was a KB_search,
+        and concatenate their (already-summarized) contents, de-duplicated by
+        text so the same doc returned across searches is not repeated.
+        """
+        seen: set[str] = set()
+        chunks: list[str] = []
+        for idx, msg in enumerate(messages):
+            if msg.get("role") != "tool" or not isinstance(msg.get("content"), str):
+                continue
+            call_id = msg.get("tool_call_id", "")
+            tool_name = ""
+            if call_id:
+                tool_name = self._tool_name_for_call_id(call_id, messages)
+            # Fall back to scanning preceding assistant messages for the id.
+            if not tool_name:
+                for prev in reversed(messages[:idx]):
+                    if prev.get("role") != "assistant":
+                        continue
+                    for tc in prev.get("tool_calls") or []:
+                        if tc.get("id") == call_id:
+                            tool_name = tc.get("function", {}).get("name", "")
+                            break
+                    if tool_name:
+                        break
+            if not _is_kb_search(tool_name):
+                continue
+            text = msg["content"].strip()
+            if not text:
+                continue
+            key = text[:200]
+            if key in seen:
+                continue
+            seen.add(key)
+            chunks.append(text)
+        return "\n\n".join(chunks)
+
     def _synthesize_kb_answer(
         self,
         task: str,
@@ -446,23 +504,36 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         model = getattr(self._brain, "_model", None)
         if model is None:
             return kb_content[:2000] if kb_content else "I'm not sure; please contact support."
+        is_cc_task = any(kw in (task or "").lower() for kw in _CREDIT_CARD_TASK_KEYWORDS)
+        system_prompt = (
+            "You are a helpful banking assistant. Answer the user's question "
+            "using only the provided knowledge-base results. Be concise and direct."
+        )
+        user_prompt = (
+            f"Task context: {task}\n\n"
+            f"User question: {question}\n\n"
+            f"Knowledge-base results:\n{kb_content}\n\n"
+        )
+        if is_cc_task:
+            system_prompt = (
+                "You are a helpful banking assistant. Using ONLY the provided "
+                "knowledge-base results, recommend the single best-fit personal "
+                "credit card for the user's situation and state its key terms "
+                "(annual fee, cash back rate, Rho-Bank+ requirement). "
+                "The user wants the highest cash back and will not accept an "
+                "annual fee unless it is the only option. Name the recommended "
+                "card explicitly by its exact document title (e.g. 'Gold Rewards "
+                "Card'). Be concise and direct."
+            )
+            user_prompt += (
+                "Recommend the best-fit personal credit card by name and give its "
+                "key terms so the user can decide."
+            )
+        else:
+            user_prompt += "Please provide a helpful answer."
         messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a helpful banking assistant. Answer the user's question "
-                    "using only the provided knowledge-base results. Be concise and direct."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Task context: {task}\n\n"
-                    f"User question: {question}\n\n"
-                    f"Knowledge-base results:\n{kb_content}\n\n"
-                    "Please provide a helpful answer."
-                ),
-            },
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
         ]
         try:
             raw = model.generate(messages, tools=None)
@@ -476,15 +547,37 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
 
     @staticmethod
     def _summarize_kb_search(content: str) -> str:
-        """Compress KB_search results to the top few document summaries.
+        """Compress KB_search results to compact per-document summaries.
 
-        Full KB_search returns can be thousands of characters.  We keep only the
-        first few results (title + first substantive content line) so the model
-        still gets the relevant facts without drowning in text.
+        Full KB_search returns up to 20 documents, each potentially thousands
+        of characters — far too much for the model's context window. We keep a
+        compact summary of every returned document (title + the first few
+        substantive content lines) rather than only the top 3, because for
+        multi-document compare tasks (e.g. "which credit card has the highest
+        cash back") the relevant document is often NOT among bm25's top 3 — it
+        may rank 4th-8th and would be silently dropped, leaving the agent unable
+        to find the card it needs to recommend.
+
+        We keep every entry but cap each entry's snippet so total size stays
+        bounded; a trailing note records how many results were returned.
+
+        In addition to the first few lines, we ALWAYS keep lines that carry the
+        comparison-critical banking terms (cash back, annual fee, rewards rate,
+        foreign transaction fee, Rho-Bank+ requirement, APY). These terms often
+        appear a few lines into a document (after eligibility/credit-score
+        boilerplate), so a naive first-N truncation drops exactly the figures
+        the agent needs to compare cards — which caused the agent to see the
+        Gold Rewards Card as "cash back not specified" and recommend the wrong
+        card.
         """
         entries = re.split(r"\n(?=\d+\.\s)", content.strip())
         kept: list[str] = []
-        for entry in entries[:3]:
+        _SNIPPET_LINES = 3
+        _KEY_TERM_RE = re.compile(
+            r"(?i)cash\s*back|annual\s*fee|rewards?\s*rate|foreign\s*transaction"
+            r"|rho[\s\-]*bank\s*\+|subscription\s*required|apy"
+        )
+        for entry in entries:
             entry = entry.strip()
             if not entry:
                 continue
@@ -500,11 +593,24 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                     for line in content_match.group(1).splitlines()
                     if line.strip()
                 ]
-                snippet = "\n".join(lines[:3]) if lines else ""
+                # Keep the first _SNIPPET_LINES for context, plus EVERY line
+                # carrying a comparison-critical term, de-duplicated, in order.
+                selected: list[str] = []
+                seen: set[str] = set()
+                for line in lines:
+                    if len(selected) < _SNIPPET_LINES or _KEY_TERM_RE.search(line):
+                        if line not in seen:
+                            seen.add(line)
+                            selected.append(line)
+                snippet = "\n".join(selected) if selected else ""
             kept.append(f"{title}\n{snippet}" if snippet else title)
         note = ""
-        if len(entries) > 3:
-            note = f"\n\n...[showing 3 of {len(entries)} KB results]"
+        total = len(entries)
+        shown = len(kept)
+        if total and shown < total:
+            note = f"\n\n...[showing {shown} of {total} KB results]"
+        elif total:
+            note = f"\n\n[showing all {total} KB results]"
         return "\n\n".join(kept) + note
 
     @staticmethod
@@ -754,21 +860,37 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         # override the action and answer from the KB result we already have.
         # ------------------------------------------------------------------
         tool_name = action.get("name", "")
-        if state.force_final and tool_name not in ("final_answer", "done"):
-            question = ""
-            for msg in reversed(state.messages):
-                if msg.get("role") == "user":
-                    question = msg.get("content", "")
-                    break
-            kb_content = state.last_kb_content or ""
-            if not kb_content:
+        # When the KB budget is exhausted, the model often keeps emitting
+        # retrieval intent — either as a native tool call the model shouldn't
+        # be making anymore, or as prose carrying tool-call syntax. Two prose
+        # shapes occur:
+        #   (a) angle-bracket tags like "<KB_search_bm25 query=...>" that
+        #       think() rewrote into a final_answer — caught by
+        #       _PROSE_TOOL_TAG_RE;
+        #   (b) bracket-less residue like "KB_search_bm25 k 20 query ..."
+        #       produced when think()'s tag-stripper removed the brackets but
+        #       left the inner attribute words — caught by _TOOL_RESIDUE_RE
+        #       (a final_answer whose text *starts with* a retrieval tool
+        #       name is an attempted blocked call, not an answer).
+        # In all cases the model's own text is NOT a real answer, so override
+        # it and synthesize a proper answer from the KB results we already
+        # have.
+        if state.force_final:
+            answer_text = action.get("args", {}).get("answer", "") if isinstance(action.get("args"), dict) else ""
+            wants_tool = tool_name not in ("final_answer", "done") or bool(
+                _PROSE_TOOL_TAG_RE.search(answer_text)
+                or _TOOL_RESIDUE_RE.search(answer_text)
+            )
+            if wants_tool:
+                question = ""
                 for msg in reversed(state.messages):
-                    if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
-                        kb_content = msg["content"]
+                    if msg.get("role") == "user":
+                        question = msg.get("content", "")
                         break
-            answer = self._synthesize_kb_answer(self._task, question, kb_content)
-            action = {"name": "final_answer", "args": {"answer": answer}}
-            tool_name = "final_answer"
+                kb_content = self._collect_kb_content(state.messages)
+                answer = self._synthesize_kb_answer(self._task, question, kb_content)
+                action = {"name": "final_answer", "args": {"answer": answer}}
+                tool_name = "final_answer"
 
         # ------------------------------------------------------------------
         # Convert SwayBot action back into a tau2 AssistantMessage.

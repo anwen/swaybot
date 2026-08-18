@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 from .brain import ReasoningCallback, StreamCallback
@@ -6,6 +7,15 @@ from .loop_guards import NonConvergenceGuard, RepeatCallGuard
 from .models import FallbackModel, Model, OpenAIModel
 from .parsing import parse_exploration_response, strip_markdown_fences
 from .prompts import render_prompt
+
+# Matches prose-embedded tool tags the model emits instead of native tool
+# calls, e.g. ``<KB_search_bm25 query="gold card">``. Used to strip such tags
+# from prose that is about to be sent to the user as a final_answer (so the
+# user never sees raw tool-call syntax). Kept in sync with Variant 3 in
+# _extract_tool_call: any ``<Name ...>`` / ``<Name .../>`` / ``</Name>`` tag.
+_PROSE_TOOL_TAG_RE = re.compile(
+    r"</?[A-Za-z_][\w-]*(?:\s+[^<>]*?)?\s*/?>", re.DOTALL
+)
 
 
 # Schemas for the control tools used to finish a task.  These are injected into
@@ -164,6 +174,15 @@ class LLMBrain:
             prose = raw.strip()
             if len(prose) > 4000:
                 prose = prose[:4000]
+            # If the prose contains tool-call tags the model meant to invoke
+            # (e.g. "<KB_search_bm25 query=...>") but couldn't because the tool
+            # wasn't available this turn (force_final / text mode), those tags
+            # are not part of the answer to the user — strip them so the user
+            # never sees raw tool syntax. The surrounding prose is kept.
+            if _PROSE_TOOL_TAG_RE.search(prose):
+                stripped = _strip_prose_tool_tags(prose)
+                if stripped.strip():
+                    prose = stripped.strip()
             action = {"name": "final_answer", "args": {"answer": prose}}
         # Observe the FINAL action (after any rewrite) so the repeat guard sees
         # what the agent actually commits to, and can produce a notice for the
@@ -375,6 +394,21 @@ def _parse_tag_attrs(attr_text: str) -> dict[str, Any]:
         )
         args[m.group(1)] = value if value is not None else ""
     return args
+
+
+def _strip_prose_tool_tags(prose: str) -> str:
+    """Remove prose-embedded tool tags (``<ToolName ...>`` / ``</ToolName>``)
+    from a string, collapsing the gaps they leave so the surrounding text
+    stays readable. Used when prose carrying such tags is about to be sent to
+    the user as a final_answer (the tags are tool-call syntax, not an answer).
+
+    Leaves any text the model wrote around the tags intact.
+    """
+    cleaned = _PROSE_TOOL_TAG_RE.sub(" ", prose)
+    # Collapse runs of whitespace left by the removal.
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n[ \t]+", "\n", cleaned)
+    return cleaned.strip()
 
 
 def _parse_action(

@@ -958,3 +958,55 @@ def test_llm_brain_uses_env_variables(mock_openai, monkeypatch):
     assert brain.api_key == "env-key"
     assert brain.base_url == "http://env/v1"
     assert brain.model == "env-model"
+
+
+def test_strip_prose_tool_tags_removes_tags_keeps_text():
+    """_strip_prose_tool_tags must remove tool-call tags from prose while
+    keeping the surrounding text the model wrote for the user."""
+    from swaybot.llm_brain import _strip_prose_tool_tags
+
+    p = "Let me search. <KB_search_bm25 k=20 query=\"Gold Rewards Card\"> done."
+    out = _strip_prose_tool_tags(p)
+    assert "<" not in out and ">" not in out
+    assert "Let me search" in out and "done" in out
+    assert "KB_search" not in out
+
+    # pure prose unchanged
+    assert _strip_prose_tool_tags("Gold Rewards Card has 2.5% cash back.") == \
+        "Gold Rewards Card has 2.5% cash back."
+
+    # only tags -> empty
+    assert _strip_prose_tool_tags("<KB_search_bm25 query=\"x\">") == ""
+
+
+def test_think_strips_tool_tags_from_prose_final_answer():
+    """When the model returns prose carrying a tool tag (because the tool
+    wasn't available, e.g. under force_final) and think() rewrites it to a
+    final_answer, the raw tool syntax must be stripped so the user never sees
+    '<KB_search_bm25 query=...>' as part of the answer."""
+    backend = MagicMock()
+    backend.supports_tools = True
+    backend.generate.return_value = (
+        "Let me search for that. <KB_search_bm25 k=20 query=\"Gold Rewards Card\">"
+    )
+    brain = LLMBrain(backend=backend)
+
+    schemas = [
+        {"name": "final_answer", "parameters": {"type": "object"}},
+        {"name": "done", "parameters": {"type": "object"}},
+    ]
+    # force_final-like state: only final_answer/done available
+    action = brain.think(
+        {
+            "task": "recommend a card",
+            "step": 0,
+            "max_steps": 10,
+            "history": [],
+            "tool_descriptions": schemas,
+        },
+        ["final_answer", "done"],
+    )
+    assert action["name"] == "final_answer"
+    answer = action["args"]["answer"]
+    assert "<KB_search" not in answer
+    assert "Let me search" in answer

@@ -763,3 +763,147 @@ class TestBFCLServer:
         assert server.build_registry is build_registry
         assert server.extract_task is extract_task
         assert server.messages_to_history is messages_to_history
+
+
+def test_summarize_kb_search_keeps_all_entries():
+    """_summarize_kb_search must preserve ALL returned documents (not just the
+    top 3) — for multi-doc compare tasks the relevant card is often ranked 4th+,
+    and dropping it leaves the agent unable to find the card to recommend."""
+    from benchmarks.tau3bench.adapter import SwayBotHalfDuplexAgent as A
+
+    content = """1. Gold Card
+   ID: doc_gold
+   Score: 10.0
+   Content: - Cash back: 2.5%
+
+2. Silver Card
+   ID: doc_silver
+   Score: 9.0
+   Content: - Cash back: 1.0%
+
+3. Bronze Card
+   ID: doc_bronze
+   Score: 8.0
+   Content: - Cash back: 0.5%
+
+4. Platinum Card
+   ID: doc_plat
+   Score: 7.0
+   Content: - Cash back: 0.1%"""
+    out = A._summarize_kb_search(content)
+    assert "Platinum" in out  # was dropped when only top 3 kept
+    assert "Gold" in out and "Silver" in out and "Bronze" in out
+    assert "4 KB results" in out
+
+
+def test_tool_residue_re_catches_bracketless_tool_prose():
+    """Under force_final the model emits the blocked tool name as bracket-less
+    prose (e.g. "KB_search_bm25 k 20 query ...") — _PROSE_TOOL_TAG_RE needs
+    angle brackets and misses it, so _TOOL_RESIDUE_RE must catch a
+    final_answer whose text *starts with* a retrieval tool name."""
+    from benchmarks.tau3bench.adapter import _TOOL_RESIDUE_RE
+
+    residue_lines = [
+        "KB_search_bm25 k 20 query Bronze Rewards Card Diamond Elite Card personal",
+        "KB_search_bm25 query personal credit card annual fee cash back rate k 20",
+        "  KB_search_dense query Gold Rewards Card",  # leading whitespace
+        "shell ls /documents/credit_cards",  # shell residue
+    ]
+    for line in residue_lines:
+        assert _TOOL_RESIDUE_RE.search(line), f"missed residue: {line!r}"
+
+    real_answers = [
+        "Based on the Gold Rewards Card: 2.5% cash back, $0 annual fee. I recommend it.",
+        "I recommend the Gold Rewards Card because it offers the best cash back rate.",
+        "The KB_search_bm25 tool returns ranked documents.",  # tool name not at start
+    ]
+    for line in real_answers:
+        assert not _TOOL_RESIDUE_RE.search(line), f"false positive: {line!r}"
+
+
+def test_collect_kb_content_gathers_all_kb_results_not_just_last():
+    """_collect_kb_content must walk the whole conversation and gather every
+    KB_search tool result, not just the most recent one — for multi-card
+    compare tasks the best-fit card is often in an earlier search result."""
+    from benchmarks.tau3bench.adapter import SwayBotHalfDuplexAgent as A
+
+    # A minimal agent instance — _collect_kb_content only uses
+    # _tool_name_for_call_id (which reads self._tool_call_names; set it empty
+    # so the method falls back to scanning the conversation messages).
+    agent = A.__new__(A)
+    agent._tool_call_names = {}
+
+    messages = [
+        {"role": "user", "content": "which credit card?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "KB_search_bm25", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "Gold Rewards Card: 2.5% cash back"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {"name": "KB_search_bm25", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_2", "content": "Silver Rewards Card: 1.0% cash back"},
+        # A non-KB tool result must be excluded.
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_3",
+                    "type": "function",
+                    "function": {"name": "get_user_details", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_3", "content": "user data"},
+        # A duplicate of call_1 must be de-duplicated.
+        {"role": "tool", "tool_call_id": "call_1", "content": "Gold Rewards Card: 2.5% cash back"},
+    ]
+    out = agent._collect_kb_content(messages)
+    assert "Gold Rewards Card" in out
+    assert "Silver Rewards Card" in out
+    assert "user data" not in out  # non-KB tool excluded
+    # De-duplication: Gold content appears only once.
+    assert out.count("Gold Rewards Card: 2.5% cash back") == 1
+
+
+
+def test_summarize_kb_search_preserves_key_terms():
+    """_summarize_kb_search must keep comparison-critical lines (cash back,
+    annual fee, etc.) even when they fall beyond the first 3 content lines —
+    a naive first-N truncation dropped Gold's "$0 annual fee / 2.5% cash back"
+    and caused the agent to recommend the wrong card."""
+    from benchmarks.tau3bench.adapter import SwayBotHalfDuplexAgent as A
+
+    content = """1. Gold Rewards Card: Apply for a Premium Credit Card
+   ID: doc_gold
+   Score: 13.3
+   Content: ## Eligibility and Key Terms
+- Minimum credit score required: $720
+- Rho-Bank+ premium subscription required: Yes
+- Annual fee: $0.00
+- Cash back on all purchases: 2.5%
+- APR on carried balances: 17.99%
+- Foreign transaction fee: 0%
+- Late payment fee: $32.50"""
+    out = A._summarize_kb_search(content)
+    assert "Annual fee: $0.00" in out
+    assert "Cash back on all purchases: 2.5%" in out
+    assert "Foreign transaction fee: 0%" in out
+    assert "Rho-Bank+" in out or "Rho‑Bank+" in out
