@@ -302,6 +302,21 @@ class TestTau3BenchHelpers:
         twice = augment_tool_error("foo", once, params)
         assert once == twice
 
+    def test_is_kb_search_matches_variant_names(self):
+        """The banking_knowledge 'alltools' variant exposes KB_search_bm25 /
+        KB_search_dense, not bare 'KB_search'. The family check must catch all
+        of them so the force-final / exhaustion logic actually fires."""
+        from benchmarks.tau3bench.adapter import _is_kb_search
+
+        assert _is_kb_search("KB_search") is True
+        assert _is_kb_search("KB_search_bm25") is True
+        assert _is_kb_search("KB_search_dense") is True
+        # Non-KB tools must NOT match (the original bug: shell browsing ran
+        # unchecked because the name check was an exact == "KB_search").
+        assert _is_kb_search("shell") is False
+        assert _is_kb_search("get_reservation_details") is False
+        assert _is_kb_search("") is False
+
     def test_normalize_tool_args_reverse_alias_payment_method_id(self):
         """Airline wants payment_id; model emits payment_method_id → remapped."""
         from benchmarks.tau3bench._helpers import normalize_tool_args

@@ -78,9 +78,12 @@ Costs and arithmetic:
 - Call the `calculate` tool for any arithmetic over tool data (sums, differences, products). Never state a computed figure you did not calculate with the tool.
 
 Knowledge tasks (banking_knowledge):
-- Limit yourself to at most 2-3 KB_search calls. Synthesize the findings and call final_answer with a concise, helpful answer. Do not keep searching indefinitely.
+- Some banking_knowledge tasks are pure knowledge questions (answer from KB_search); others are transactional (verify identity, then apply_for_credit_card / submit_referral / change_user_email). Read the user's request: if they want you to TAKE AN ACTION on their account, use the transactional tools, not just KB_search.
+- The `shell` sandbox browses raw knowledge documents via filesystem commands. It is for inspecting a document you cannot get via KB_search — NOT a general-purpose tool, and NOT the way to answer the user. Prefer KB_search_bm25 (ranked retrieval) over `shell`. If you find yourself running `ls`/`cat`/`grep` more than once or twice, stop and use KB_search_bm25 or a transactional tool instead.
+- Limit yourself to at most 2-3 KB_search calls for pure knowledge questions. Synthesize the findings and call final_answer. Do not keep searching indefinitely.
 - Do not call tools that are not in your available tool list (e.g. get_order_details, get_user_details). If you have KB results, call final_answer.
 - For credit-card recommendation tasks, first ask the user for their annual income and whether they have a Rho-Bank+ subscription. Then search for each specific product document using ONLY the exact card name as the KB_search query (e.g., query="Gold Rewards Card"). Compare annual fees, cash back/rewards rates, and foreign transaction fees, then recommend the best-fit personal card and explain why.
+- For account-action tasks (referral bonus, email change, card application), first verify the user's identity (get_user_information_by_name/email, then log_verification with two matching pieces), then perform the action (submit_referral, change_user_email, apply_for_credit_card). Do not answer from the knowledge base alone when the user wants you to change something on their account.
 
 Finishing:
 - When the task is complete, call final_answer with the answer for the user, then call done.
@@ -93,8 +96,29 @@ Finishing:
 _MAX_CONTEXT_CHARS: int = 8000
 _MAX_CONTEXT_MESSAGES: int = 14
 
-# Cap open-ended KB_search loops.
-_MAX_KB_SEARCH_CALLS: int = 3
+# Cap open-ended KB_search loops. Multi-document banking tasks (e.g. compare
+# 4 credit cards) legitimately need several KB_search calls, so the cap must be
+# high enough not to truncate a valid comparison while still preventing runaway
+# search. Force-final only kicks in at the cap, NOT after every KB result.
+_MAX_KB_SEARCH_CALLS: int = 8
+# Cap shell-sandbox browsing in banking_knowledge (the "alltools" variant).
+_MAX_SHELL_CALLS: int = 5
+
+# tau2's banking_knowledge "alltools" retrieval variant exposes the knowledge
+# tools under variant-specific names: ``KB_search_bm25`` / ``KB_search_dense``
+# (and a ``shell`` sandbox). The adapter's force-final / exhaustion logic and
+# result summarization key on the *family* "KB_search", so we treat any tool
+# whose name starts with that prefix as a knowledge-base search. ``shell`` is
+# a retrieval-sandbox tool (browse KB docs via filesystem commands), not a
+# general shell — it must NOT be counted as a knowledge search, but it is a
+# retrieval tool whose abuse we cap separately.
+_KB_SEARCH_PREFIX = "KB_search"
+_RETRIEVAL_SANDBOX_TOOLS = frozenset({"shell"})
+
+
+def _is_kb_search(tool_name: str) -> bool:
+    """True for any KB_search-family tool (KB_search, KB_search_bm25, ...)."""
+    return bool(tool_name) and tool_name.startswith(_KB_SEARCH_PREFIX)
 
 
 _CREDIT_CARD_TASK_KEYWORDS = (
@@ -274,7 +298,7 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             call_id = getattr(message, "id", "") or ""
             tool_name = self._tool_name_for_call_id(call_id, conversation_messages)
             content = extract_message_content(message)
-            if tool_name == "KB_search" and isinstance(content, str):
+            if _is_kb_search(tool_name) and isinstance(content, str):
                 content = self._summarize_kb_search(content)
             else:
                 content = summarize_tool_content(tool_name, content)
@@ -605,11 +629,10 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                 )
                 for tm in message.tool_messages
             }
-            if "KB_search" in incoming_tool_names:
-                incoming_tool_name = "KB_search"
-        if incoming_tool_name == "KB_search":
+            if any(_is_kb_search(n) for n in incoming_tool_names):
+                incoming_tool_name = _KB_SEARCH_PREFIX
+        if _is_kb_search(incoming_tool_name):
             state.kb_search_count += 1
-            state.force_final = True
             # Remember the (already summarized) KB content for final-answer synthesis.
             last_tool_content = ""
             for msg in reversed(state.messages):
@@ -638,7 +661,16 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             for msg in state.messages
             if msg.get("role") == "assistant"
             and any(
-                tc.get("function", {}).get("name") == "KB_search"
+                _is_kb_search(tc.get("function", {}).get("name", ""))
+                for tc in (msg.get("tool_calls") or [])
+            )
+        )
+        shell_calls = sum(
+            1
+            for msg in state.messages
+            if msg.get("role") == "assistant"
+            and any(
+                tc.get("function", {}).get("name", "") in _RETRIEVAL_SANDBOX_TOOLS
                 for tc in (msg.get("tool_calls") or [])
             )
         )
@@ -651,11 +683,42 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                 "helpful answer now."
             )
         elif kb_calls >= _MAX_KB_SEARCH_CALLS:
+            # Hit the KB_search cap: stop searching and synthesize from what we have.
+            state.force_final = True
             behavior_guidance = (
                 behavior_guidance
-                + "\n\nYou have already searched the knowledge base enough. "
+                + "\n\nYou have searched the knowledge base enough times. "
                 "Do NOT call KB_search again. Synthesize what you found and "
                 "call final_answer with a concise answer now."
+            )
+        elif shell_calls >= _MAX_SHELL_CALLS:
+            # The banking_knowledge "alltools" variant includes a `shell` sandbox
+            # for browsing KB documents. A weak model can waste dozens of steps
+            # `ls`/`cat`/`grep`-ing the document directory. Hard-stop further
+            # shell calls by nudging toward the proper transactional tools and
+            # KB_search instead of forcing a premature final_answer (banking tasks
+            # often need log_verification / submit_referral, not just a KB answer).
+            behavior_guidance = (
+                behavior_guidance
+                + "\n\nYou have used the shell sandbox enough. STOP calling shell. "
+                "The shell sandbox is only for browsing knowledge documents; "
+                "it is NOT the way to answer the user. If you need account data, "
+                "use the transactional tools (get_user_information_by_name/email, "
+                "log_verification, get_referrals_by_user, submit_referral, etc.). "
+                "If you need knowledge documents, use KB_search_bm25. Now decide "
+                "the next concrete action toward the user's request."
+            )
+        elif shell_calls >= 2 and kb_calls == 0:
+            # Early shell-browsing without any KB_search yet: nudge toward the
+            # proper retrieval tool instead of letting the model grep raw docs.
+            behavior_guidance = (
+                behavior_guidance
+                + "\n\nYou are browsing documents with the shell sandbox. "
+                "The shell is for inspecting knowledge documents only, not for "
+                "answering the user. If you need a knowledge document, use "
+                "KB_search_bm25 with the exact product/topic name as the query. "
+                "If you need account data, use the transactional tools "
+                "(get_user_information_by_name, log_verification, etc.)."
             )
 
         # ------------------------------------------------------------------

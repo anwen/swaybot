@@ -744,6 +744,94 @@ def test_extract_tool_call_numeric_parameter():
     assert action == {"name": "add", "args": {"a": "3", "b": "4"}}
 
 
+def test_extract_tool_call_prose_tag_quoted():
+    """Variant 3: a known tool emitted as a prose tag <ToolName key="value">
+    (glm-5.1-fp8 does this for retrieval tools instead of a native tool_call)
+    must be recovered as a real action when available_tools is provided."""
+    from swaybot.llm_brain import _extract_tool_call
+
+    tools = ["KB_search_bm25", "final_answer"]
+    action = _extract_tool_call('<KB_search_bm25 query="Gold Rewards Card">', tools)
+    assert action == {"name": "KB_search_bm25", "args": {"query": "Gold Rewards Card"}}
+
+
+def test_extract_tool_call_prose_tag_self_closing():
+    from swaybot.llm_brain import _extract_tool_call
+
+    tools = ["KB_search_bm25"]
+    action = _extract_tool_call('<KB_search_bm25 query="x"/>', tools)
+    assert action == {"name": "KB_search_bm25", "args": {"query": "x"}}
+
+
+def test_extract_tool_call_prose_tag_multiple_takes_first():
+    """The model often emits several prose tags per turn; the brain processes
+    one action per turn, so we take the first registered-tool tag."""
+    from swaybot.llm_brain import _extract_tool_call
+
+    tools = ["KB_search_bm25"]
+    raw = '<KB_search_bm25 query="Bronze"><KB_search_bm25 query="Silver">'
+    action = _extract_tool_call(raw, tools)
+    assert action == {"name": "KB_search_bm25", "args": {"query": "Bronze"}}
+
+
+def test_extract_tool_call_prose_tag_unknown_name_ignored():
+    """Arbitrary HTML/markdown tags must NOT be misparsed as tool calls."""
+    from swaybot.llm_brain import _extract_tool_call
+
+    tools = ["KB_search_bm25"]
+    assert _extract_tool_call('<div class="foo">bar</div>', tools) is None
+
+
+def test_extract_tool_call_prose_tag_requires_available_tools():
+    """In text mode (no available_tools) prose tags are left untouched so they
+    fall through to the echo/final_answer path rather than being guessed."""
+    from swaybot.llm_brain import _extract_tool_call
+
+    assert _extract_tool_call('<KB_search_bm25 query="x">') is None
+
+
+def test_parse_action_recovers_prose_tool_tag():
+    """End-to-end: _parse_action with available_tools turns a prose tool tag
+    into a real action; without available_tools it falls back to echo."""
+    from swaybot.llm_brain import _parse_action
+
+    tools = ["KB_search_bm25", "final_answer"]
+    perception = {"step": 0, "max_steps": 10}
+    action = _parse_action('<KB_search_bm25 query="Gold">', perception, tools)
+    assert action == {"name": "KB_search_bm25", "args": {"query": "Gold"}}
+
+    # No available_tools -> not misparsed -> fallback echo carries the raw tag.
+    fallback = _parse_action('<KB_search_bm25 query="Gold">', perception)
+    assert fallback["name"] == "echo"
+
+
+def test_think_recovers_prose_tool_tag_as_real_call():
+    """think() must turn prose tool tags into a real tool action (not a
+    final_answer echo), so the agent actually executes the search instead of
+    looping on the echoed tags."""
+    backend = MagicMock()
+    backend.supports_tools = True
+    backend.generate.return_value = '<KB_search_bm25 query="Gold Rewards Card">'
+    brain = LLMBrain(backend=backend)
+
+    schemas = [
+        {"name": "KB_search_bm25", "parameters": {"type": "object"}},
+        {"name": "final_answer", "parameters": {"type": "object"}},
+    ]
+    action = brain.think(
+        {
+            "task": "find a card",
+            "step": 0,
+            "max_steps": 10,
+            "history": [],
+            "tool_descriptions": schemas,
+        },
+        ["KB_search_bm25", "final_answer"],
+    )
+    assert action["name"] == "KB_search_bm25"
+    assert action["args"]["query"] == "Gold Rewards Card"
+
+
 def test_llm_brain_repeat_guard_name_only_notices_rotating_calls():
     """The brain-level guard must fire a notice when the SAME tool name is
     called repeatedly with DIFFERENT arguments (the airline task-7 pattern),

@@ -152,7 +152,7 @@ class LLMBrain:
                 message = f"{message}: {error_detail}"
             action = _fallback(perception, message)
         else:
-            action = _parse_action(raw, perception)
+            action = _parse_action(raw, perception, available_tools)
         # If the model returned prose instead of a tool call, treat the prose as
         # the final answer rather than echo-truncating it.  This commonly happens
         # with reasoning models: reasoning tokens exhaust the output budget so
@@ -279,37 +279,62 @@ def _merge_metadata(target: dict | None, source: dict) -> None:
         target.update(source)
 
 
-def _extract_tool_call(raw: str) -> dict[str, Any] | None:
+def _extract_tool_call(
+    raw: str, available_tools: list[str] | None = None
+) -> dict[str, Any] | None:
     """Normalize Qwen/DeepSeek-style XML tool calls into JSON actions.
 
     Models fine-tuned for ``<tool_call>`` formatting sometimes emit either
     ``<tool_call>{"name": ..., "args": ...}</tool_call>`` or a nested
     ``<function=name><parameter=key>value</parameter>...</function>`` block.
     We convert both into SwayBot's standard ``{"name": ..., "args": ...}``.
+
+    A third variant is ``<ToolName key="value">`` prose tags: some models
+    (notably glm-5.1-fp8 on retrieval tools) emit a known tool name directly
+    as an XML-like tag instead of a native tool_call. When ``available_tools``
+    is provided we recognize such tags ONLY for names that are actually
+    registered tools, so ordinary HTML/markdown prose is not misparsed.
     """
     text = raw.strip()
-    if not text.startswith("<") or "tool_call" not in text:
+    if not text.startswith("<"):
         return None
 
-    # Variant 1: <tool_call> { "name": "...", "args": {...} } </tool_call>
-    stripped = text
-    for tag in ("<tool_call>", "</tool_call>", "<tool_call>", "</tool_call>"):
-        stripped = stripped.replace(tag, "")
-    stripped = stripped.strip()
-    try:
-        data = json.loads(stripped)
-        if isinstance(data, dict) and "name" in data:
-            return {"name": data["name"], "args": data.get("args", {})}
-    except json.JSONDecodeError:
-        pass
-
-    # Variant 2: <function=name><parameter=key>value</parameter>...</function>
     import re
 
+    # Variant 1: <tool_call> { "name": "...", "args": {...} } </tool_call>
+    if "tool_call" in text:
+        stripped = text
+        for tag in ("<tool_call>", "</tool_call>", "<tool_call>", "</tool_call>"):
+            stripped = stripped.replace(tag, "")
+        stripped = stripped.strip()
+        try:
+            data = json.loads(stripped)
+            if isinstance(data, dict) and "name" in data:
+                return {"name": data["name"], "args": data.get("args", {})}
+        except json.JSONDecodeError:
+            pass
+
+    # Variant 2: <function=name><parameter=key>value</parameter>...</function>
     func_match = re.search(r"<function=([^>\s]+)>", text)
-    if not func_match:
-        return None
-    name = func_match.group(1)
+    if func_match:
+        return _parse_function_tag(text, func_match.group(1))
+
+    # Variant 3: <ToolName key="value">  (prose-embedded tool tag). Only
+    # recognized when the tag name is a registered tool, so arbitrary HTML is
+    # left untouched. The model often emits several such tags per turn; we
+    # take the first (the brain processes one action per turn).
+    if available_tools:
+        tool_set = set(available_tools)
+        for m in re.finditer(r"<([A-Za-z_][\w-]*)((\s+[^<>]*?)?)\s*/?>", text):
+            name = m.group(1)
+            if name in tool_set:
+                return {"name": name, "args": _parse_tag_attrs(m.group(2))}
+    return None
+
+
+def _parse_function_tag(text: str, name: str) -> dict[str, Any]:
+    import re
+
     args: dict[str, Any] = {}
     for param_match in re.finditer(
         r"<parameter=([^>\s]+)>\s*(.*?)\s*</parameter>", text, re.DOTALL
@@ -336,12 +361,30 @@ def _extract_tool_call(raw: str) -> dict[str, Any] | None:
     return {"name": name, "args": args}
 
 
-def _parse_action(raw: str, perception: dict) -> dict[str, Any]:
+def _parse_tag_attrs(attr_text: str) -> dict[str, Any]:
+    """Parse ``key="value"`` / ``key='value'`` / ``key=value`` attributes from
+    a prose tool tag like ``<KB_search query="gold card">``. Bare (quoteless)
+    values run to the next whitespace; quoted values may contain spaces."""
+    import re
+
+    args: dict[str, Any] = {}
+    pattern = r'''(\w[\w-]*)\s*=\s*("([^"]*)"|'([^']*)'|(\S+))'''
+    for m in re.finditer(pattern, attr_text):
+        value = m.group(3) if m.group(3) is not None else (
+            m.group(4) if m.group(4) is not None else m.group(5)
+        )
+        args[m.group(1)] = value if value is not None else ""
+    return args
+
+
+def _parse_action(
+    raw: str, perception: dict, available_tools: list[str] | None = None
+) -> dict[str, Any]:
     raw = strip_markdown_fences(raw)
 
     # Some Qwen/DeepSeek-style models emit tool calls in XML tags even in
     # text mode. Try to normalize those into the standard JSON action shape.
-    tool_action = _extract_tool_call(raw)
+    tool_action = _extract_tool_call(raw, available_tools)
     if tool_action is not None:
         return tool_action
 
