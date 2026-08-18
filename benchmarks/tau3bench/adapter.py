@@ -448,6 +448,20 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                 inferred = self._order_payment_methods.get(lookup_order_id)
                 if inferred:
                     normalized["payment_method_id"] = inferred
+
+        # Force KB_search family tools to retrieve enough documents. The model
+        # often calls KB_search_bm25 with a small k (5 or 10) despite guidance
+        # to use k=20, and for multi-document compare tasks the best-fit
+        # document (e.g. the personal Gold Rewards Card) routinely ranks 14th+
+        # — a small k silently drops it, leaving the agent unable to find the
+        # card it must recommend. Clamp k up to 20 for any KB_search call.
+        if _is_kb_search(tool_name):
+            try:
+                k_val = int(normalized.get("k", 0) or 0)
+            except (TypeError, ValueError):
+                k_val = 0
+            if k_val < 20:
+                normalized["k"] = 20
         return normalized
 
     def _collect_kb_content(self, messages: list[dict]) -> str:

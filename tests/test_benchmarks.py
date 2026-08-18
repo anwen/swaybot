@@ -907,3 +907,39 @@ def test_summarize_kb_search_preserves_key_terms():
     assert "Cash back on all purchases: 2.5%" in out
     assert "Foreign transaction fee: 0%" in out
     assert "Rho-Bank+" in out or "Rho‑Bank+" in out
+
+
+def test_normalize_tool_args_clamps_kb_search_k_to_20():
+    """KB_search calls with small k silently drop rank-14+ docs (the personal
+    Gold Rewards Card routinely ranks 14th-18th). Clamp k up to 20 so the
+    best-fit card is always retrieved, regardless of what k the model passed."""
+    from benchmarks.tau3bench.adapter import SwayBotHalfDuplexAgent as A
+    from swaybot.tools import Tool, ToolRegistry
+
+    agent = A.__new__(A)
+    agent._tool_call_names = {}
+    agent._tau2_tools = {}
+    reg = ToolRegistry()
+    t = Tool(
+        name="KB_search_bm25",
+        description="search",
+        inputs={
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "k": {"type": "integer", "default": 10}},
+            "required": ["query"],
+        },
+        output_type="string",
+        fn=lambda **k: "",
+    )
+    reg.register("KB_search_bm25", t)
+    agent._registry = reg
+
+    # Small / missing / stringified k is clamped up to 20.
+    assert agent._normalize_tool_args("KB_search_bm25", {"query": "gold", "k": 5})["k"] == 20
+    assert agent._normalize_tool_args("KB_search_bm25", {"query": "gold", "k": 10})["k"] == 20
+    assert agent._normalize_tool_args("KB_search_bm25", {"query": "gold"})["k"] == 20
+    assert agent._normalize_tool_args("KB_search_bm25", {"query": "gold", "k": "5"})["k"] == 20
+    assert agent._normalize_tool_args("KB_search_bm25", {"query": "gold", "k": "abc"})["k"] == 20
+    # k >= 20 is left unchanged.
+    assert agent._normalize_tool_args("KB_search_bm25", {"query": "gold", "k": 20})["k"] == 20
+    assert agent._normalize_tool_args("KB_search_bm25", {"query": "gold", "k": 50})["k"] == 50
