@@ -27,7 +27,7 @@ def test_event_sequence_for_echo_run():
     assert isinstance(events[0], RunBegin)
     assert events[0].task == "count"
     assert events[0].max_steps == 2
-    assert events[-1] == RunEnd(steps=2, done=True, reflections=[])
+    assert events[-1] == RunEnd(steps=2, done=True, status="finished", reflections=[])
     body = events[1:-1]
     # Each step is a StepBegin/StepEnd pair with matching, 1-based numbers.
     assert [type(e) for e in body] == [StepBegin, StepEnd, StepBegin, StepEnd]
@@ -99,3 +99,27 @@ def test_to_ndjson_skips_streaming_and_begin_events():
     assert to_ndjson(StepBegin(step=1, action={})) is None
     assert to_ndjson(TokenDelta(text="x")) is None
     assert to_ndjson(ReasoningDelta(text="y")) is None
+
+
+def test_run_end_status_distinguishes_exhaustion():
+    """A run that never calls done/final_answer reports steps_exhausted —
+    the step-budget failure mode benchmarks track."""
+    from swaybot.agent import Agent
+    from swaybot.llm_brain import LLMBrain
+
+    model = ScriptedModel(
+        [
+            {"action": {"name": "echo", "args": {"message": "again"}}},
+            {"action": {"name": "echo", "args": {"message": "again"}}},
+            {"action": {"name": "echo", "args": {"message": "again"}}},
+        ]
+    )
+    events: list = []
+    agent = Agent(brain=LLMBrain(backend=model), on_event=events.append)
+    env = agent.run("loop forever", max_steps=3, reflect=False)
+    run_end = events[-1]
+    assert isinstance(run_end, RunEnd)
+    assert run_end.status == "steps_exhausted"
+    assert env.stop_reason == "max_steps"
+    # And the NDJSON wire shape carries it.
+    assert to_ndjson(run_end)["status"] == "steps_exhausted"

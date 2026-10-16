@@ -66,7 +66,7 @@ def test_structured_logging_hook_step_end(capture_event_logs):
 def test_structured_logging_hook_run_end(capture_event_logs):
     hook = StructuredLoggingHook()
     hook(RunBegin(task="demo", max_steps=2))
-    hook(RunEnd(steps=1, done=True, reflections=["reflection"]))
+    hook(RunEnd(steps=1, done=True, status="finished", reflections=["reflection"]))
     payload = _last_event(capture_event_logs)
     assert payload["event"]["type"] == "agent.run_end"
     assert payload["event"]["reflections"] == ["reflection"]

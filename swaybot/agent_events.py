@@ -10,7 +10,7 @@ the step number the action is about to get, StepEnd the number it got.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,9 @@ class ReasoningDelta:
 class RunEnd:
     steps: int
     done: bool
+    # "finished" — done/final_answer; "steps_exhausted" — the step budget
+    # ran out while the model was still requesting tools.
+    status: Literal["finished", "steps_exhausted"]
     reflections: list[str] = field(default_factory=list)
 
 
@@ -90,5 +93,10 @@ def to_ndjson(event: Event) -> Optional[dict]:
             payload["error"] = event.error
         return payload
     if isinstance(event, RunEnd):
-        return {"event": "run_end", "steps": event.steps, "done": event.done}
+        return {
+            "event": "run_end",
+            "steps": event.steps,
+            "done": event.done,
+            "status": event.status,
+        }
     return None

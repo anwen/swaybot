@@ -188,7 +188,14 @@ class Agent:
                 self._persist_step(task, env.step, action, result, call_info)
 
         reflections = self._reflect(task, env.history, hypothesis, reflect)
-        self._emit(RunEnd(steps=env.step, done=env.done, reflections=reflections))
+        self._emit(
+            RunEnd(
+                steps=env.step,
+                done=env.done,
+                status="finished" if env.stop_reason == "tool" else "steps_exhausted",
+                reflections=reflections,
+            )
+        )
 
     def _think(self, perception: dict, stream: bool) -> tuple[dict, dict]:
         """Ask the brain for the next action, capturing call metadata."""

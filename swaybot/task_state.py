@@ -9,6 +9,9 @@ class Environment:
     max_steps: int = 10
     step: int = 0
     done: bool = False
+    # "tool" — the agent signalled done/final_answer; "max_steps" — the
+    # step budget ran out while it was still asking for tools.
+    stop_reason: str | None = None
     history: list[dict] = field(default_factory=list)
 
     def perceive(self) -> dict:
@@ -25,8 +28,9 @@ class Environment:
         """Record an action and its result, then update termination state."""
         self.step += 1
         self.history.append({"step": self.step, "action": action, "result": result})
-        if (
-            action.get("name") in {"done", "final_answer"}
-            or self.step >= self.max_steps
-        ):
+        if action.get("name") in {"done", "final_answer"}:
             self.done = True
+            self.stop_reason = "tool"
+        elif self.step >= self.max_steps:
+            self.done = True
+            self.stop_reason = "max_steps"

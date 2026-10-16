@@ -82,7 +82,7 @@ def test_metrics_hook_records_token_usage():
 def test_metrics_hook_run_end_records_steps():
     sink = InMemoryMetricSink()
     hook = MetricsHook(sink)
-    _feed(hook, RunBegin(task="demo", max_steps=3), RunEnd(steps=2, done=True))
+    _feed(hook, RunBegin(task="demo", max_steps=3), RunEnd(steps=2, done=True, status="finished"))
     assert sink.records[-1]["name"] == "agent.run.steps"
     assert sink.records[-1]["value"] == 2.0
 
