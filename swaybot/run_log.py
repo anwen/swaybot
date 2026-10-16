@@ -1,11 +1,73 @@
 from pathlib import Path
 from typing import Any
 
+from .agent_events import RunBegin, RunEnd, StepEnd
 from .storage import JSONLBackend, StorageBackend
 from .tools import format_action
 from .utils import utc_now_iso
 
 TOKEN_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
+
+
+class RunLogRecorder:
+    """Agent-event consumer that writes the run log.
+
+    Buffers StepEnd records and appends the full run record when RunEnd
+    arrives — the same file ``python -m swaybot inspect`` reads. Construct
+    via ``for_memory``; a disabled recorder's ``__call__`` is a no-op.
+    """
+
+    def __init__(self, path: Path | None) -> None:
+        self._path = path
+        self._steps: list[dict] = []
+        self._task = ""
+        self._max_steps = 0
+        self._hypothesis: str | None = None
+
+    @classmethod
+    def for_memory(cls, memory_path: Path | str | None) -> "RunLogRecorder":
+        return cls(run_log_path_for_memory(memory_path))
+
+    def __call__(self, event: object) -> None:
+        if self._path is None:
+            return
+        if isinstance(event, RunBegin):
+            self._task = event.task
+            self._max_steps = event.max_steps
+            self._hypothesis = event.hypothesis
+        elif isinstance(event, StepEnd):
+            self._steps.append(self._record_step(event))
+        elif isinstance(event, RunEnd):
+            append_run(
+                self._path,
+                build_run_record(
+                    self._task,
+                    self._max_steps,
+                    self._steps,
+                    hypothesis=self._hypothesis,
+                    reflections=list(event.reflections),
+                ),
+            )
+
+    @staticmethod
+    def _record_step(event: StepEnd) -> dict:
+        record: dict = {
+            "step": event.step,
+            "action": event.action,
+            "result": str(event.result),
+        }
+        if event.error:
+            record["error"] = event.error
+        metadata = event.metadata or {}
+        for key in (
+            "model_input_messages",
+            "raw_output",
+            "token_usage",
+            "duration_ms",
+        ):
+            if metadata.get(key) is not None:
+                record[key] = metadata[key]
+        return record
 
 
 def run_log_path_for_memory(memory_path: Path | str | None) -> Path | None:

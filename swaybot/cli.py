@@ -2,9 +2,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .agent import Agent
+from .agent_events import Event, RunBegin, StepEnd, to_ndjson
 from .brain import EchoBrain
 from .dotenv import load_dotenv
 from .explorer import Explorer
@@ -73,61 +74,43 @@ def _inspect_main(argv: list[str]) -> int:
     return 0
 
 
-def _print_ndjson_run(
-    args: argparse.Namespace,
-    env: Environment,
-    exploration: Any | None = None,
-) -> None:
-    """Emit the run as NDJSON events."""
-    run_type = "explore" if exploration is not None else "task"
-    start_event: dict[str, Any] = {
-        "event": "run_start",
-        "type": run_type,
-        "task": exploration.task if exploration is not None else args.task,
-        "brain": args.brain,
-        "permission_mode": args.permission_mode,
-        "max_steps": args.max_steps,
-    }
-    if exploration is not None and exploration.hypothesis:
-        start_event["hypothesis"] = exploration.hypothesis
-    print(json.dumps(start_event, ensure_ascii=False))
-    for entry in env.history:
-        step_event: dict[str, Any] = {
-            "event": "step",
-            "step": entry["step"],
-            "action": entry["action"],
-            "result": str(entry["result"]),
-        }
-        if "error" in entry:
-            step_event["error"] = entry["error"]
-        if args.verbose:
-            step_event["raw_action"] = entry["action"]
-        print(json.dumps(step_event, ensure_ascii=False))
-    print(
-        json.dumps(
-            {"event": "run_end", "steps": env.step, "done": env.done},
-            ensure_ascii=False,
-        )
-    )
+def _make_output_sink(args: argparse.Namespace) -> Callable[[Event], None]:
+    """Render agent events live as NDJSON (json mode) or text lines."""
+    run_type = "explore" if args.explore else "task"
 
+    def sink(event: Event) -> None:
+        if args.output_format == "json":
+            payload = to_ndjson(event)
+            if payload is None:
+                return
+            if isinstance(event, RunBegin):
+                ordered = {
+                    "event": "run_start",
+                    "type": run_type,
+                    "task": event.task,
+                    "brain": args.brain,
+                    "permission_mode": args.permission_mode,
+                    "max_steps": event.max_steps,
+                }
+                if event.hypothesis:
+                    ordered["hypothesis"] = event.hypothesis
+                payload = ordered
+            elif isinstance(event, StepEnd) and args.verbose:
+                payload["raw_action"] = event.action
+            print(json.dumps(payload, ensure_ascii=False))
+            return
+        if isinstance(event, RunBegin):
+            if run_type == "explore":
+                print(f"Exploration: {event.task}")
+                if event.hypothesis:
+                    print(f"Hypothesis: {event.hypothesis}")
+        elif isinstance(event, StepEnd):
+            line = f"Step {event.step}: {format_action(event.action)} → {event.result}"
+            if args.verbose:
+                line = f"{line}  {event.action}"
+            print(line)
 
-def _print_text_run(
-    args: argparse.Namespace,
-    env: Environment,
-    exploration: Any | None = None,
-) -> None:
-    """Emit the run as human-readable text."""
-    if exploration is not None:
-        print(f"Exploration: {exploration.task}")
-        if exploration.hypothesis:
-            print(f"Hypothesis: {exploration.hypothesis}")
-    for entry in env.history:
-        action = entry["action"]
-        result = entry["result"]
-        line = f"Step {entry['step']}: {format_action(action)} → {result}"
-        if args.verbose:
-            line = f"{line}  {action}"
-        print(line)
+    return sink
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -258,9 +241,9 @@ def main(argv: list[str] | None = None) -> int:
         reflector=reflector,
         permission_policy=permission_policy,
         skills=skills,
+        on_event=_make_output_sink(args),
     )
 
-    exploration: Any | None = None
     if args.explore:
         explorer = Explorer(agent, max_steps=args.max_steps)
         exploration, env = explorer.run()
@@ -268,9 +251,4 @@ def main(argv: list[str] | None = None) -> int:
         env = agent.run(
             args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
         )
-
-    if args.output_format == "json":
-        _print_ndjson_run(args, env, exploration)
-    else:
-        _print_text_run(args, env, exploration)
     return 0
