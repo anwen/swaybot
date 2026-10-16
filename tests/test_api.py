@@ -226,3 +226,18 @@ def test_cancel_goal_endpoint():
         resp = client.delete(f"/v1/goals/{goal_id}")
         assert resp.status_code == 200
         assert resp.json()["state"] == "cancelled"
+
+
+def test_conversation_text_multi_turn_transcript():
+    from swaybot.api import ChatMessage, _conversation_text
+
+    single = [ChatMessage(role="user", content="hi")]
+    assert _conversation_text(single) == "hi"
+    multi = [
+        ChatMessage(role="user", content="hello"),
+        ChatMessage(role="assistant", content="hi there"),
+        ChatMessage(role="user", content="what is 2+2?"),
+    ]
+    assert _conversation_text(multi) == (
+        "user: hello\nassistant: hi there\nuser: what is 2+2?"
+    )

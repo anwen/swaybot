@@ -1,6 +1,7 @@
 """OpenAI-compatible HTTP API, WebUI, and session endpoints."""
 
 import asyncio
+from functools import lru_cache
 import json
 import logging
 import os
@@ -70,11 +71,8 @@ def create_app(
     manager = session_manager or SessionManager()
     if scheduler is None:
         scheduler = Scheduler()
-    assert scheduler is not None
 
     if agent_factory is None:
-        from .agent import Agent
-
         def _default_agent_factory(session_id: str = "") -> Agent:
             return Agent(
                 permission_policy=PermissionPolicy(
@@ -158,15 +156,20 @@ def create_app(
     @app.post("/v1/chat/completions")
     async def chat_completions(body: ChatCompletionRequest):
         session_id = f"chatcmpl-{uuid.uuid4().hex}"
-        content = body.messages[-1].content if body.messages else ""
+        content = _conversation_text(body.messages)
         with set_context(_session_context(session_id)):
             if body.stream:
                 return StreamingResponse(
                     _stream_chat(bus, async_agent, session_id, content, body.model),
                     media_type="text/event-stream",
                 )
-            answer = await _run_one_turn(
+            answer, timed_out = await _run_one_turn(
                 bus, async_agent, session_id, content, timeout=30.0
+            )
+        if timed_out:
+            return JSONResponse(
+                {"error": {"message": "upstream agent timed out", "type": "timeout"}},
+                status_code=504,
             )
         created = int(time.time())
         return {
@@ -209,7 +212,7 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     async def webui():
-        return HTMLResponse(content=_WEBUI_HTML)
+        return HTMLResponse(content=_webui_html())
 
     def _goal_to_response(goal: Goal) -> GoalResponse:
         return GoalResponse(
@@ -336,8 +339,12 @@ async def _run_one_turn(
     session_id: str,
     content: str,
     timeout: float = 30.0,
-) -> str:
-    """Post a message and wait for the final outbound response."""
+) -> tuple[str, bool]:
+    """Post a message and wait for the final outbound response.
+
+    Returns (answer, timed_out); a timed-out turn yields an empty answer
+    rather than pretending a normal stop.
+    """
     answer_event = asyncio.Event()
     last_answer: list[str] = [""]
 
@@ -350,18 +357,34 @@ async def _run_one_turn(
     await async_agent.post(
         InboundMessage(role="user", content=content, session_id=session_id)
     )
+    timed_out = False
     try:
         await asyncio.wait_for(answer_event.wait(), timeout=timeout)
     except asyncio.TimeoutError:
-        pass
+        timed_out = True
     finally:
         unsubscribe()
-    return last_answer[0]
+    return last_answer[0], timed_out
 
 
-_WEBUI_HTML = (
-    Path(__file__).resolve().parent / "templates" / "webui.html"
-).read_text(encoding="utf-8")
+def _conversation_text(messages: list[ChatMessage]) -> str:
+    """Render the full message history as the agent's task prompt.
+
+    Single-message requests pass through verbatim; multi-turn conversations
+    become a role-prefixed transcript so the model sees the prior context
+    (each completion request runs a fresh session, so history must travel
+    with the prompt).
+    """
+    if len(messages) == 1:
+        return messages[0].content
+    return "\n".join(f"{m.role}: {m.content}" for m in messages)
+
+
+@lru_cache(maxsize=1)
+def _webui_html() -> str:
+    return (
+        Path(__file__).resolve().parent / "templates" / "webui.html"
+    ).read_text(encoding="utf-8")
 
 
 def main():
