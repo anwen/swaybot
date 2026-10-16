@@ -7,7 +7,6 @@ from typing import Callable, ClassVar
 
 from .storage import (
     InMemoryBackend,
-    JSONLBackend,
     StorageBackend,
     _resolve_file_backend,
     default_memory_backend,
@@ -339,118 +338,6 @@ class MemoryStore:
             del self.memories[i]
         self.save()
         return len(indices)
-
-
-class Consolidator:
-    """Archive short-term steps to a jsonl history file.
-
-    Optionally compresses the archived batch into a long-term summary memory
-    using a brain/model callable.
-    """
-
-    def __init__(
-        self,
-        history_path: Path | str,
-        brain: Callable[[list[MemoryStep]], str] | None = None,
-    ) -> None:
-        self.history_path = Path(history_path)
-        self.brain = brain
-        self._backend = JSONLBackend(self.history_path.parent)
-        self._key = self.history_path.stem
-
-    def archive(
-        self,
-        store: MemoryStore,
-        tag: str | None = None,
-        keep_last: int = 0,
-        summarize: bool = False,
-    ) -> list[MemoryStep]:
-        """Move short-term steps to ``history.jsonl`` and optionally summarize.
-
-        Returns the archived steps.
-        """
-        candidates = list(store.iter_short_term(tag))
-        if keep_last > 0:
-            archived = candidates[:-keep_last]
-        else:
-            archived = candidates
-        if not archived:
-            return []
-
-        for step in archived:
-            self._backend.append(self._key, step.to_dict())
-
-        for step in archived:
-            store.memories.remove(step)
-        store.save()
-
-        if summarize and self.brain:
-            summary = self.brain(archived)
-            if summary:
-                store.add(
-                    Memory(
-                        content=summary,
-                        scope="long_term",
-                        tags=[tag, "consolidated"] if tag else ["consolidated"],
-                    )
-                )
-
-        return archived
-
-
-class Dream:
-    """Edit a durable memory file (e.g. SOUL.md) using long-term insights.
-
-    With a ``brain`` callable the file can be rewritten; otherwise new
-    insights are appended as a markdown list.
-    """
-
-    def __init__(
-        self,
-        durable_path: Path | str,
-        brain: Callable[[str, list[MemoryStep]], str] | None = None,
-    ) -> None:
-        self.durable_path = Path(durable_path)
-        self.brain = brain
-
-    def edit(self, store: MemoryStore) -> str:
-        """Read durable memory, merge in new long-term insights, and write back."""
-        content = self._read()
-        insights = [
-            m
-            for m in store.memories
-            if m.scope == "long_term" and getattr(m, "kind", "") == "theory"
-        ]
-        if not content and not insights:
-            return ""
-
-        if self.brain:
-            new_content = self.brain(content, insights)
-        else:
-            new_content = self._default_edit(content, insights)
-
-        self.durable_path.parent.mkdir(parents=True, exist_ok=True)
-        self.durable_path.write_text(new_content, encoding="utf-8")
-        return new_content
-
-    def _read(self) -> str:
-        if not self.durable_path.exists():
-            return ""
-        return self.durable_path.read_text(encoding="utf-8")
-
-    def _default_edit(self, content: str, insights: list[MemoryStep]) -> str:
-        lines = []
-        if content:
-            lines.append(content.rstrip())
-        if insights:
-            lines.append("")
-            lines.append("## Consolidated insights")
-            lines.append("")
-            for m in insights:
-                text = getattr(m, "content", "")
-                if text:
-                    lines.append(f"- {text}")
-        return "\n".join(lines)
 
 
 class AutoCompact:
