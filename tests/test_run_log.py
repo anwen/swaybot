@@ -1,9 +1,9 @@
 from pathlib import Path
 
+from swaybot.cli import format_run
 from swaybot.run_log import (
     append_run,
     build_run_record,
-    format_run,
     load_runs,
     run_log_path_for_memory,
     select_runs,

@@ -1,4 +1,4 @@
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .agent import Agent
 from .brain import Brain, EchoBrain

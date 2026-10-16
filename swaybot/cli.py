@@ -11,7 +11,7 @@ from .dotenv import load_dotenv
 from .explorer import Explorer
 from .memory import MemoryStore
 from .reflection import Reflector
-from .run_log import format_run, load_runs, run_log_path_for_memory, select_runs
+from .run_log import load_runs, run_log_path_for_memory, select_runs
 from .permission import PermissionMode, PermissionPolicy
 from .task_state import Environment
 from .tools import format_action
@@ -252,3 +252,66 @@ def main(argv: list[str] | None = None) -> int:
             args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
         )
     return 0
+
+def format_run(record: dict) -> str:
+    """Render one run record for the CLI."""
+    lines = [f"Task: {record.get('task', '')}"]
+    hypothesis = record.get("hypothesis")
+    if hypothesis:
+        lines.append(f"Hypothesis: {hypothesis}")
+    created_at = record.get("created_at")
+    if created_at:
+        lines.append(f"Created: {created_at}")
+
+    steps = record.get("steps") or []
+    lines.append(f"Steps: {len(steps)}")
+    final_answer = record.get("final_answer")
+    if final_answer is not None:
+        lines.append(f"Final answer: {final_answer}")
+
+    totals = record.get("totals") or {}
+    if totals:
+        lines.append(
+            "Totals: "
+            f"prompt={_fmt(totals.get('prompt_tokens'))} "
+            f"completion={_fmt(totals.get('completion_tokens'))} "
+            f"total={_fmt(totals.get('total_tokens'))} "
+            f"duration={_fmt(totals.get('duration_ms'))} ms"
+        )
+
+    reflections = record.get("reflections") or []
+    if reflections:
+        lines.append("Reflections:")
+        for reflection in reflections:
+            lines.append(f"  - {reflection}")
+
+    for step in steps:
+        action = step.get("action") or {}
+        result = step.get("result")
+        lines.append(f"Step {step.get('step')}: {format_action(action)} → {result}")
+        raw_output = step.get("raw_output")
+        if raw_output:
+            lines.append(f"  raw output: {raw_output}")
+        usage = step.get("token_usage") or {}
+        if usage:
+            lines.append(
+                "  tokens: "
+                f"prompt={_fmt(usage.get('prompt_tokens'))} "
+                f"completion={_fmt(usage.get('completion_tokens'))} "
+                f"total={_fmt(usage.get('total_tokens'))}"
+            )
+        duration = step.get("duration_ms")
+        if duration is not None:
+            lines.append(f"  duration: {_fmt(duration)} ms")
+        error = step.get("error")
+        if error:
+            lines.append(f"  error: {error}")
+    return "\n".join(lines)
+
+
+def _fmt(value) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, float):
+        return f"{value:.1f}"
+    return str(value)
