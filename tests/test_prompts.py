@@ -48,3 +48,28 @@ def test_load_default_user_prompt_exists():
 def test_render_missing_prompt_raises(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         load_prompt("missing", prompts_dir=tmp_path)
+
+
+@pytest.mark.parametrize("template", ["system", "system_fc"])
+def test_behavior_guidance_is_cache_suffix(template):
+    """behavior_guidance changes every turn (repeat-guard notices, lessons);
+    it must render after all stable content so the stable prefix — the part
+    providers cache — is byte-identical whether guidance is empty or not."""
+    base = render_prompt(
+        template,
+        behavior_guidance="",
+        project_instructions="Be terse.",
+        skill_context="- skill: kb",
+        available_tools=["echo", "final_answer"],
+        tool_descriptions=[],
+    )
+    with_guidance = render_prompt(
+        template,
+        behavior_guidance="- You already called KB_search twice; answer now.",
+        project_instructions="Be terse.",
+        skill_context="- skill: kb",
+        available_tools=["echo", "final_answer"],
+        tool_descriptions=[],
+    )
+    assert with_guidance.startswith(base)
+    assert "KB_search" in with_guidance[len(base):]
