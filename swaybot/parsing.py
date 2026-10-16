@@ -210,3 +210,19 @@ def fallback_action(perception: dict, raw: str) -> dict[str, Any]:
     if len(message) > 4000:
         message = message[:4000]
     return {"name": "echo", "args": {"message": message}}
+
+
+def is_explicit_tool_call(
+    raw: str, available_tools: list[str] | None = None
+) -> bool:
+    """True when ``raw`` itself encodes a tool call (JSON action object or
+    XML tool tag) — as opposed to prose that ``fallback_action`` wrapped
+    into an echo. Used to keep the prose->final_answer recovery from
+    hijacking genuine echo tool calls."""
+    if extract_tool_call(raw, available_tools) is not None:
+        return True
+    try:
+        data = json.loads(strip_markdown_fences(raw))
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and "name" in data

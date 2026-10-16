@@ -5,6 +5,7 @@ from .loop_guards import NonConvergenceGuard, RepeatCallGuard
 from .models import FallbackModel, Model, OpenAIModel
 from .parsing import (
     PROSE_TOOL_TAG_RE,
+    is_explicit_tool_call,
     fallback_action,
     parse_action,
     parse_exploration_response,
@@ -166,7 +167,15 @@ class LLMBrain:
         # the model's visible content is a prose answer that parse_action can't
         # parse as JSON/XML.  Wrapping it as final_answer lets the turn complete
         # with the full answer instead of looping on a 200-char echo.
-        if action.get("name") == "echo" and raw and raw.strip():
+        # NOTE the is_explicit_tool_call guard: a genuine JSON/XML echo call
+        # must execute as a tool call; only fallback-wrapped PROSE becomes the
+        # final answer.
+        if (
+            action.get("name") == "echo"
+            and raw
+            and raw.strip()
+            and not is_explicit_tool_call(raw, available_tools)
+        ):
             prose = raw.strip()
             if len(prose) > 4000:
                 prose = prose[:4000]

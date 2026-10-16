@@ -1011,3 +1011,27 @@ def test_think_strips_tool_tags_from_prose_final_answer():
     answer = action["args"]["answer"]
     assert "<KB_search" not in answer
     assert "Let me search" in answer
+
+
+def test_genuine_echo_tool_call_executes_as_tool():
+    """The prose->final_answer recovery must not hijack an explicit JSON
+    echo action — only prose that fallback wrapped into echo."""
+    import json as _json
+
+    from swaybot.agent import Agent
+    from swaybot.agent_events import StepEnd
+    from swaybot.llm_brain import LLMBrain
+    from swaybot.models import ScriptedModel
+
+    model = ScriptedModel(
+        [
+            {"action": {"name": "echo", "args": {"message": "real call"}}},
+            {"action": {"name": "done", "args": {}}},
+        ]
+    )
+    events: list = []
+    agent = Agent(brain=LLMBrain(backend=model), on_event=events.append)
+    agent.run("say hi", max_steps=3, reflect=False)
+    steps = [e for e in events if isinstance(e, StepEnd)]
+    assert steps[0].action["name"] == "echo"
+    assert steps[0].result == "real call"
