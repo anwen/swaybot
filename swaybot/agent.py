@@ -12,7 +12,6 @@ from .agent_events import (
 from .brain import Brain, EchoBrain
 from .perception import ContextBuilder
 from .task_state import Environment
-from .hook import AgentHook, CompositeHook
 from .request_context import RequestContext, current_context, set_context
 from .security import PermissionPolicy, permission_level_to_mode
 from .memory import (
@@ -23,7 +22,6 @@ from .memory import (
     PlanningStep,
     TaskStep,
 )
-from .metrics import LoggingMetricSink, MetricsHook
 from .reflection import Reflector, reflection_to_memory
 from .run_log import RunLogRecorder
 from .skills import SkillLibrary
@@ -39,7 +37,6 @@ class Agent:
         tools: ToolRegistry | None = None,
         memory: MemoryStore | None = None,
         reflector: Reflector | None = None,
-        hooks: list[AgentHook] | None = None,
         permission_level: str = "medium",
         permission_policy: PermissionPolicy | None = None,
         auto_compact: bool = False,
@@ -52,9 +49,6 @@ class Agent:
         self.memory = memory
         self.reflector = reflector
         self.on_event = on_event
-        if hooks is None:
-            hooks = [MetricsHook(LoggingMetricSink())]
-        self.hooks = CompositeHook(hooks)
         if permission_policy is not None:
             self.permission_policy = permission_policy
         else:
@@ -80,11 +74,9 @@ class Agent:
             sink(event)
 
     def _on_token(self, token: str) -> None:
-        self.hooks.on_token(token)
         self._emit(TokenDelta(text=token))
 
     def _on_reasoning(self, text: str) -> None:
-        self.hooks.on_reasoning(text)
         self._emit(ReasoningDelta(text=text))
 
     def _allowed(self, action_name: str) -> tuple[bool, str]:
@@ -152,7 +144,6 @@ class Agent:
             perception = self.context_builder.build(
                 task, env.step, max_steps, env.history
             )
-            self.hooks.before_iteration(task, env.step, perception)
             action, call_info = self._think(perception, stream)
             self._emit(StepBegin(step=env.step + 1, action=dict(action)))
             result, error = self._execute_action(action, request_context)
@@ -168,16 +159,12 @@ class Agent:
                     metadata=call_info,
                 )
             )
-            self.hooks.after_iteration(
-                task, env.step, action, result, metadata=call_info
-            )
             if self.memory is not None:
                 self._persist_step(task, env.step, action, result, call_info)
 
         reflections = self._reflect(task, env.history, hypothesis, reflect)
         self._emit(RunEnd(steps=env.step, done=env.done, reflections=reflections))
 
-        self.hooks.after_run(task, env, reflections)
         return env
 
     def _think(self, perception: dict, stream: bool) -> tuple[dict, dict]:

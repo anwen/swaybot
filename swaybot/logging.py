@@ -1,10 +1,10 @@
-"""Structured logging helpers and an AgentHook that emits audit events."""
+"""Structured logging helpers and an agent-event consumer for audit logs."""
 
 import json
 import logging
 from typing import Any
 
-from .hook import AgentHook
+from .agent_events import RunBegin, RunEnd, StepEnd
 from .request_context import current_context
 
 
@@ -47,51 +47,35 @@ def log_event(event_type: str, **kwargs: Any) -> None:
     )
 
 
-class StructuredLoggingHook(AgentHook):
-    """Emit structured events for agent lifecycle moments."""
+class StructuredLoggingHook:
+    """Agent-event consumer that emits structured audit logs.
 
-    def before_iteration(
-        self, task: str, step: int, perception: dict
-    ) -> None:
-        log_event(
-            "agent.before_iteration",
-            task=task,
-            step=step,
-        )
+    Feed it to ``Agent(on_event=...)`` alongside other sinks. Streaming
+    deltas (TokenDelta/ReasoningDelta) are intentionally not logged —
+    per-token audit lines are noise; step and run boundaries suffice.
+    """
 
-    def after_iteration(
-        self,
-        task: str,
-        step: int,
-        action: dict,
-        result: Any,
-        metadata: dict | None = None,
-    ) -> None:
-        event_type = "tool_call"
-        if metadata and metadata.get("model"):
-            event_type = "model_call"
-        log_event(
-            event_type,
-            task=task,
-            step=step,
-            action=action,
-            result=str(result),
-            metadata=metadata,
-        )
+    def __init__(self) -> None:
+        self._task = ""
 
-    def after_run(
-        self, task: str, env: Any, reflections: list[str]
-    ) -> None:
-        log_event(
-            "agent.after_run",
-            task=task,
-            steps=getattr(env, "step", None),
-            done=getattr(env, "done", None),
-            reflections=reflections,
-        )
-
-    def on_token(self, token: str) -> None:
-        log_event("agent.token", token=token)
-
-    def on_reasoning(self, reasoning: str) -> None:
-        log_event("agent.reasoning", reasoning=reasoning)
+    def __call__(self, event: object) -> None:
+        if isinstance(event, RunBegin):
+            self._task = event.task
+            log_event("agent.run_begin", task=event.task, max_steps=event.max_steps)
+        elif isinstance(event, StepEnd):
+            log_event(
+                "tool_call",
+                task=self._task,
+                step=event.step,
+                action=event.action,
+                result=str(event.result),
+                error=event.error,
+            )
+        elif isinstance(event, RunEnd):
+            log_event(
+                "agent.run_end",
+                task=self._task,
+                steps=event.steps,
+                done=event.done,
+                reflections=list(event.reflections),
+            )

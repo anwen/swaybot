@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from swaybot.task_state import Environment
+from swaybot.agent_events import RunBegin, RunEnd, StepEnd
 from swaybot.logging import JSONFormatter, StructuredLoggingHook, log_event
 from swaybot.request_context import RequestContext, set_context
 
@@ -47,24 +47,26 @@ def test_log_event_includes_context(capture_event_logs):
     assert payload["event"]["tool"] == "echo"
 
 
-def test_structured_logging_hook_after_iteration(capture_event_logs):
+def test_structured_logging_hook_step_end(capture_event_logs):
     hook = StructuredLoggingHook()
-    hook.after_iteration(
-        task="demo",
-        step=1,
-        action={"name": "echo", "args": {"message": "hi"}},
-        result="hi",
-        metadata={},
+    hook(RunBegin(task="demo", max_steps=3))
+    hook(
+        StepEnd(
+            step=1,
+            action={"name": "echo", "args": {"message": "hi"}},
+            result="hi",
+        )
     )
     payload = _last_event(capture_event_logs)
     assert payload["event"]["type"] == "tool_call"
     assert payload["event"]["action"]["name"] == "echo"
+    assert payload["event"]["task"] == "demo"
 
 
-def test_structured_logging_hook_after_run(capture_event_logs):
+def test_structured_logging_hook_run_end(capture_event_logs):
     hook = StructuredLoggingHook()
-    env = Environment(task="demo", max_steps=2)
-    hook.after_run("demo", env, ["reflection"])
+    hook(RunBegin(task="demo", max_steps=2))
+    hook(RunEnd(steps=1, done=True, reflections=["reflection"]))
     payload = _last_event(capture_event_logs)
-    assert payload["event"]["type"] == "agent.after_run"
+    assert payload["event"]["type"] == "agent.run_end"
     assert payload["event"]["reflections"] == ["reflection"]
