@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from swaybot.scheduler import (
+from swaybot.goals import (
     CronSchedule,
     IntervalSchedule,
     Scheduler,

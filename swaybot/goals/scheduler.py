@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from .storage import InMemoryBackend, StorageBackend
-from .utils import utc_now_iso
+from ..storage import InMemoryBackend, StorageBackend
+from ..utils import utc_now_iso
 
 
 @dataclass

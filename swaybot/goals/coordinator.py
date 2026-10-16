@@ -6,11 +6,11 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
-from .agent import Agent
-from .events import Event, EventBus, InMemoryEventBus
+from ..agent import Agent
+from ..events import Event, EventBus, InMemoryEventBus
 from .scheduler import OneShotSchedule, Scheduler
-from .storage import InMemoryBackend, StorageBackend
-from .utils import utc_now_iso
+from ..storage import InMemoryBackend, StorageBackend
+from ..utils import utc_now_iso
 
 
 GOAL_PENDING = "pending"

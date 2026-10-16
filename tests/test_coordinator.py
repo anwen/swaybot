@@ -2,7 +2,7 @@ import pytest
 
 from swaybot.agent import Agent
 from swaybot.brain import EchoBrain
-from swaybot.coordinator import GoalCoordinator, GoalStateMachine, Goal, Subtask
+from swaybot.goals import GoalCoordinator, GoalStateMachine, Goal, Subtask
 from swaybot.memory import Memory, MemoryStore
 from swaybot.storage import InMemoryBackend
 

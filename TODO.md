@@ -213,7 +213,7 @@
 - **方案**：参考 nanobot：短期 `history.jsonl` 自动压缩归档；定期用 LLM 编辑 durable memory 文件（如 `SOUL.md`/`MEMORY.md`）。
 - **文件**：`swaybot/memory.py`、`swaybot/reflection.py`
 - **验收**：长期记忆可版本化、可回滚、可人工审阅；运行历史与长期知识分离。
-- **状态**：已完成（2026-07-17）。
+- **状态**：已完成（2026-07-17）。**2026-10-16 移除**：`Consolidator`/`Dream` 落地后从未接入任何活路径（反思路径实际由 `Reflector`+`prune` 与 `AutoCompact` 覆盖），按 PRINCIPLES.md 删除死代码。
 
 ### [x] 子代理与后台自动化（已清理）
 - **问题**：当前单线程顺序执行，空闲时无法并发探索，也缺少定时任务。

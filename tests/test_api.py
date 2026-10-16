@@ -7,7 +7,7 @@ from swaybot.agent import Agent
 from swaybot.api import create_app
 from swaybot.brain import EchoBrain
 from swaybot.bus import MessageBus
-from swaybot.coordinator import GoalCoordinator
+from swaybot.goals import GoalCoordinator
 from swaybot.request_context import current_context
 from swaybot.session import SessionManager
 from swaybot.storage import InMemoryBackend
