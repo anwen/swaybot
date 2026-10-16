@@ -79,11 +79,11 @@
 - **验收**：`python -m swaybot --explore` 能自主产生任务、执行、打印结果，并生成长期 reflection；74 个测试全部通过。
 - **状态**：已完成（2026-07-15）。
 
-### [ ] 流式响应支持
+### [x] 流式响应支持
 - **问题**：LLM 必须等完整响应返回。
 - **方案**：支持 SSE/流式输出，便于观察思考过程。
 - **文件**：`swaybot/llm_brain.py`、`swaybot/async_agent.py`、`swaybot/cli.py`
-- **验收**：API `/v1/chat/completions` 已支持 step-level SSE；token/reasoning 实时流式待 CLI 和 `AsyncAgent` 接线后完成。
+- **状态**：基本完成。API `/v1/chat/completions` 支持 step-level SSE；agent 循环现以类型化事件流（`swaybot/agent_events.py`：RunBegin/StepBegin/StepEnd/TokenDelta/ReasoningDelta/RunEnd）为唯一输出口，CLI `--output-format json/text` 实时渲染事件、token/reasoning 增量以 TokenDelta/ReasoningDelta 事件下发（`Agent.run(..., stream=True)` + `on_event` 消费）。AsyncAgent/token 级 SSE 接线待按需补充。
 
 ## P4 — 借鉴 smolagents 补齐关键能力
 
