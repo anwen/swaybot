@@ -9,3 +9,6 @@ external/
 .swaybot_workspace/
 bfcl_results/
 tau3_results/
+score/
+data/
+swaybot/non_live/
