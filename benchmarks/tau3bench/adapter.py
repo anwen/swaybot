@@ -28,12 +28,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from swaybot.brain import Brain, EchoBrain
-from swaybot.llm_brain import (
-    DONE_SCHEMA,
-    FINAL_ANSWER_SCHEMA,
-    LLMBrain,
-    _PROSE_TOOL_TAG_RE,
-)
+from swaybot.llm_brain import DONE_SCHEMA, FINAL_ANSWER_SCHEMA, LLMBrain
+from swaybot.parsing import PROSE_TOOL_TAG_RE
 from swaybot.tools import Tool, ToolRegistry
 
 from ._helpers import (
@@ -123,7 +119,7 @@ _RETRIEVAL_SANDBOX_TOOLS = frozenset({"shell"})
 # Under force_final the only tools the model may call are final_answer/done.
 # When it still tries to search, it emits the blocked tool name as *prose
 # without angle brackets* — e.g. "KB_search_bm25 k 20 query personal credit
-# card annual fee" — which _PROSE_TOOL_TAG_RE (which needs ``<...>``) does not
+# card annual fee" — which PROSE_TOOL_TAG_RE (which needs ``<...>``) does not
 # match, so think()'s tag-stripper leaves the residue verbatim in the
 # final_answer text. Detect that residue: a final_answer that *starts with* a
 # retrieval tool name is the model attempting a blocked call, not an answer.
@@ -880,7 +876,7 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         # shapes occur:
         #   (a) angle-bracket tags like "<KB_search_bm25 query=...>" that
         #       think() rewrote into a final_answer — caught by
-        #       _PROSE_TOOL_TAG_RE;
+        #       PROSE_TOOL_TAG_RE;
         #   (b) bracket-less residue like "KB_search_bm25 k 20 query ..."
         #       produced when think()'s tag-stripper removed the brackets but
         #       left the inner attribute words — caught by _TOOL_RESIDUE_RE
@@ -892,7 +888,7 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         if state.force_final:
             answer_text = action.get("args", {}).get("answer", "") if isinstance(action.get("args"), dict) else ""
             wants_tool = tool_name not in ("final_answer", "done") or bool(
-                _PROSE_TOOL_TAG_RE.search(answer_text)
+                PROSE_TOOL_TAG_RE.search(answer_text)
                 or _TOOL_RESIDUE_RE.search(answer_text)
             )
             if wants_tool:

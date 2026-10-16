@@ -203,10 +203,10 @@ def test_llm_brain_prose_becomes_full_final_answer(mock_openai):
 
 def test_llm_brain_fallback_preserves_full_prose():
     """_fallback should not truncate the echo message to 200 chars."""
-    from swaybot.llm_brain import _fallback
+    from swaybot.parsing import fallback_action
 
     long_prose = "x" * 1000
-    action = _fallback(
+    action = fallback_action(
         {"step": 0, "max_steps": 10}, long_prose
     )
     assert action["name"] == "echo"
@@ -215,19 +215,19 @@ def test_llm_brain_fallback_preserves_full_prose():
 
 def test_llm_brain_fallback_caps_pathological_output():
     """_fallback should cap only truly enormous output (safety valve)."""
-    from swaybot.llm_brain import _fallback
+    from swaybot.parsing import fallback_action
 
     huge = "y" * 10000
-    action = _fallback({"step": 0, "max_steps": 10}, huge)
+    action = fallback_action({"step": 0, "max_steps": 10}, huge)
     assert action["name"] == "echo"
     assert len(action["args"]["message"]) == 4000
 
 
 def test_llm_brain_fallback_done_at_max_steps():
     """At the final step, _fallback should signal done, not echo."""
-    from swaybot.llm_brain import _fallback
+    from swaybot.parsing import fallback_action
 
-    action = _fallback({"step": 9, "max_steps": 10}, "some prose")
+    action = fallback_action({"step": 9, "max_steps": 10}, "some prose")
     assert action["name"] == "done"
 
 
@@ -706,16 +706,16 @@ def test_length_truncation_drops_broken_tool_call(mock_openai):
 
 def test_extract_tool_call_json_inside_tag():
     """_extract_tool_call should parse JSON inside <tool_call> tags."""
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
     raw = '<tool_call> {"name": "get_user", "args": {"id": "123"}} </tool_call>'
-    action = _extract_tool_call(raw)
+    action = extract_tool_call(raw)
     assert action == {"name": "get_user", "args": {"id": "123"}}
 
 
 def test_extract_tool_call_xml_parameters():
     """_extract_tool_call should parse Qwen XML parameter blocks."""
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
     raw = """<tool_call>
 <function=get_user_details>
@@ -724,23 +724,23 @@ u_42
 </parameter>
 </function>
 </tool_call>"""
-    action = _extract_tool_call(raw)
+    action = extract_tool_call(raw)
     assert action == {"name": "get_user_details", "args": {"user_id": "u_42"}}
 
 
 def test_extract_tool_call_returns_none_for_plain_json():
     """_extract_tool_call should not interfere with plain JSON actions."""
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
-    assert _extract_tool_call('{"name": "done", "args": {}}') is None
+    assert extract_tool_call('{"name": "done", "args": {}}') is None
 
 
 def test_extract_tool_call_numeric_parameter():
     """_extract_tool_call should preserve plain numeric values as strings."""
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
     raw = "<tool_call><function=add><parameter=a>3</parameter><parameter=b>4</parameter></function></tool_call>"
-    action = _extract_tool_call(raw)
+    action = extract_tool_call(raw)
     assert action == {"name": "add", "args": {"a": "3", "b": "4"}}
 
 
@@ -748,60 +748,60 @@ def test_extract_tool_call_prose_tag_quoted():
     """Variant 3: a known tool emitted as a prose tag <ToolName key="value">
     (glm-5.1-fp8 does this for retrieval tools instead of a native tool_call)
     must be recovered as a real action when available_tools is provided."""
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
     tools = ["KB_search_bm25", "final_answer"]
-    action = _extract_tool_call('<KB_search_bm25 query="Gold Rewards Card">', tools)
+    action = extract_tool_call('<KB_search_bm25 query="Gold Rewards Card">', tools)
     assert action == {"name": "KB_search_bm25", "args": {"query": "Gold Rewards Card"}}
 
 
 def test_extract_tool_call_prose_tag_self_closing():
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
     tools = ["KB_search_bm25"]
-    action = _extract_tool_call('<KB_search_bm25 query="x"/>', tools)
+    action = extract_tool_call('<KB_search_bm25 query="x"/>', tools)
     assert action == {"name": "KB_search_bm25", "args": {"query": "x"}}
 
 
 def test_extract_tool_call_prose_tag_multiple_takes_first():
     """The model often emits several prose tags per turn; the brain processes
     one action per turn, so we take the first registered-tool tag."""
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
     tools = ["KB_search_bm25"]
     raw = '<KB_search_bm25 query="Bronze"><KB_search_bm25 query="Silver">'
-    action = _extract_tool_call(raw, tools)
+    action = extract_tool_call(raw, tools)
     assert action == {"name": "KB_search_bm25", "args": {"query": "Bronze"}}
 
 
 def test_extract_tool_call_prose_tag_unknown_name_ignored():
     """Arbitrary HTML/markdown tags must NOT be misparsed as tool calls."""
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
     tools = ["KB_search_bm25"]
-    assert _extract_tool_call('<div class="foo">bar</div>', tools) is None
+    assert extract_tool_call('<div class="foo">bar</div>', tools) is None
 
 
 def test_extract_tool_call_prose_tag_requires_available_tools():
     """In text mode (no available_tools) prose tags are left untouched so they
     fall through to the echo/final_answer path rather than being guessed."""
-    from swaybot.llm_brain import _extract_tool_call
+    from swaybot.parsing import extract_tool_call
 
-    assert _extract_tool_call('<KB_search_bm25 query="x">') is None
+    assert extract_tool_call('<KB_search_bm25 query="x">') is None
 
 
 def test_parse_action_recovers_prose_tool_tag():
     """End-to-end: _parse_action with available_tools turns a prose tool tag
     into a real action; without available_tools it falls back to echo."""
-    from swaybot.llm_brain import _parse_action
+    from swaybot.parsing import parse_action
 
     tools = ["KB_search_bm25", "final_answer"]
     perception = {"step": 0, "max_steps": 10}
-    action = _parse_action('<KB_search_bm25 query="Gold">', perception, tools)
+    action = parse_action('<KB_search_bm25 query="Gold">', perception, tools)
     assert action == {"name": "KB_search_bm25", "args": {"query": "Gold"}}
 
     # No available_tools -> not misparsed -> fallback echo carries the raw tag.
-    fallback = _parse_action('<KB_search_bm25 query="Gold">', perception)
+    fallback = parse_action('<KB_search_bm25 query="Gold">', perception)
     assert fallback["name"] == "echo"
 
 
@@ -964,20 +964,20 @@ def test_llm_brain_uses_env_variables(mock_openai, monkeypatch):
 def test_strip_prose_tool_tags_removes_tags_keeps_text():
     """_strip_prose_tool_tags must remove tool-call tags from prose while
     keeping the surrounding text the model wrote for the user."""
-    from swaybot.llm_brain import _strip_prose_tool_tags
+    from swaybot.parsing import strip_prose_tool_tags
 
     p = "Let me search. <KB_search_bm25 k=20 query=\"Gold Rewards Card\"> done."
-    out = _strip_prose_tool_tags(p)
+    out = strip_prose_tool_tags(p)
     assert "<" not in out and ">" not in out
     assert "Let me search" in out and "done" in out
     assert "KB_search" not in out
 
     # pure prose unchanged
-    assert _strip_prose_tool_tags("Gold Rewards Card has 2.5% cash back.") == \
+    assert strip_prose_tool_tags("Gold Rewards Card has 2.5% cash back.") == \
         "Gold Rewards Card has 2.5% cash back."
 
     # only tags -> empty
-    assert _strip_prose_tool_tags("<KB_search_bm25 query=\"x\">") == ""
+    assert strip_prose_tool_tags("<KB_search_bm25 query=\"x\">") == ""
 
 
 def test_think_strips_tool_tags_from_prose_final_answer():
