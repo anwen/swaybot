@@ -14,8 +14,10 @@ export TAU2_DATA_DIR="$HOME/.cache/modelscope/datasets/evalscope--tau3-bench-dat
 export OPENAI_API_KEY="$SWAYBOT_API_KEY"
 export OPENAI_API_BASE="$SWAYBOT_API_BASE"
 # Bypass the macOS system proxy (127.0.0.1:7890) for the gateway host so
-# litellm's httpx client does not corrupt TLS.
-export NO_PROXY="api.example.invalid,127.0.0.1,localhost"
+# litellm's httpx client does not corrupt TLS. Host is derived from
+# SWAYBOT_API_BASE so the provider domain is never hardcoded here.
+API_HOST="$(python3 -c "from urllib.parse import urlparse; print(urlparse('${SWAYBOT_API_BASE:-}').hostname or '')")"
+export NO_PROXY="${API_HOST},127.0.0.1,localhost"
 export no_proxy="$NO_PROXY"
 
 DOMAIN="${1:-banking_knowledge}"

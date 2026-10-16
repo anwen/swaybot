@@ -21,9 +21,11 @@ from agentdojo.agent_pipeline.tool_execution import ToolsExecutionLoop, ToolsExe
 from benchmarks.agentdojo.adapter import SwayBotPipelineElement
 from swaybot.llm_brain import LLMBrain
 
-API_KEY = os.environ.get("SWAYBOT_API_KEY", "REDACTED-API-KEY")
-API_BASE = os.environ.get("SWAYBOT_API_BASE", "http://api.example.invalid/v1")
+API_KEY = os.environ.get("SWAYBOT_API_KEY")
+API_BASE = os.environ.get("SWAYBOT_API_BASE")
 MODEL = os.environ.get("SWAYBOT_MODEL", "glm-5.1-fp8")
+if not API_KEY or not API_BASE:
+    sys.exit("Set SWAYBOT_API_KEY and SWAYBOT_API_BASE (see .env.example) before running.")
 
 # Which suites to run (default: banking only for speed)
 SUITES = sys.argv[1:] if len(sys.argv) > 1 else ["banking"]

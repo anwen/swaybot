@@ -18,7 +18,7 @@
 ### AgentDojo EchoBrain 冒烟基线（2026-07 下旬）
 
 适配器验证可运行时的 EchoBrain 基线：**banking 31.25% utility，其余 suite 0%**。
-当时 LLM 服务 `internal-llm.invalid:8000` 返回 502，真实评测需待其恢复。
+  当时内网 LLM 服务返回 502，真实评测需待其恢复。
 （后续 LLM 全量结果为 93.81% utility / 100% security，见 `benchmarks/agentdojo_failure_analysis.md`。）
 
 ### BFCL v3 single-turn（2026-07-27）
