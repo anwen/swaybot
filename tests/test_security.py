@@ -2,13 +2,8 @@
 
 import pytest
 
-from swaybot.security import (
-    CommandGuard,
-    PathGuard,
-    SecurityError,
-    SecurityEscalation,
-    SecurityManager,
-)
+from swaybot.guards import CommandGuard, PathGuard
+from swaybot.violations import SecurityError, SecurityEscalation, SecurityManager
 
 
 def test_path_guard_resolves_workspace_path(tmp_path):

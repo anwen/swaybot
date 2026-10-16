@@ -13,7 +13,7 @@ from .brain import Brain, EchoBrain
 from .perception import ContextBuilder
 from .task_state import Environment
 from .request_context import RequestContext, current_context, set_context
-from .security import PermissionPolicy, permission_level_to_mode
+from .permission import PermissionPolicy, permission_level_to_mode
 from .memory import (
     ActionStep,
     AutoCompact,

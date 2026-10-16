@@ -11,7 +11,7 @@ from swaybot.agent_events import (
     to_ndjson,
 )
 from swaybot.memory import MemoryStore
-from swaybot.security import PermissionPolicy
+from swaybot.permission import PermissionPolicy
 from swaybot.models import ScriptedModel
 
 

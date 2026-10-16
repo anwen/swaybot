@@ -12,7 +12,7 @@ from .explorer import Explorer
 from .memory import MemoryStore
 from .reflection import Reflector
 from .run_log import format_run, load_runs, run_log_path_for_memory, select_runs
-from .security import PermissionMode, PermissionPolicy
+from .permission import PermissionMode, PermissionPolicy
 from .task_state import Environment
 from .tools import format_action
 

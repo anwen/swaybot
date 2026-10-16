@@ -8,7 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..security import PathGuard, SecurityError
+from ..guards import PathGuard
+from ..violations import SecurityError
 from .code_quality import run_quality_hooks
 from .file_locks import PathLockManager
 from .output_limits import truncate_lines, truncate_text

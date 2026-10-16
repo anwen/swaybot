@@ -23,7 +23,7 @@ from .goals import Goal, GoalCoordinator, Scheduler
 from .dotenv import load_dotenv
 from .logging import JSONFormatter, get_event_logger
 
-from .security import PermissionPolicy, permission_level_to_mode
+from .permission import PermissionPolicy, permission_level_to_mode
 from .session import SessionManager
 
 

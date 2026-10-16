@@ -3,7 +3,8 @@
 import subprocess
 from pathlib import Path
 
-from ..security import CommandGuard, PathGuard, SecurityError
+from ..guards import CommandGuard, PathGuard
+from ..violations import SecurityError
 from .output_limits import truncate_text
 from . import tool
 

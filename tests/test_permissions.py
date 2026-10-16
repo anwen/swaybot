@@ -3,11 +3,8 @@
 import pytest
 
 from swaybot.agent import Agent
-from swaybot.security import (
-    PermissionMode,
-    PermissionPolicy,
-    ToolPermissionError,
-)
+from swaybot.permission import PermissionMode, PermissionPolicy
+from swaybot.violations import ToolPermissionError
 from swaybot.tools import ToolRegistry, build_default_registry, tool
 
 
