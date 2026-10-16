@@ -79,6 +79,79 @@ class FallbackModel:
         return None
 
 
+class ScriptedModelError(Exception):
+    """Scripted model exhausted or a scripted step is malformed."""
+
+
+class ScriptedModel:
+    """Deterministic replay model for tests and offline demos.
+
+    Each ``generate()`` call consumes the next scripted step:
+
+    * ``{"text": "hello"}`` — plain prose output
+    * ``{"action": {"name": "echo", "args": {...}}}`` — a native tool call,
+      serialized to the ``{"name": ..., "args": ...}`` JSON the brain expects
+    * ``{"raise": ValueError("boom")}`` — raise, to drive fallback/retry paths
+
+    Text steps are delivered through ``stream_callback`` in small chunks so
+    streaming consumers are exercised. Exhausting the script raises instead of
+    returning None: a loop that asks for more steps than were scripted is a
+    test bug, and a silent None would turn it into a confusing assertion
+    against the fallback path.
+    """
+
+    supports_tools = True
+
+    _CHUNK_CHARS = 8
+
+    def __init__(self, steps: list[dict]):
+        for step in steps:
+            if sum(key in step for key in ("text", "action", "raise")) != 1:
+                raise ScriptedModelError(
+                    f"each scripted step needs exactly one of text/action/raise: {step!r}"
+                )
+        self.steps = [dict(step) for step in steps]
+        self._cursor = 0
+        self.calls: list[list[dict]] = []
+
+    @property
+    def remaining(self) -> int:
+        return len(self.steps) - self._cursor
+
+    def generate(
+        self,
+        messages: list[dict],
+        metadata: dict | None = None,
+        tools: list[dict] | None = None,
+        stream_callback: StreamCallback | None = None,
+        reasoning_callback: ReasoningCallback | None = None,
+    ) -> str | None:
+        if self._cursor >= len(self.steps):
+            raise ScriptedModelError(
+                f"script exhausted after {len(self.steps)} steps; "
+                "the loop ran further than the test scripted"
+            )
+        step = self.steps[self._cursor]
+        self._cursor += 1
+        self.calls.append(list(messages))
+        if "raise" in step:
+            raise step["raise"]
+        start = time.perf_counter()
+        if "action" in step:
+            action = step["action"]
+            content = json.dumps({"name": action["name"], "args": action.get("args", {})})
+        else:
+            content = step.get("text", "")
+        if metadata is not None:
+            metadata["raw_output"] = content
+            metadata["duration_ms"] = (time.perf_counter() - start) * 1000
+            metadata["model_input_messages"] = list(messages)
+        if stream_callback:
+            for start_idx in range(0, len(content), self._CHUNK_CHARS):
+                stream_callback(content[start_idx : start_idx + self._CHUNK_CHARS])
+        return content
+
+
 def _is_retryable(exc: Exception) -> bool:
     """Return True if the exception is worth retrying."""
     if APIStatusError is not None and isinstance(exc, APIStatusError):

@@ -836,18 +836,19 @@ def test_llm_brain_repeat_guard_name_only_notices_rotating_calls():
     """The brain-level guard must fire a notice when the SAME tool name is
     called repeatedly with DIFFERENT arguments (the airline task-7 pattern),
     and fold that notice into the next turn's behavior_guidance."""
-    backend = MagicMock()
-    backend.supports_tools = True
-    raws = [
-        '{"name": "get_reservation_details", "args": {"id": "AAA"}}',
-        '{"name": "get_reservation_details", "args": {"id": "BBB"}}',
-        '{"name": "get_reservation_details", "args": {"id": "CCC"}}',
-        '{"name": "get_reservation_details", "args": {"id": "DDD"}}',
-        '{"name": "get_reservation_details", "args": {"id": "EEE"}}',
-        '{"name": "final_answer", "args": {"answer": "done"}}',
-    ]
-    backend.generate.side_effect = list(raws)
-    brain = LLMBrain(backend=backend)
+    from swaybot.models import ScriptedModel
+
+    model = ScriptedModel(
+        [
+            {"action": {"name": "get_reservation_details", "args": {"id": "AAA"}}},
+            {"action": {"name": "get_reservation_details", "args": {"id": "BBB"}}},
+            {"action": {"name": "get_reservation_details", "args": {"id": "CCC"}}},
+            {"action": {"name": "get_reservation_details", "args": {"id": "DDD"}}},
+            {"action": {"name": "get_reservation_details", "args": {"id": "EEE"}}},
+            {"action": {"name": "final_answer", "args": {"answer": "done"}}},
+        ]
+    )
+    brain = LLMBrain(backend=model)
     # Lower the name-only threshold so the test is fast.
     brain.repeat_guard = __import__(
         "swaybot.loop_guards", fromlist=["RepeatCallGuard"]
@@ -865,9 +866,9 @@ def test_llm_brain_repeat_guard_name_only_notices_rotating_calls():
         "tool_descriptions": schemas,
     }
     notices = []
-    for _ in raws:
+    for i in range(len(model.steps)):
         brain.think(dict(perception), ["get_reservation_details", "final_answer"])
-        sys_content = backend.generate.call_args.args[0][0]["content"]
+        sys_content = model.calls[i][0]["content"]
         notices.append(
             "repeating" in sys_content.lower()
             or "repeatedly" in sys_content.lower()
@@ -883,19 +884,19 @@ def test_llm_brain_nonconvergence_guard_fires_on_rotating_tools():
     """NonConvergenceGuard must fire when DIFFERENT tools are called repeatedly
     with no final_answer (the airline task-7 pattern that RepeatCallGuard
     misses), and fold the notice into the next turn's system prompt."""
-    backend = MagicMock()
-    backend.supports_tools = True
-    # Rotate two tools, never final_answer, 6 turns.
-    raws = [
-        '{"name": "get_reservation_details", "args": {"id": "A"}}',
-        '{"name": "get_flight_status", "args": {}}',
-        '{"name": "get_reservation_details", "args": {"id": "B"}}',
-        '{"name": "get_flight_status", "args": {}}',
-        '{"name": "get_reservation_details", "args": {"id": "C"}}',
-        '{"name": "get_flight_status", "args": {}}',
-    ]
-    backend.generate.side_effect = list(raws)
-    brain = LLMBrain(backend=backend)
+    from swaybot.models import ScriptedModel
+
+    model = ScriptedModel(
+        [
+            {"action": {"name": "get_reservation_details", "args": {"id": "A"}}},
+            {"action": {"name": "get_flight_status", "args": {}}},
+            {"action": {"name": "get_reservation_details", "args": {"id": "B"}}},
+            {"action": {"name": "get_flight_status", "args": {}}},
+            {"action": {"name": "get_reservation_details", "args": {"id": "C"}}},
+            {"action": {"name": "get_flight_status", "args": {}}},
+        ]
+    )
+    brain = LLMBrain(backend=model)
     # Lower threshold so the test is fast.
     brain.nonconvergence_guard = __import__(
         "swaybot.loop_guards", fromlist=["NonConvergenceGuard"]
@@ -914,12 +915,12 @@ def test_llm_brain_nonconvergence_guard_fires_on_rotating_tools():
         "tool_descriptions": schemas,
     }
     notices = []
-    for i, _ in enumerate(raws):
+    for i in range(len(model.steps)):
         # The step must advance each turn — the guard now counts on the step
         # delta, not on how many times observe() was called.
         perception = dict(base_perception, step=i)
         brain.think(perception, ["get_reservation_details", "get_flight_status"])
-        sys_content = backend.generate.call_args.args[0][0]["content"]
+        sys_content = model.calls[i][0]["content"]
         # Match markers unique to the NonConvergenceGuard notice, NOT the base
         # template's "final_answer" instruction.
         notices.append(
