@@ -262,3 +262,21 @@ def test_agent_auto_compact_limits_short_term_memories():
     assert len(short_term) <= 4  # task + up to max_steps retained
     summaries = store.query(scope="long_term", tag="compact")
     assert len(summaries) >= 1
+
+
+def test_project_instructions_loaded_once_per_run(monkeypatch, tmp_path):
+    """Collecting instructions walks directories and spawns git — once per
+    run, never once per step."""
+    import swaybot.agent as agent_module
+    from swaybot.agent import Agent
+    from swaybot.memory import MemoryStore
+
+    calls = []
+    monkeypatch.setattr(
+        agent_module,
+        "load_project_instructions",
+        lambda: (calls.append(1), "be terse.")[1],
+    )
+    agent = Agent(memory=MemoryStore(path=tmp_path / "memory.json"))
+    agent.run("count", max_steps=3, reflect=False)
+    assert len(calls) == 1

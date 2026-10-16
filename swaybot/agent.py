@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from typing import Any, Callable
 
 from .agent_events import (
@@ -10,6 +11,7 @@ from .agent_events import (
     TokenDelta,
 )
 from .brain import Brain, EchoBrain
+from .instructions import load_project_instructions
 from .perception import ContextBuilder
 from .task_state import Environment
 from .request_context import RequestContext, current_context, set_context
@@ -118,6 +120,9 @@ class Agent:
         request_context: RequestContext | None = None,
     ) -> Environment:
         env = Environment(task=task, max_steps=max_steps)
+        # Instruction files (AGENTS.md etc.) are read once per run, not once
+        # per step — collecting them walks directories and spawns git.
+        instructions = load_project_instructions()
         # The run-log recorder and the caller's sink consume the same event
         # stream; recording is disabled when memory has no backing file.
         self._sinks = []
@@ -134,15 +139,35 @@ class Agent:
                 if guard is not None:
                     guard.reset()
             self._last_task = task
+        batch = self.memory.batch() if self.memory is not None else nullcontext()
+        with batch:
+            self._run_body(
+                env, task, max_steps, reflect, plan, hypothesis, stream,
+                request_context, instructions,
+            )
+        return env
+
+    def _run_body(
+        self,
+        env: Environment,
+        task: str,
+        max_steps: int,
+        reflect: bool,
+        plan: bool,
+        hypothesis: str | None,
+        stream: bool,
+        request_context: RequestContext | None,
+        instructions: str,
+    ) -> None:
         if self.memory is not None:
             self.memory.add(
                 TaskStep(task=task, max_steps=max_steps, tags=[task])
             )
         if plan and self.memory is not None:
-            self._create_plan(task, max_steps)
+            self._create_plan(task, max_steps, instructions)
         while not env.done:
             perception = self.context_builder.build(
-                task, env.step, max_steps, env.history
+                task, env.step, max_steps, env.history, instructions=instructions
             )
             action, call_info = self._think(perception, stream)
             self._emit(StepBegin(step=env.step + 1, action=dict(action)))
@@ -164,8 +189,6 @@ class Agent:
 
         reflections = self._reflect(task, env.history, hypothesis, reflect)
         self._emit(RunEnd(steps=env.step, done=env.done, reflections=reflections))
-
-        return env
 
     def _think(self, perception: dict, stream: bool) -> tuple[dict, dict]:
         """Ask the brain for the next action, capturing call metadata."""
@@ -250,10 +273,12 @@ class Agent:
         self.memory.prune(scope="short_term", tag=task)
         return reflections
 
-    def _create_plan(self, task: str, max_steps: int) -> None:
+    def _create_plan(self, task: str, max_steps: int, instructions: str = "") -> None:
         """Ask the brain for a plan and store it as a PlanningStep."""
         assert self.memory is not None
-        perception = self.context_builder.build(task, 0, max_steps, [])
+        perception = self.context_builder.build(
+            task, 0, max_steps, [], instructions=instructions
+        )
         perception["planning"] = True
         action = self.brain.think(perception, self.tools.names())
         if action.get("name") == "plan":

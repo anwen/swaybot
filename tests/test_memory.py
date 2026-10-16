@@ -240,3 +240,36 @@ def test_autocompact_fallback_without_brain():
     summary = store.query(scope="long_term", tag="compact")[0]
     assert "Compacted" in summary.content
     assert "saw 0" in summary.content
+
+
+def test_batch_defers_saves_to_one_write(tmp_path):
+    from swaybot.memory import ActionStep, MemoryStore, TaskStep
+
+    store = MemoryStore(path=tmp_path / "memory.json")
+    writes: list[str] = []
+    real_save = store.backend.save
+    store.backend.save = lambda key, data: (writes.append(key), real_save(key, data))
+
+    with store.batch():
+        for i in range(5):
+            store.add(TaskStep(task=f"t{i}", tags=[f"t{i}"]))
+        store.add(ActionStep(step=1, action={"name": "echo"}, tags=["t0"]))
+        assert writes == []  # 批量中零写入
+    assert len(writes) == 1  # 退出时一次落盘
+
+
+def test_batch_saves_on_exception(tmp_path):
+    import pytest as _pytest
+
+    from swaybot.memory import MemoryStore, TaskStep
+
+    store = MemoryStore(path=tmp_path / "memory.json")
+    writes: list[str] = []
+    real_save = store.backend.save
+    store.backend.save = lambda key, data: (writes.append(key), real_save(key, data))
+
+    with _pytest.raises(RuntimeError):
+        with store.batch():
+            store.add(TaskStep(task="x", tags=["x"]))
+            raise RuntimeError("boom")
+    assert len(writes) == 1  # 异常退出仍保留已写步骤

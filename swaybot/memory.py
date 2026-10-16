@@ -1,6 +1,7 @@
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, ClassVar
@@ -181,6 +182,7 @@ class MemoryStore:
             else None
         )
         self.memories: list[MemoryStep] = []
+        self._batch_depth = 0
         if self.backend.exists(self._key):
             self.load()
 
@@ -311,7 +313,26 @@ class MemoryStore:
             self.memories = [_load_step(data)]
 
     def save(self) -> None:
+        if self._batch_depth:
+            return
         self.backend.save(self._key, self.to_dicts())
+
+    @contextmanager
+    def batch(self):
+        """Defer saves until the outermost batch exits.
+
+        A run persists two steps per iteration; rewriting the whole file
+        each time is quadratic I/O. Inside a batch, add/add_steps/prune
+        mutate in memory and a single save happens on exit — including
+        on exception, so a crashed run still leaves its steps on disk.
+        """
+        self._batch_depth += 1
+        try:
+            yield
+        finally:
+            self._batch_depth -= 1
+            if self._batch_depth == 0:
+                self.save()
 
     def prune(
         self,

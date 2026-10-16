@@ -26,8 +26,14 @@ class ContextBuilder:
         max_steps: int,
         history: list[dict],
         notice: str | None = None,
+        instructions: str | None = None,
     ) -> dict:
-        """Return a perception dict ready for ``Brain.think``."""
+        """Return a perception dict ready for ``Brain.think``.
+
+        ``instructions`` lets a caller that runs many steps (Agent._run)
+        load project instruction files once and reuse them; when omitted
+        they are collected here, which walks directories and spawns git.
+        """
         perception: dict = {
             "task": task,
             "step": step,
@@ -49,7 +55,9 @@ class ContextBuilder:
             perception["behavior_guidance"] = notice
         perception["tool_descriptions"] = self.tools.schemas()
         perception["available_tools"] = self.tools.names()
-        perception["project_instructions"] = load_project_instructions()
+        perception["project_instructions"] = (
+            instructions if instructions is not None else load_project_instructions()
+        )
         if self.skills is not None:
             perception["skill_context"] = self.skills.render_context(task)
         return perception
