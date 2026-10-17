@@ -197,6 +197,11 @@ def parse_plan(raw: str) -> dict[str, Any]:
     return {"name": "plan", "args": {"steps": []}}
 
 
+# Safety valve for pathological model output; shared by fallback_action
+# and the brain's prose->final_answer recovery.
+PROSE_CAP_CHARS = 4000
+
+
 def fallback_action(perception: dict, raw: str) -> dict[str, Any]:
     if perception["step"] + 1 >= perception["max_steps"]:
         return {"name": "done", "args": {}}
@@ -207,8 +212,8 @@ def fallback_action(perception: dict, raw: str) -> dict[str, Any]:
     # pass the full prose through as the user-facing message so the turn
     # completes. A generous cap only guards against pathological output.
     message = (raw or "").strip()
-    if len(message) > 4000:
-        message = message[:4000]
+    if len(message) > PROSE_CAP_CHARS:
+        message = message[:PROSE_CAP_CHARS]
     return {"name": "echo", "args": {"message": message}}
 
 

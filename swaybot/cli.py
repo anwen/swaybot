@@ -245,13 +245,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.explore:
-        explorer = Explorer(agent, max_steps=args.max_steps)
-        exploration, env = explorer.run()
+        Explorer(agent, max_steps=args.max_steps).run()
     else:
-        env = agent.run(
+        agent.run(
             args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
         )
     return 0
+
 
 def format_run(record: dict) -> str:
     """Render one run record for the CLI."""

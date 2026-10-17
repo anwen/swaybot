@@ -4,6 +4,7 @@ from .brain import ReasoningCallback, StreamCallback
 from .loop_guards import NonConvergenceGuard, RepeatCallGuard
 from .models import FallbackModel, Model, OpenAIModel
 from .parsing import (
+    PROSE_CAP_CHARS,
     PROSE_TOOL_TAG_RE,
     is_explicit_tool_call,
     fallback_action,
@@ -177,8 +178,8 @@ class LLMBrain:
             and not is_explicit_tool_call(raw, available_tools)
         ):
             prose = raw.strip()
-            if len(prose) > 4000:
-                prose = prose[:4000]
+            if len(prose) > PROSE_CAP_CHARS:
+                prose = prose[:PROSE_CAP_CHARS]
             # If the prose contains tool-call tags the model meant to invoke
             # (e.g. "<KB_search_bm25 query=...>") but couldn't because the tool
             # wasn't available this turn (force_final / text mode), those tags
