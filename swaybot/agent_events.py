@@ -84,6 +84,15 @@ class ExperimentDesigned:
     hypothesis: str
     method: str
     success_criteria: str
+    conjecture: str = ""
+
+
+@dataclass(frozen=True)
+class SubQuestionsAdded:
+    """An inconclusive question was decomposed into sharper sub-questions."""
+
+    parent: str
+    questions: tuple
 
 
 @dataclass(frozen=True)
@@ -130,6 +139,7 @@ Event = Union[
     ExplorationEnd,
     ExperimentDesigned,
     ExperimentRecorded,
+    SubQuestionsAdded,
     Wondered,
     DreamBegin,
     DreamEnd,
@@ -183,11 +193,20 @@ def to_ndjson(event: Event) -> Optional[dict]:
             "status": event.status,
         }
     if isinstance(event, ExperimentDesigned):
-        return {
+        payload = {
             "event": "experiment_designed",
             "hypothesis": event.hypothesis,
             "method": event.method[:200],
             "success_criteria": event.success_criteria[:200],
+        }
+        if event.conjecture:
+            payload["conjecture"] = event.conjecture[:300]
+        return payload
+    if isinstance(event, SubQuestionsAdded):
+        return {
+            "event": "sub_questions_added",
+            "parent": event.parent,
+            "questions": list(event.questions),
         }
     if isinstance(event, ExperimentRecorded):
         return {

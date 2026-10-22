@@ -79,3 +79,18 @@ env_info call and contains no final_answer"→refuted）——判定与证据挂
 **结论更新**：猜想形成与实验设计现在真实发生，且质量达到科研方案水准；
 验证链（裁决引证据）工作。满足"持续深入探索→猜想→实验→验证"的机制判据后，
 形态 A skill 的提取条件还差一项：数小时级的连续运行证据。
+
+## 追加 run5：可执行设计 + 猜想一等公民 + 子问题分解（2026-10-23）
+
+机制升级：设计提示词列出**真实工具面**并要求方法单次运行可执行（不再出现贝尔测试式
+的不可执行设计）；猜想作为 kind=conjecture 一等入库（relation 回链问题，初始
+credibility 0.3），裁决经 relation 精确移动猜想置信度（supported +0.2 / refuted
+-0.3）；inconclusive 裁决触发**子问题分解**（2-3 个更锐利、沙箱可答的子问题，
+relation=父问题、depth+1、父问题转 decomposed、深度上限防失控），候选浅层优先。
+
+run5 实证：「我是谁」的设计变为——猜想"身份由 (a)工具面 (b)运行环境 (c)持久状态
+三要素穷尽决定"，方法用 env_info + run_shell_command(whoami/id/python3 -V) +
+write_file 在单次运行内检验。猜想事件与入库均验证（credibility 0.3 待裁决移动）。
+
+节奏瓶颈仍在（thinking 模型一轮协议 4-6 分钟）；分解与置信度移动已由单测覆盖，
+等待更长运行给出现场证据。

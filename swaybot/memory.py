@@ -147,9 +147,14 @@ class ReflectionStep(MemoryStep):
     scope: str = "long_term"
     source: str = "reflector"
     # Lifecycle for question/contradiction entries: open -> testing (an
-    # exploration run picked it up) -> resolved (verified). Prevents the
-    # self-evolution loop from re-testing settled conjectures.
+    # exploration run picked it up) -> resolved / decomposed (split into
+    # sub-questions). Prevents the self-evolution loop from re-testing
+    # settled conjectures.
     status: str = "open"
+    # relation: for sub-questions, the parent question's content (tree edge)
+    relation: str = ""
+    # depth: 0 for root questions; guards runaway decomposition chains
+    depth: int = 0
     step_kind: ClassVar[str] = "reflection"
 
     def to_messages(self) -> list[dict]:

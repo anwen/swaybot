@@ -28,6 +28,7 @@ from pathlib import Path
 from .agent_events import (
     DreamBegin,
     ExperimentDesigned,
+    SubQuestionsAdded,
     DreamEnd,
     Event,
     ExplorationBegin,
@@ -82,12 +83,14 @@ class SelfEvolutionDirector:
         min_open: int = 2,
         max_runs: int = 3,
         max_steps: int = 5,
+        max_depth: int = 2,
         emit=None,
     ) -> None:
         self.agent = agent
         self.min_open = min_open
         self.max_runs = max_runs
         self.max_steps = max_steps
+        self.max_depth = max_depth
         self._emit_sink = emit
 
     # -- public ---------------------------------------------------------
@@ -107,14 +110,17 @@ class SelfEvolutionDirector:
             candidates = self.open_candidates()
             if len(candidates) < self.min_open:
                 break
-            hypothesis = candidates[0].content
+            entry = candidates[0]
+            hypothesis = entry.content
             protocol = self._design_experiment(hypothesis)
+            self._record_conjecture(hypothesis, protocol["conjecture"])
             self._set_status(hypothesis, "testing")
             begin = ExplorationBegin(hypothesis=hypothesis, task=protocol["task"])
             designed = ExperimentDesigned(
                 hypothesis=hypothesis,
                 method=protocol["method"],
                 success_criteria=protocol["criteria"],
+                conjecture=protocol["conjecture"],
             )
             emitted.extend((begin, designed))
             self._emit(begin)
@@ -126,11 +132,17 @@ class SelfEvolutionDirector:
                 hypothesis=hypothesis,
             )
             verdict = self._adjudicate(protocol, env.history)
+            self._update_conjecture(hypothesis, verdict.get("verdict", ""))
             record_event = self._record_experiment(
                 hypothesis, env.history, env.stop_reason, protocol=protocol, verdict=verdict
             )
             emitted.append(record_event)
             self._emit(record_event)
+            if verdict.get("verdict") == "inconclusive":
+                sub_event = self._decompose(entry)
+                if sub_event is not None:
+                    emitted.append(sub_event)
+                    self._emit(sub_event)
             end = ExplorationEnd(
                 hypothesis=hypothesis,
                 status=f"{env.stop_reason or 'unknown'}/{verdict.get('verdict', 'unknown')}",
@@ -154,7 +166,9 @@ class SelfEvolutionDirector:
             for m in memory.query(kind="contradiction", scope="long_term", limit=50)
             if getattr(m, "status", "open") == "open"
         ]
-        return contradictions + questions
+        # 浅层优先：先把父问题域的近层解决掉，再深入
+        pool = contradictions + questions
+        return sorted(pool, key=lambda m: int(getattr(m, "depth", 0) or 0))
 
     # -- internals ------------------------------------------------------
 
@@ -177,11 +191,21 @@ class SelfEvolutionDirector:
                 prior = "\nPrior experiments on this question:\n" + "\n".join(
                     f"- {r}" for r in prior_records
                 )
+        tools = sorted(getattr(self.agent, "tools", None).names()) if getattr(
+            self.agent, "tools", None
+        ) else ["final_answer"]
         prompt = (
             "Design ONE experiment to make progress on this open question:\n"
             f"  {hypothesis}\n{prior}\n"
-            "If the question is not yet testable, first sharpen it into a concrete "
-            "falsifiable conjecture. Reply ONLY with a JSON object:\n"
+            "Constraints: the method MUST be executable in a single run inside a "
+            "sandboxed workspace with EXACTLY these tools:\n"
+            f"  {', '.join(tools)}\n"
+            "(e.g. write and run small Python programs with run_shell_command, "
+            "probe the environment with env_info, keep files in the workspace). "
+            "Do NOT design experiments needing other minds, hardware, or long "
+            "waiting. If the question is too broad, sharpen it into a concrete "
+            "falsifiable conjecture this sandbox can actually test.\n"
+            "Reply ONLY with a JSON object:\n"
             '{"conjecture": "<falsifiable statement>", "method": "<what to do, '
             'concretely, with the available tools>", "success_criteria": '
             '"<what observation would count as support, and what as refutation>"}'
@@ -218,6 +242,86 @@ class SelfEvolutionDirector:
             "supported / refuted / inconclusive plus the evidence you saw."
         )
         return {"conjecture": conjecture, "method": method, "criteria": criteria, "task": task}
+
+    def _record_conjecture(self, question: str, conjecture: str) -> None:
+        """Store the designed conjecture as a first-class belief (kind=conjecture,
+        linked to its question) so verdicts can move ITS credibility precisely
+        instead of by keyword relevance."""
+        memory = self.agent.memory
+        if memory is None or not conjecture or conjecture == question:
+            return
+        memory.add(
+            Memory(
+                content=conjecture,
+                kind="conjecture",
+                scope="long_term",
+                relation=question,
+                source="director",
+                credibility=0.3,
+                tags=["conjecture"],
+            )
+        )
+
+    def _update_conjecture(self, question: str, verdict: str) -> None:
+        """Evidence moves the conjecture's credibility via the relation link."""
+        memory = self.agent.memory
+        if memory is None:
+            return
+        delta = {"supported": 0.2, "refuted": -0.3}.get(verdict, 0.0)
+        if delta == 0.0:
+            return
+        for mem in memory.memories:
+            if (
+                getattr(mem, "kind", "") == "conjecture"
+                and getattr(mem, "relation", "") == question
+                and hasattr(mem, "credibility")
+            ):
+                mem.credibility = max(0.0, min(1.0, float(mem.credibility) + delta))
+        memory.save()
+
+    def _decompose(self, entry) -> SubQuestionsAdded | None:
+        """Split an inconclusive question into sharper sub-questions.
+
+        Sub-questions link back to the parent (relation) and carry depth+1;
+        a depth cap keeps the tree from running away. The parent moves to
+        status 'decomposed' so it is not re-picked while its children are
+        explored.
+        """
+        parent = entry.content
+        depth = int(getattr(entry, "depth", 0) or 0)
+        if depth >= self.max_depth:
+            return None
+        answer = _ask_brain(
+            self.agent,
+            "This question could not be settled by one experiment:\n"
+            f"  {parent}\n"
+            "Split it into 2-3 SHARPER sub-questions, each answerable by a "
+            "small sandbox experiment with file/shell/python tools. Reply "
+            'ONLY with JSON: {"sub_questions": ["...", "..."]}',
+        )
+        parsed = _parse_json_object(answer)
+        subs = [
+            str(q).strip()
+            for q in (parsed.get("sub_questions") or [])
+            if str(q).strip() and len(str(q).strip()) > 4
+        ][:3] if parsed else []
+        if not subs:
+            return None
+        memory = self.agent.memory
+        if memory is not None:
+            for question in subs:
+                memory.add(
+                    ReflectionStep(
+                        content=question,
+                        kind="question",
+                        scope="long_term",
+                        status="open",
+                        relation=parent,
+                        depth=depth + 1,
+                    )
+                )
+            self._set_status(parent, "decomposed")
+        return SubQuestionsAdded(parent=parent, questions=tuple(subs))
 
     def _adjudicate(self, protocol: dict, history: list[dict]) -> dict:
         """Judge the run against the protocol's success criteria (LLM, with

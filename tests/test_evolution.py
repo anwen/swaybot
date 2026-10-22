@@ -247,3 +247,64 @@ def test_soul_digest_loads_into_instructions(tmp_path):
     (root / ".swaybot" / "soul-digest.md").write_text("# Soul digest\n- x", encoding="utf-8")
     paths = _collect_instruction_paths(root)
     assert any(p.name == "soul-digest.md" for p in paths)
+
+
+def test_conjecture_lifecycle_and_decomposition(tmp_path):
+    """猜想入库 → inconclusive 裁决 → 置信度不动但触发子问题分解 → 子问题带 relation/depth。"""
+    from swaybot.agent_events import ExperimentDesigned, SubQuestionsAdded
+    from swaybot.llm_brain import LLMBrain
+    from swaybot.models import ScriptedModel
+
+    store = MemoryStore(path=tmp_path / "memory.json")
+    agent = _agent_with_questions(store, ["what am I?", "another open q"])
+    steps = [
+        # 第 1 轮：设计 → 执行 → 裁决(inconclusive) → 分解(2 子问题)
+        {"action": {"name": "final_answer", "args": {"answer": '{"conjecture": "I am my policy", "method": "m", "success_criteria": "s"}'}}},
+        {"action": {"name": "final_answer", "args": {"answer": "did stuff"}}},
+        {"action": {"name": "final_answer", "args": {"answer": '{"verdict": "inconclusive", "evidence": "e"}'}}},
+        {"action": {"name": "final_answer", "args": {"answer": '{"sub_questions": ["can I run python here?", "does my answer survive context reset?"]}'}}},
+        # 第 2 轮（子问题）：设计 → 执行 → 裁决(supported)
+        {"action": {"name": "final_answer", "args": {"answer": '{"conjecture": "python runs", "method": "m2", "success_criteria": "s2"}'}}},
+        {"action": {"name": "final_answer", "args": {"answer": "ran python"}}},
+        {"action": {"name": "final_answer", "args": {"answer": '{"verdict": "supported", "evidence": "exit 0"}'}}},
+    ]
+    agent.brain = LLMBrain(backend=ScriptedModel(steps))
+    director = SelfEvolutionDirector(agent, min_open=1, max_runs=2, max_depth=2)
+    emitted = director.cycle()
+
+    kinds = [type(e).__name__ for e in emitted]
+    assert "SubQuestionsAdded" in kinds and "ExperimentDesigned" in kinds
+
+    # 猜想作为一等公民入库
+    conjectures = [m for m in store.memories if getattr(m, "kind", "") == "conjecture"]
+    assert any(m.relation == "what am I?" and m.content == "I am my policy" for m in conjectures)
+    # supported 裁决把对应猜想置信度 0.3 → 0.5
+    python_conj = next(m for m in conjectures if m.content == "python runs")
+    assert abs(python_conj.credibility - 0.5) < 1e-9
+
+    # 子问题带 relation 与 depth=1；父问题状态 decomposed
+    subs = [m for m in store.memories if getattr(m, "kind", "") == "question" and getattr(m, "relation", "")]
+    assert subs and all(getattr(m, "depth", 0) == 1 for m in subs)
+    parent = next(m for m in store.memories if getattr(m, "content", "") == "what am I?")
+    assert parent.status == "decomposed"
+
+
+def test_decomposition_depth_cap(tmp_path):
+    """超过 max_depth 的 inconclusive 不再分解。"""
+    from swaybot.llm_brain import LLMBrain
+    from swaybot.models import ScriptedModel
+
+    store = MemoryStore(path=tmp_path / "memory.json")
+    agent = _agent_with_questions(store, ["deep q?", "another q"])
+    # 手动把两个问题都设为深度上限（浅层优先排序下任一都可能被选中）
+    for m in store.memories:
+        m.depth = 2
+    steps = [
+        {"action": {"name": "final_answer", "args": {"answer": '{"conjecture": "c", "method": "m", "success_criteria": "s"}'}}},
+        {"action": {"name": "final_answer", "args": {"answer": "did"}}},
+        {"action": {"name": "final_answer", "args": {"answer": '{"verdict": "inconclusive", "evidence": "e"}'}}},
+    ]
+    agent.brain = LLMBrain(backend=ScriptedModel(steps))
+    director = SelfEvolutionDirector(agent, min_open=1, max_runs=1, max_depth=2)
+    emitted = director.cycle()
+    assert not any(type(e).__name__ == "SubQuestionsAdded" for e in emitted)
