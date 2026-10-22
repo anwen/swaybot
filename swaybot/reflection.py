@@ -45,6 +45,7 @@ class Reflector:
                 f"{entry['action']} -> {entry['result']}" for entry in history
             ]
             verdict = self._verify_hypothesis(history)
+            self._mark_question_status(hypothesis, "resolved")
             reflections.append(
                 Reflection(
                     content=(
@@ -97,6 +98,21 @@ class Reflector:
                 )
 
         return reflections
+
+    def _mark_question_status(self, hypothesis: str, status: str) -> None:
+        """Mark matching question/contradiction entries with a lifecycle status.
+
+        The explorer/director passes the entry's content as the hypothesis,
+        so exact-content matching is the join key.
+        """
+        for mem in self.memory.memories:
+            if getattr(mem, "step_kind", "") != "reflection":
+                continue
+            if getattr(mem, "kind", "") in ("question", "contradiction") and (
+                getattr(mem, "content", "") == hypothesis
+            ):
+                mem.status = status
+        self.memory.save()
 
     def _verify_hypothesis(self, history: list[dict]) -> str:
         """Simple heuristic: did any step report an error or fallback?"""

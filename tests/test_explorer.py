@@ -129,22 +129,16 @@ def test_explorer_passes_candidate_hypotheses_to_brain():
 def test_explorer_skips_already_verified_question():
     store = MemoryStore()
     question = "Why does echo fail on empty input?"
-    store.add(
-        ReflectionStep(
-            content=question,
-            kind="question",
-            scope="long_term",
-            tags=["explore"],
-        )
+    entry = ReflectionStep(
+        content=question,
+        kind="question",
+        scope="long_term",
+        tags=["explore"],
     )
-    store.add(
-        ReflectionStep(
-            content="Hypothesis verdict: supported",
-            kind="verification",
-            scope="long_term",
-            tags=[question],
-        )
-    )
+    store.add(entry)
+    # 新契约：resolution 由 reflect 的 _mark_question_status 标记
+    entry.status = "resolved"
+    store.save()
     agent = Agent(brain=EchoBrain(), memory=store)
     explorer = Explorer(agent)
     task = explorer.generate_task()

@@ -180,3 +180,74 @@ def test_agent_reflect_flag_disabled():
     agent = Agent(memory=store, reflector=reflector)
     agent.run("demo", max_steps=2, reflect=False)
     assert len(store.query(kind="theory")) == 0
+
+
+def test_reflect_marks_question_resolved():
+    from swaybot.agent import Agent
+    from swaybot.brain import EchoBrain
+    from swaybot.memory import MemoryStore, ReflectionStep
+    from swaybot.reflection import Reflector
+
+    store = MemoryStore()
+    question = ReflectionStep(
+        content="does add commute?", kind="question", scope="long_term"
+    )
+    store.add(question)
+    reflector = Reflector(store)
+    agent = Agent(brain=EchoBrain(), memory=store, reflector=reflector)
+    agent.run("check add", max_steps=1, hypothesis="does add commute?")
+    assert question.status == "resolved"
+
+
+def test_add_merges_duplicate_theories():
+    from swaybot.memory import MemoryStore, ReflectionStep
+
+    store = MemoryStore()
+    first = ReflectionStep(
+        content="echo preserves punctuation exactly",
+        kind="theory",
+        scope="long_term",
+        credibility=0.5,
+    )
+    store.add(first)
+    store.add(
+        ReflectionStep(
+            content="echo preserves punctuation exactly",
+            kind="theory",
+            scope="long_term",
+            credibility=0.5,
+        )
+    )
+    theories = [m for m in store.memories if getattr(m, "kind", "") == "theory"]
+    assert len(theories) == 1
+    assert theories[0].credibility == 0.6
+    assert "corroborated" in theories[0].tags
+
+
+def test_add_does_not_merge_distinct_questions():
+    from swaybot.memory import MemoryStore, ReflectionStep
+
+    store = MemoryStore()
+    store.add(ReflectionStep(content="why is echo slow?", kind="question", scope="long_term"))
+    store.add(
+        ReflectionStep(
+            content="why is echo slow on empty input?", kind="question", scope="long_term"
+        )
+    )
+    questions = [m for m in store.memories if getattr(m, "kind", "") == "question"]
+    assert len(questions) == 2
+
+
+def test_status_round_trips_through_persistence(tmp_path):
+    import json as _json
+
+    from swaybot.memory import MemoryStore, ReflectionStep
+
+    store = MemoryStore(path=tmp_path / "memory.json")
+    entry = ReflectionStep(content="q?", kind="question", scope="long_term")
+    store.add(entry)
+    entry.status = "testing"
+    store.save()
+
+    reloaded = MemoryStore(path=tmp_path / "memory.json")
+    assert reloaded.memories[0].status == "testing"

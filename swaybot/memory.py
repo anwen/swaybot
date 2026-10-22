@@ -146,6 +146,10 @@ class ReflectionStep(MemoryStep):
     kind: str = "theory"
     scope: str = "long_term"
     source: str = "reflector"
+    # Lifecycle for question/contradiction entries: open -> testing (an
+    # exploration run picked it up) -> resolved (verified). Prevents the
+    # self-evolution loop from re-testing settled conjectures.
+    status: str = "open"
     step_kind: ClassVar[str] = "reflection"
 
     def to_messages(self) -> list[dict]:
@@ -183,10 +187,55 @@ class MemoryStore:
         if self.backend.exists(self._key):
             self.load()
 
+    # Long-term kinds eligible for corroboration-merge on add(): similar
+    # content bumps the existing entry's credibility instead of stacking
+    # near-duplicates that crowd out query_relevant's top slots. Questions
+    # and contradictions merge only on exact content (distinct-but-similar
+    # wording is common and must not be collapsed).
+    _MERGEABLE_KINDS = {"theory", "verification", "experiment"}
+
     def add(self, memory: MemoryStep) -> None:
-        """Append a step and persist if a backend is configured."""
+        """Append a step and persist if a backend is configured.
+
+        Long-term insights that restate an existing entry merge into it
+        (credibility +0.1, "corroborated" tag) instead of duplicating.
+        """
+        duplicate = self._find_mergeable(memory)
+        if duplicate is not None:
+            duplicate.credibility = min(1.0, float(duplicate.credibility) + 0.1)
+            if "corroborated" not in duplicate.tags:
+                duplicate.tags = list(duplicate.tags) + ["corroborated"]
+            self.save()
+            return
         self.memories.append(memory)
         self.save()
+
+    def _find_mergeable(self, memory: MemoryStep) -> MemoryStep | None:
+        if getattr(memory, "scope", "") != "long_term":
+            return None
+        kind = getattr(memory, "kind", "")
+        content = getattr(memory, "content", "")
+        if not content or kind not in self._MERGEABLE_KINDS:
+            return None
+        tokens = set(_tokenize(content)) - _STOP_WORDS
+        if not tokens:
+            return None
+        for existing in self.memories:
+            if (
+                getattr(existing, "scope", "") != "long_term"
+                or getattr(existing, "kind", "") != kind
+            ):
+                continue
+            existing_content = getattr(existing, "content", "")
+            if existing_content == content:
+                return existing
+            existing_tokens = set(_tokenize(existing_content)) - _STOP_WORDS
+            if not existing_tokens:
+                continue
+            overlap = len(tokens & existing_tokens) / len(tokens | existing_tokens)
+            if overlap >= 0.75:
+                return existing
+        return None
 
     def add_steps(self, steps: Iterable[MemoryStep]) -> None:
         """Append multiple steps and persist."""

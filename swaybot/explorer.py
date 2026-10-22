@@ -95,15 +95,15 @@ class Explorer:
             return []
         seen: set[str] = set()
         candidates: list[str] = []
-        verified_tags: set[str] = set()
-        for mem in self.agent.memory.query(
-            kind="verification", scope="long_term", limit=999
-        ):
-            verified_tags.update(mem.tags)
         for kind in ("question", "contradiction"):
             for mem in self.agent.memory.query(kind=kind, scope="long_term", limit=20):
                 content = getattr(mem, "content", "")
-                if content and content not in seen and content not in verified_tags:
+                # Lifecycle gate: skip entries already settled or being
+                # tested (the old tag-based dedup never matched — tags held
+                # task names, never question content).
+                if getattr(mem, "status", "open") != "open":
+                    continue
+                if content and content not in seen:
                     seen.add(content)
                     candidates.append(content)
         return candidates
