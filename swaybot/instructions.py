@@ -6,7 +6,8 @@ from pathlib import Path
 
 INSTRUCTION_FILES = ["AGENTS.md"]
 SWAYBOT_RULES_DIR = Path(".swaybot")
-SWAYBOT_RULES_FILES = ["rules.md"]
+# soul-digest.md 是灵魂慢通道的产物（稳定知识摘要，见 evolution.SoulChannel）
+SWAYBOT_RULES_FILES = ["rules.md", "soul-digest.md"]
 
 
 def _find_git_root(start: Path) -> Path | None:

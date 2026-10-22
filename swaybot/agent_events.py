@@ -85,6 +85,14 @@ class ExperimentRecorded:
     summary: str
 
 
+@dataclass(frozen=True)
+class SoulProposed:
+    """The slow lane proposes a digest of stable knowledge (diff only —
+    writing requires the explicit approval gate)."""
+
+    excerpt: str
+
+
 Event = Union[
     RunBegin,
     StepBegin,
@@ -95,6 +103,7 @@ Event = Union[
     ExplorationBegin,
     ExplorationEnd,
     ExperimentRecorded,
+    SoulProposed,
 ]
 
 
@@ -149,4 +158,6 @@ def to_ndjson(event: Event) -> Optional[dict]:
             "hypothesis": event.hypothesis,
             "summary": event.summary[:200],
         }
+    if isinstance(event, SoulProposed):
+        return {"event": "soul_proposed", "excerpt": event.excerpt[:300]}
     return None

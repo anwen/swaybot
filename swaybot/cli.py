@@ -195,6 +195,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Permission mode: read-only, workspace-write, or danger (default: workspace-write)",
     )
     parser.add_argument(
+        "--allow-soul-edit",
+        action="store_true",
+        help="Approve soul-channel digest writes (without it, proposals are "
+        "printed as diffs only)",
+    )
+    parser.add_argument(
         "--auto-evolve",
         action="store_true",
         help="After the task, run the self-evolution cycle (explore open "
@@ -265,9 +271,25 @@ def main(argv: list[str] | None = None) -> int:
             args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
         )
     if args.auto_evolve and memory is not None:
-        from .evolution import SelfEvolutionDirector
+        from .evolution import SelfEvolutionDirector, SoulChannel
+        from .agent_events import SoulProposed
 
-        SelfEvolutionDirector(agent, emit=_make_output_sink(args)).cycle()
+        sink = _make_output_sink(args)
+        SelfEvolutionDirector(agent, emit=sink).cycle()
+
+        channel = SoulChannel(memory, Path.cwd())
+        proposal = channel.propose()
+        if proposal is not None:
+            digest, diff = proposal
+            sink(SoulProposed(excerpt=diff))
+            outcome = channel.apply(digest, approve=args.allow_soul_edit)
+            if not args.allow_soul_edit:
+                print(
+                    "soul proposal ready (diff above); rerun with "
+                    "--allow-soul-edit to write it. " + outcome
+                )
+            else:
+                print(f"soul digest {outcome}")
     return 0
 
 

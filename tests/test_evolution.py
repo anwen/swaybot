@@ -102,3 +102,104 @@ def test_testing_status_blocks_duplicate_pickup(tmp_path):
     # 被测的进入 testing（验证后 resolved），其余保持 open
     assert set(statuses.values()) <= {"open", "testing", "resolved"}
     assert "resolved" in statuses.values()
+
+
+# ---------- 灵魂慢通道 ----------
+
+def _aged_theory(content, credibility=0.9, days_old=10):
+    from datetime import datetime, timedelta, timezone
+
+    from swaybot.memory import ReflectionStep
+
+    return ReflectionStep(
+        content=content,
+        kind="theory",
+        scope="long_term",
+        credibility=credibility,
+        created_at=(
+            datetime.now(timezone.utc) - timedelta(days=days_old)
+        ).isoformat(),
+    )
+
+
+def _soul_store(tmp_path, theories, contradictions=()):
+    store = MemoryStore(path=tmp_path / "memory.json")
+    for theory in theories:
+        store.add(theory)
+    for content in contradictions:
+        store.add(
+            ReflectionStep(
+                content=content, kind="contradiction", scope="long_term"
+            )
+        )
+    return store
+
+
+def test_soul_channel_proposal_gates(tmp_path):
+    from swaybot.evolution import SoulChannel
+
+    # 不足 5 条高可信理论 → 不提案
+    store = _soul_store(tmp_path, [_aged_theory(f"t{i}") for i in range(3)])
+    assert SoulChannel(store, tmp_path).propose() is None
+
+    # 5 条达标 → 提案（diff 含新增行）
+    store = _soul_store(tmp_path, [_aged_theory(f"stable theory {i}") for i in range(5)])
+    proposal = SoulChannel(store, tmp_path).propose()
+    assert proposal is not None
+    digest, diff = proposal
+    assert "stable theory 0" in digest
+    assert diff.startswith("---") and "+- (credibility" in diff
+
+
+def test_soul_channel_age_and_credibility_gates(tmp_path):
+    from swaybot.evolution import SoulChannel
+
+    store = _soul_store(
+        tmp_path,
+        [_aged_theory(f"old hi {i}", credibility=0.9, days_old=10) for i in range(5)]
+        + [
+            _aged_theory("young one", credibility=0.95, days_old=0),
+            _aged_theory("weak old one", credibility=0.5, days_old=30),
+        ],
+    )
+    proposal = SoulChannel(store, tmp_path).propose()
+    assert proposal is not None
+    digest = proposal[0]
+    assert "old hi" in digest
+    assert "young one" not in digest and "weak old one" not in digest
+
+
+def test_soul_channel_quiet_brake(tmp_path):
+    from swaybot.evolution import SoulChannel
+
+    store = _soul_store(
+        tmp_path,
+        [_aged_theory(f"stable {i}") for i in range(5)],
+        contradictions=["a conflicts with b"],  # created NOW
+    )
+    assert SoulChannel(store, tmp_path, quiet_days=1.0).propose() is None
+
+
+def test_soul_channel_writes_only_with_approval(tmp_path):
+    from swaybot.evolution import SoulChannel
+
+    store = _soul_store(tmp_path, [_aged_theory(f"stable {i}") for i in range(5)])
+    channel = SoulChannel(store, tmp_path)
+    digest, _diff = channel.propose()
+    target = tmp_path / ".swaybot" / "soul-digest.md"
+    channel.apply(digest, approve=False)
+    assert not target.exists()  # 未批准：零写入
+    outcome = channel.apply(digest, approve=True)
+    assert "written" in outcome
+    assert target.exists() and "stable 0" in target.read_text(encoding="utf-8")
+
+
+def test_soul_digest_loads_into_instructions(tmp_path):
+    from swaybot.instructions import _collect_instruction_paths
+    from pathlib import Path as P
+
+    root = tmp_path
+    (root / ".swaybot").mkdir()
+    (root / ".swaybot" / "soul-digest.md").write_text("# Soul digest\n- x", encoding="utf-8")
+    paths = _collect_instruction_paths(root)
+    assert any(p.name == "soul-digest.md" for p in paths)
