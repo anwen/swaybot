@@ -176,11 +176,8 @@ class MemoryStore:
             # to keep tests isolated.
             self.backend = InMemoryBackend()
             self._key = "memory"
-        self.path = (
-            getattr(self.backend, "_path", lambda _k: None)(self._key)
-            if hasattr(self.backend, "_path")
-            else None
-        )
+        _path_for = getattr(self.backend, "path_for", None)
+        self.path = _path_for(self._key) if callable(_path_for) else None
         self.memories: list[MemoryStep] = []
         self._batch_depth = 0
         if self.backend.exists(self._key):

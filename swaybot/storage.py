@@ -77,6 +77,15 @@ class _BaseFileBackend:
             raise StorageError(f"invalid key: {key!r}")
         return safe
 
+    def path_for(self, key: str) -> Path:
+        """Public accessor for the file backing ``key``.
+
+        Callers such as MemoryStore surface it so sibling files (e.g.
+        runs.jsonl) can live next to the store without reaching into
+        backend internals.
+        """
+        return self._path(key)
+
     def _path(self, key: str) -> Path:
         safe = self._safe_key(key)
         path = (self.base_dir / f"{safe}{self.EXTENSION}").resolve()

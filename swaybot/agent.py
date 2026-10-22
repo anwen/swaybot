@@ -196,6 +196,12 @@ class Agent:
                 reflections=reflections,
             )
         )
+        # Detach run-scoped sinks so late emissions (e.g. a model stream
+        # callback outliving the run) no-op instead of hitting a stale
+        # recorder. NOTE: one Agent runs one task at a time — concurrent
+        # run() calls on the same instance would still race; use an agent
+        # per session (as AsyncAgent does).
+        self._sinks = []
 
     def _think(self, perception: dict, stream: bool) -> tuple[dict, dict]:
         """Ask the brain for the next action, capturing call metadata."""
