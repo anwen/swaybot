@@ -382,3 +382,16 @@ OpenCode/Claw Code 借鉴中，下一步可考虑：交互式 ask/allow/deny 确
 - **文件**：新增 `swaybot/tools/mcp_provider.py`、`tests/test_mcp_provider.py`
 - **验收**：配置 MCP server 后其工具出现在 registry 中并可调用；生命周期正确启停。
 - **备注**：旧的 `swaybot/mcp_client.py` 已在结构清理中移除，应按 provider 接口重新实现。
+
+## 2026-10-22 八皇后对照实验暴露的缺口（experiments/queens-compare-20261022/）
+
+### [ ] 沙箱执行策略：让 agent 能运行自己写的代码
+- **问题**：`CommandGuard` 允许列表只有 9 个只读命令（无任何解释器），且与权限模式无关——
+  danger 模式下 `python`/`pytest` 仍被拒。"写代码 → 运行验证"任务结构性无法完成；
+  对照实验中同模型在 zcode-cli（yolo）上 2 次调用收工，swaybot 12 步失败收场（4 万 input tokens 耗在重试循环）。
+- **方案**：按权限模式分级——`danger` 放开解释器执行；`workspace-write` 允许受限执行
+  （白名单加 `python`/`python3`/`pytest`，禁网络类命令）；或引入可配置命令白名单。同时让
+  CommandGuard 的拒绝文案与提示词里的"权限拒绝即终局"引导语义对齐（当前模型未能把
+  guard 错误关联到该引导）。
+- **文件**：`swaybot/guards.py`、`swaybot/tools/shell.py`、`swaybot/prompts/*.j2`
+- **验收**：八皇后任务在 `--permission-mode danger` 下 5 步内完成并验证 92。
