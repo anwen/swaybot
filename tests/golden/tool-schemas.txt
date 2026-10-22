@@ -1,0 +1,269 @@
+[
+  {
+    "description": "Echo a message back unchanged.",
+    "name": "echo",
+    "parameters": {
+      "properties": {
+        "message": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "Add two numbers.",
+    "name": "add",
+    "parameters": {
+      "properties": {
+        "a": {
+          "type": "number"
+        },
+        "b": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Signal that the task is complete.",
+    "name": "done",
+    "parameters": {
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "description": "Provide the final answer and end the task.",
+    "name": "final_answer",
+    "parameters": {
+      "properties": {
+        "answer": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "answer"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Inspect the current working environment.\n\n    Returns the working directory, platform and OS version, current UTC\n    date/time, and — when inside a git repository — the branch, working-tree\n    status, and the most recent commits. Call this when you need to know\n    where you are working or what changed recently; the information is NOT\n    provided automatically.",
+    "name": "env_info",
+    "parameters": {
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "description": "Read your current task list with each item's status.",
+    "name": "todo_read",
+    "parameters": {
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "description": "Replace the task list.\n\n        Pass the FULL list every time (not just changes). Each item is\n        ``{\"content\": str, \"status\": \"pending\" | \"in_progress\" | \"completed\"}``.\n        Mark items completed as soon as they are done, keep exactly one\n        in_progress, and add new items as they arise. An empty list clears it.",
+    "name": "todo_write",
+    "parameters": {
+      "properties": {
+        "todos": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "todos"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Fetch a public URL and return visible text.",
+    "name": "web_fetch",
+    "parameters": {
+      "properties": {
+        "max_length": {
+          "default": 4000,
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Search the web using DuckDuckGo lite and return result snippets.",
+    "name": "web_search",
+    "parameters": {
+      "properties": {
+        "max_results": {
+          "default": 3,
+          "type": "integer"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Read a file inside the workspace with line numbers (``N<TAB>line``).\n\n    Line numbers let you reference exact locations when editing; ``offset``\n    is the 1-based first line to return.",
+    "name": "read_file",
+    "parameters": {
+      "properties": {
+        "max_length": {
+          "default": 10000,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 1,
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Write ``content`` to a file inside the workspace.",
+    "name": "write_file",
+    "parameters": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Replace ``old_string`` with ``new_string`` in ``path``.\n\n    If ``old_string`` is not found, the file has changed since it was read\n    (stale content). If it appears more than once and ``replace_all`` is\n    False, the edit is rejected to avoid ambiguous replacements.",
+    "name": "edit_file",
+    "parameters": {
+      "properties": {
+        "new_string": {
+          "type": "string"
+        },
+        "old_string": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "replace_all": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "old_string",
+        "new_string"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "List files and directories inside ``path``.",
+    "name": "list_directory",
+    "parameters": {
+      "properties": {
+        "path": {
+          "default": ".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "Search file names matching ``query`` (glob) under ``path``.",
+    "name": "search_files",
+    "parameters": {
+      "properties": {
+        "path": {
+          "default": ".",
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Search file contents for ``pattern`` (regex) under ``path``.\n\n    Uses ripgrep (``rg --json``) when available, otherwise falls back to a\n    stdlib recursive search. Results are formatted as ``file:line: text``.\n    Large result sets are truncated and the full set is saved to an overflow\n    file under ``.swaybot/overflows``.",
+    "name": "grep",
+    "parameters": {
+      "properties": {
+        "max_results": {
+          "default": 50,
+          "type": "integer"
+        },
+        "path": {
+          "default": ".",
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Run an allowed shell command inside the workspace.",
+    "name": "run_shell_command",
+    "parameters": {
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "default": ".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    }
+  }
+]
