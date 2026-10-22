@@ -59,17 +59,19 @@ def test_scripted_model_satisfies_protocol():
 
 
 def test_scripted_model_replays_text_and_action_steps():
-    import json
-
     model = ScriptedModel(
         [
             {"text": "thinking..."},
             {"action": {"name": "echo", "args": {"message": "hi"}}},
         ]
     )
-    assert model.generate([{"role": "user", "content": "q"}]) == "thinking..."
-    action = json.loads(model.generate([{"role": "user", "content": "q"}]))
-    assert action == {"name": "echo", "args": {"message": "hi"}}
+    text_step = model.generate([{"role": "user", "content": "q"}])
+    assert text_step.text == "thinking..."
+    assert text_step.tool_call is None
+    action_step = model.generate([{"role": "user", "content": "q"}])
+    assert action_step.tool_call is not None
+    assert action_step.tool_call.name == "echo"
+    assert action_step.tool_call.args == {"message": "hi"}
     assert model.remaining == 0
     assert len(model.calls) == 2
 
@@ -99,8 +101,8 @@ def test_scripted_model_streams_text_in_chunks():
     out = model.generate(
         [{"role": "user", "content": "q"}], stream_callback=chunks.append
     )
-    assert out == "0123456789abcdef"
-    assert "".join(chunks) == out
+    assert out.text == "0123456789abcdef"
+    assert "".join(chunks) == out.text
     assert len(chunks) > 1  # chunked, exercising streaming consumers
 
 
@@ -135,15 +137,17 @@ def test_recording_model_writes_one_line_per_call(tmp_path):
         ),
         tmp_path,
     )
-    assert model.generate([{"role": "user", "content": "q"}]) == "hello"
+    assert model.generate([{"role": "user", "content": "q"}]).text == "hello"
     model.generate([{"role": "user", "content": "q"}], tools=[{"name": "done"}])
     files = list(tmp_path.glob("model-io-*.jsonl"))
     assert len(files) == 1
     lines = [json.loads(l) for l in files[0].read_text().splitlines()]
     assert len(lines) == 2
-    assert lines[0]["raw_output"] == "hello"
+    assert lines[0]["text"] == "hello"
+    assert lines[0]["tool_call"] is None
     assert lines[0]["message_count"] == 1
     assert lines[1]["tool_names"] == ["done"]
+    assert lines[1]["tool_call"]["name"] == "done"
     assert lines[1]["error"] is None
 
 

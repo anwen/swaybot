@@ -3,7 +3,14 @@ from typing import Any
 
 from .brain import ReasoningCallback, StreamCallback
 from .loop_guards import NonConvergenceGuard, RepeatCallGuard
-from .models import FallbackModel, Model, OpenAIModel, RecordingModel
+from .models import (
+    FallbackModel,
+    Model,
+    ModelResponse,
+    OpenAIModel,
+    RecordingModel,
+    normalize_response,
+)
 from .parsing import (
     PROSE_CAP_CHARS,
     PROSE_TOOL_TAG_RE,
@@ -152,7 +159,7 @@ class LLMBrain:
             if "done" not in existing:
                 tools_for_api.append(DONE_SCHEMA)
 
-        raw = self._model.generate(
+        result = self._model.generate(
             messages,
             metadata=call_info,
             tools=tools_for_api if supports_tools else None,
@@ -160,14 +167,19 @@ class LLMBrain:
             reasoning_callback=reasoning_callback,
         )
         _merge_metadata(metadata, call_info)
-        if raw is None:
+        response = normalize_response(result)
+        if response is None:
             error_detail = call_info.get("error", "")
             message = "LLM call failed after retries"
             if error_detail:
                 message = f"{message}: {error_detail}"
             action = fallback_action(perception, message)
+        elif response.tool_call is not None:
+            # Structural path: the model's action arrives as a ToolCall, never
+            # as text to be re-parsed — no recovery logic can misfire here.
+            action = {"name": response.tool_call.name, "args": response.tool_call.args}
         else:
-            action = parse_action(raw, perception, available_tools)
+            action = self._text_action(response.text, perception, available_tools)
         # If the model returned prose instead of a tool call, treat the prose as
         # the final answer rather than echo-truncating it.  This commonly happens
         # with reasoning models: reasoning tokens exhaust the output budget so
@@ -177,14 +189,16 @@ class LLMBrain:
         # with the full answer instead of looping on a 200-char echo.
         # NOTE the is_explicit_tool_call guard: a genuine JSON/XML echo call
         # must execute as a tool call; only fallback-wrapped PROSE becomes the
-        # final answer.
+        # final answer.  (Text-mode branch only; structural tool calls above
+        # can never be hijacked.)
         if (
             action.get("name") == "echo"
-            and raw
-            and raw.strip()
-            and not is_explicit_tool_call(raw, available_tools)
+            and response is not None
+            and response.text
+            and response.text.strip()
+            and not is_explicit_tool_call(response.text, available_tools)
         ):
-            prose = raw.strip()
+            prose = response.text.strip()
             if len(prose) > PROSE_CAP_CHARS:
                 prose = prose[:PROSE_CAP_CHARS]
             # If the prose contains tool-call tags the model meant to invoke
@@ -256,6 +270,18 @@ class LLMBrain:
             ),
         }
 
+    @staticmethod
+    def _text_action(
+        raw: str, perception: dict, available_tools: list[str]
+    ) -> dict[str, Any]:
+        """Text-mode fallback: parse an action out of plain model output.
+
+        Only reached when the backend produced no structural tool call —
+        text-only backends or forced text mode. XML-tag recovery and the
+        prose fallback live in parsing.py, scoped exactly to this path.
+        """
+        return parse_action(raw, perception, available_tools)
+
     def _plan(
         self,
         perception: dict,
@@ -276,10 +302,10 @@ class LLMBrain:
             },
         ]
 
-        raw = self._model.generate(messages, metadata=metadata)
-        if raw is None:
+        response = normalize_response(self._model.generate(messages, metadata=metadata))
+        if response is None:
             return {"name": "plan", "args": {"steps": []}}
-        return parse_plan(raw)
+        return parse_plan(response.text)
 
     def _explore(
         self,
@@ -300,10 +326,10 @@ class LLMBrain:
             },
         ]
 
-        raw = self._model.generate(messages, metadata=metadata)
-        if raw is None:
+        response = normalize_response(self._model.generate(messages, metadata=metadata))
+        if response is None:
             return {"name": "explore", "args": {"task": "explore", "hypothesis": ""}}
-        return {"name": "explore", "args": parse_exploration_response(raw)}
+        return {"name": "explore", "args": parse_exploration_response(response.text)}
 
 
 def _merge_metadata(target: dict | None, source: dict) -> None:

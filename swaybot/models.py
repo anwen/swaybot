@@ -3,6 +3,7 @@
 import json
 import os
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol, cast, runtime_checkable
@@ -26,6 +27,38 @@ StreamCallback = Callable[[str], None]
 ReasoningCallback = Callable[[str], None]
 
 
+@dataclass(frozen=True)
+class ToolCall:
+    """A structured tool invocation requested by the model."""
+
+    name: str
+    args: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ModelResponse:
+    """What a model said and/or did, in one turn.
+
+    ``tool_call`` is the model's ACTION and never travels through the text
+    channel; ``text`` is what it said. ``finish_reason`` lets callers apply
+    structural guards (e.g. drop truncated tool calls on "length").
+    Implementations may return a plain ``str`` as shorthand for a
+    text-only response; ``normalize_response`` folds that in.
+    """
+
+    text: str = ""
+    tool_call: ToolCall | None = None
+    finish_reason: str | None = None
+    usage: dict | None = None
+
+
+def normalize_response(result: "ModelResponse | str | None") -> ModelResponse | None:
+    """Accept str as a text-only ModelResponse (legacy/sugar), pass the rest."""
+    if result is None or isinstance(result, ModelResponse):
+        return result
+    return ModelResponse(text=str(result))
+
+
 @runtime_checkable
 class Model(Protocol):
     """A text generation backend that turns messages into text or tool calls."""
@@ -37,13 +70,12 @@ class Model(Protocol):
         tools: list[dict] | None = None,
         stream_callback: StreamCallback | None = None,
         reasoning_callback: ReasoningCallback | None = None,
-    ) -> str | None:
-        """Return the model's text output, or None on failure.
+    ) -> ModelResponse | str | None:
+        """Return what the model said/did, or None on failure.
 
-        Implementations that support native tool calls may return a JSON
-        string encoding ``{"name": ..., "args": ...}`` when a tool is
-        chosen, or expose ``supports_tools = True`` and return a richer
-        representation.
+        Canonical return is :class:`ModelResponse` (``tool_call`` carries
+        actions structurally); a plain ``str`` is accepted as shorthand for
+        a text-only response.
         """
         ...
 
@@ -96,10 +128,11 @@ class ScriptedModel:
     * ``{"raise": ValueError("boom")}`` — raise, to drive fallback/retry paths
 
     Text steps are delivered through ``stream_callback`` in small chunks so
-    streaming consumers are exercised. Exhausting the script raises instead of
-    returning None: a loop that asks for more steps than were scripted is a
-    test bug, and a silent None would turn it into a confusing assertion
-    against the fallback path.
+    streaming consumers are exercised. Action steps return a ModelResponse
+    with a structural tool_call; text steps a text-only ModelResponse.
+    Exhausting the script raises instead of returning None: a loop that asks
+    for more steps than were scripted is a test bug, and a silent None would
+    turn it into a confusing assertion against the fallback path.
     """
 
     supports_tools = True
@@ -127,7 +160,7 @@ class ScriptedModel:
         tools: list[dict] | None = None,
         stream_callback: StreamCallback | None = None,
         reasoning_callback: ReasoningCallback | None = None,
-    ) -> str | None:
+    ) -> ModelResponse:
         if self._cursor >= len(self.steps):
             raise ScriptedModelError(
                 f"script exhausted after {len(self.steps)} steps; "
@@ -141,17 +174,23 @@ class ScriptedModel:
         start = time.perf_counter()
         if "action" in step:
             action = step["action"]
+            response = ModelResponse(
+                tool_call=ToolCall(name=action["name"], args=dict(action.get("args", {}))),
+                finish_reason="tool_calls",
+            )
             content = json.dumps({"name": action["name"], "args": action.get("args", {})})
         else:
             content = step.get("text", "")
+            response = ModelResponse(text=content, finish_reason="stop")
         if metadata is not None:
             metadata["raw_output"] = content
             metadata["duration_ms"] = (time.perf_counter() - start) * 1000
             metadata["model_input_messages"] = list(messages)
-        if stream_callback:
+            metadata["finish_reason"] = response.finish_reason
+        if stream_callback and response.tool_call is None:
             for start_idx in range(0, len(content), self._CHUNK_CHARS):
                 stream_callback(content[start_idx : start_idx + self._CHUNK_CHARS])
-        return content
+        return response
 
 
 class RecordingModel:
@@ -189,7 +228,7 @@ class RecordingModel:
         call_metadata: dict = {}
         start = time.perf_counter()
         error = ""
-        result: str | None = None
+        result = None
         try:
             result = self._inner.generate(
                 messages,
@@ -200,18 +239,18 @@ class RecordingModel:
             )
             if result is None:
                 error = str(call_metadata.get("error", "model returned None"))
-            return result
+            return result  # ModelResponse 或 str 简写原样透传
         except Exception as exc:  # noqa: BLE001 —— 记录后原样上抛，不吞错
             error = f"{type(exc).__name__}: {exc}"
             raise
         finally:
-            self._record(messages, tools, result, call_metadata, error, start)
+            self._record(messages, tools, normalize_response(result), call_metadata, error, start)
 
     def _record(
         self,
         messages: list[dict],
         tools: list[dict] | None,
-        output: str | None,
+        response: ModelResponse | None,
         call_metadata: dict,
         error: str,
         start: float,
@@ -224,7 +263,13 @@ class RecordingModel:
             "tool_names": [t.get("name") for t in (tools or []) if isinstance(t, dict)],
             "message_count": len(messages),
             "messages": messages,
-            "raw_output": output,
+            "text": response.text if response else None,
+            "tool_call": (
+                {"name": response.tool_call.name, "args": response.tool_call.args}
+                if response and response.tool_call
+                else None
+            ),
+            "finish_reason": response.finish_reason if response else None,
             "metadata": call_metadata,
             "error": error or None,
         }
@@ -346,7 +391,7 @@ class OpenAIModel:
         tools: list[dict] | None = None,
         stream_callback: StreamCallback | None = None,
         reasoning_callback: ReasoningCallback | None = None,
-    ) -> str | None:
+    ) -> ModelResponse | str | None:
         last_error = ""
         openai_tools = self._build_openai_tools(tools)
         for attempt in range(self.max_retries + 1):
@@ -414,7 +459,7 @@ class OpenAIModel:
         metadata: dict | None,
         start: float,
         reasoning_callback,
-    ) -> str:
+    ) -> ModelResponse:
         choice = response.choices[0]
         message = choice.message
         content = message.content or ""
@@ -426,7 +471,7 @@ class OpenAIModel:
         # A length truncation may leave tool_calls with an arguments string that
         # was cut mid-JSON; executing it would run a half-formed call. When the
         # stop reason is 'length', prefer the (complete) visible content and
-        # drop tool_calls so think()'s prose->final_answer path handles it.
+        # drop the tool call — structurally, not by re-parsing text.
         if (
             finish_reason == "length"
             and isinstance(tool_calls, list)
@@ -434,14 +479,21 @@ class OpenAIModel:
             and content.strip()
         ):
             tool_calls = None
+        tool_call = None
         if isinstance(tool_calls, list) and tool_calls:
-            action = self._tool_call_to_action(tool_calls[0])
-            if action is not None:
-                content = json.dumps(action)
+            call = self._parse_tool_call(tool_calls[0])
+            if call is not None:
+                tool_call = call
         self._record_completion_metadata(metadata, messages, content, start, response)
         if metadata is not None:
             metadata["finish_reason"] = finish_reason
-        return content
+            if tool_call is not None:
+                metadata["tool_call"] = {"name": tool_call.name, "args": tool_call.args}
+        return ModelResponse(
+            text=content,
+            tool_call=tool_call,
+            finish_reason=finish_reason,
+        )
 
     def _stream_generate(
         self,
@@ -451,7 +503,7 @@ class OpenAIModel:
         start: float,
         stream_callback: StreamCallback | None,
         reasoning_callback: ReasoningCallback | None,
-    ) -> str:
+    ) -> ModelResponse:
         """Stream a completion, invoking callbacks and recording metadata."""
         content_parts: list[str] = []
         response = self._client.chat.completions.create(**kwargs)
@@ -469,7 +521,9 @@ class OpenAIModel:
                     stream_callback(token)
         content = "".join(content_parts)
         self._record_base_metadata(metadata, messages, content, start)
-        return content
+        if metadata is not None:
+            metadata["finish_reason"] = "stop"
+        return ModelResponse(text=content, finish_reason="stop")
 
     def _record_completion_metadata(
         self,
@@ -523,12 +577,9 @@ class OpenAIModel:
         return openai_tools
 
     @staticmethod
-    def _tool_call_to_action(tool_call) -> dict | None:
+    def _parse_tool_call(tool_call) -> ToolCall | None:
         try:
             arguments = json.loads(tool_call.function.arguments or "{}")
         except json.JSONDecodeError:
             arguments = {}
-        return {
-            "name": tool_call.function.name,
-            "args": arguments,
-        }
+        return ToolCall(name=tool_call.function.name, args=arguments)

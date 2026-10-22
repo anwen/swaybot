@@ -545,10 +545,13 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+        from swaybot.models import normalize_response
+
         try:
-            raw = model.generate(messages, tools=None)
+            response = normalize_response(model.generate(messages, tools=None))
         except Exception:
-            raw = None
+            response = None
+        raw = response.text if response is not None else None
         return (
             (raw or "").strip()
             or kb_content[:2000]
