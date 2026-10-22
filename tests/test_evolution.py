@@ -2,6 +2,7 @@
 
 from swaybot.agent import Agent
 from swaybot.agent_events import (
+    ExperimentDesigned,
     ExplorationBegin,
     ExplorationEnd,
     ExperimentRecorded,
@@ -12,6 +13,35 @@ from swaybot.brain import EchoBrain
 from swaybot.evolution import SelfEvolutionDirector
 from swaybot.memory import MemoryStore, ReflectionStep
 from swaybot.reflection import Reflector
+
+
+def _protocol_steps(rounds, run_answer="checked", verdict="supported"):
+    """每轮 3 次模型调用：设计(JSON) → 执行(final_answer) → 裁决(JSON)。"""
+    from swaybot.models import ScriptedModel  # noqa: F401
+
+    steps = []
+    for _ in range(rounds):
+        steps.append(
+            {
+                "action": {
+                    "name": "final_answer",
+                    "args": {
+                        "answer": '{"conjecture": "c1", "method": "m1", '
+                        '"success_criteria": "s1"}'
+                    },
+                }
+            }
+        )
+        steps.append({"action": {"name": "final_answer", "args": {"answer": run_answer}}})
+        steps.append(
+            {
+                "action": {
+                    "name": "final_answer",
+                    "args": {"answer": f'{{"verdict": "{verdict}", "evidence": "e"}}'},
+                }
+            }
+        )
+    return steps
 
 
 def _agent_with_questions(store, questions, kinds=None, on_event=None):
@@ -27,6 +57,9 @@ def _agent_with_questions(store, questions, kinds=None, on_event=None):
 
 
 def test_cycle_emits_full_event_chain(tmp_path):
+    from swaybot.llm_brain import LLMBrain
+    from swaybot.models import ScriptedModel
+
     store = MemoryStore(path=tmp_path / "memory.json")
     events: list = []
     # CLI 同款接线：agent 与 director 共享同一事件 sink → 完整链路按序交错
@@ -35,28 +68,35 @@ def test_cycle_emits_full_event_chain(tmp_path):
         ["does add commute?", "does echo keep punctuation?"],
         on_event=events.append,
     )
+    agent.brain = LLMBrain(backend=ScriptedModel(_protocol_steps(1)))
     director = SelfEvolutionDirector(agent, min_open=2, max_runs=1, emit=events.append)
     emitted = director.cycle()
 
-    # 事件顺序：ExplorationBegin → (agent 的 RunBegin..RunEnd 经共享 sink) →
-    # ExperimentRecorded → ExplorationEnd
+    # 事件顺序：Begin → Designed → (RunBegin..RunEnd 经共享 sink) → Recorded → End
     kinds = [type(e) for e in events]
     assert kinds[0] is ExplorationBegin
+    assert kinds[1] is ExperimentDesigned
     assert RunBegin in kinds and RunEnd in kinds
     assert kinds[-2] is ExperimentRecorded
     assert kinds[-1] is ExplorationEnd
-    assert len(emitted) == 3
+    assert len(emitted) == 4
 
-    # 实验记录入库并带 relation 回链
+    # 实验记录入库并带 relation 回链 + 协议裁决
     experiments = [
         m for m in store.memories if getattr(m, "kind", "") == "experiment"
     ]
     assert experiments and experiments[0].relation == "does add commute?"
+    assert "verdict=supported" in experiments[0].content
+    assert "method=m1" in experiments[0].content
 
 
 def test_cycle_converges_on_resolved_questions(tmp_path):
     store = MemoryStore(path=tmp_path / "memory.json")
     agent = _agent_with_questions(store, ["does add commute?", "is echo stable?"])
+    from swaybot.llm_brain import LLMBrain
+    from swaybot.models import ScriptedModel
+
+    agent.brain = LLMBrain(backend=ScriptedModel(_protocol_steps(6)))
     director = SelfEvolutionDirector(agent, min_open=2, max_runs=5)
     first = director.cycle()
     assert first  # 有探索发生
@@ -76,6 +116,10 @@ def test_cycle_prefers_contradictions(tmp_path):
         if False else ["plain question?", "a conflicts with b"],
         kinds=["question", "contradiction"],
     )
+    from swaybot.llm_brain import LLMBrain
+    from swaybot.models import ScriptedModel
+
+    agent.brain = LLMBrain(backend=ScriptedModel(_protocol_steps(1)))
     director = SelfEvolutionDirector(agent, min_open=2, max_runs=1)
     emitted = director.cycle()
     assert isinstance(emitted[0], ExplorationBegin)

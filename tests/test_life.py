@@ -21,13 +21,36 @@ def test_seed_prompt_splits_into_questions(tmp_path):
     assert len(questions) == 3
 
 
+def _protocol_step(kind):
+    """一轮 = 设计(JSON) → 执行(final_answer) → 裁决(JSON)。"""
+    if kind == "design":
+        return {
+            "action": {
+                "name": "final_answer",
+                "args": {
+                    "answer": '{"conjecture": "c", "method": "m", '
+                    '"success_criteria": "s"}'
+                },
+            }
+        }
+    if kind == "adjudicate":
+        return {
+            "action": {
+                "name": "final_answer",
+                "args": {"answer": '{"verdict": "supported", "evidence": "e"}'},
+            }
+        }
+    return {"action": {"name": "final_answer", "args": {"answer": "checked"}}}
+
+
 def _scripted_life_brain():
-    # 序列（max_rounds_per_cycle=3 时单轮迭代确定性地走完）：
-    # 3 次探索 run(final_answer) → wonder(3 问文本) → dream(理论+新问)
-    steps = [{"action": {"name": "final_answer", "args": {"answer": "checked"}}} for _ in range(3)]
+    # 3 轮完整协议 → wonder(3 问文本) → dream(理论+新问) → 余量
+    steps = []
+    for _ in range(3):
+        steps.extend([_protocol_step("design"), _protocol_step("run"), _protocol_step("adjudicate")])
     steps.append({"text": "what is my purpose?\nhow do tools shape me?\ncan i trust memory?"})
     steps.append({"text": "- I learn through verified tool use\n? what deserves long-term belief?"})
-    steps.extend({"action": {"name": "final_answer", "args": {"answer": "rechecked"}}} for _ in range(6))
+    steps.extend(_protocol_step("run") for _ in range(9))
     return LLMBrain(backend=ScriptedModel(steps))
 
 

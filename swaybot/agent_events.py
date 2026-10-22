@@ -78,6 +78,15 @@ class ExplorationEnd:
 
 
 @dataclass(frozen=True)
+class ExperimentDesigned:
+    """A falsifiable protocol was designed for an open question."""
+
+    hypothesis: str
+    method: str
+    success_criteria: str
+
+
+@dataclass(frozen=True)
 class ExperimentRecorded:
     """An exploration run was written into memory as an experiment record."""
 
@@ -119,6 +128,7 @@ Event = Union[
     RunEnd,
     ExplorationBegin,
     ExplorationEnd,
+    ExperimentDesigned,
     ExperimentRecorded,
     Wondered,
     DreamBegin,
@@ -171,6 +181,13 @@ def to_ndjson(event: Event) -> Optional[dict]:
             "event": "exploration_end",
             "hypothesis": event.hypothesis,
             "status": event.status,
+        }
+    if isinstance(event, ExperimentDesigned):
+        return {
+            "event": "experiment_designed",
+            "hypothesis": event.hypothesis,
+            "method": event.method[:200],
+            "success_criteria": event.success_criteria[:200],
         }
     if isinstance(event, ExperimentRecorded):
         return {

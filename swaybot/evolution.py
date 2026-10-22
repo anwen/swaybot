@@ -27,6 +27,7 @@ from pathlib import Path
 
 from .agent_events import (
     DreamBegin,
+    ExperimentDesigned,
     DreamEnd,
     Event,
     ExplorationBegin,
@@ -35,6 +36,40 @@ from .agent_events import (
     Wondered,
 )
 from .memory import Memory, MemoryStore, ReflectionStep
+
+
+def _parse_json_object(text: str) -> dict | None:
+    """Leniently extract a JSON object from a model answer."""
+    import json as _json
+
+    from .parsing import strip_markdown_fences
+
+    cleaned = strip_markdown_fences(text.strip())
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        parsed = _json.loads(cleaned[start : end + 1])
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _ask_brain(agent, prompt: str) -> str:
+    """Ask a brain via the final_answer channel ('' when it cannot answer)."""
+    perception = {
+        "task": prompt[:200],
+        "step": 0,
+        # max_steps=2: 见 LifeRunner._ask_brain 注释——1 会把散文兜底变 done
+        "max_steps": 2,
+        "messages": [{"role": "user", "content": prompt}],
+        "tool_descriptions": [],
+    }
+    action = agent.brain.think(perception, ["final_answer"])
+    if action.get("name") == "final_answer":
+        return str(action.get("args", {}).get("answer", ""))
+    return ""
 
 
 class SelfEvolutionDirector:
@@ -60,8 +95,10 @@ class SelfEvolutionDirector:
     def cycle(self) -> list[Event]:
         """Run exploration rounds while the evidence gate stays open.
 
-        Returns the director-emitted events (the agent's own run events go
-        through the shared sink as usual).
+        Each round is a full experiment protocol: design (falsifiable
+        conjecture + method + success criteria, informed by prior
+        experiments on the question) -> execute -> adjudicate against the
+        criteria -> record. Returns the director-emitted events.
         """
         emitted: list[Event] = []
         for _ in range(self.max_runs):
@@ -71,20 +108,32 @@ class SelfEvolutionDirector:
             if len(candidates) < self.min_open:
                 break
             hypothesis = candidates[0].content
+            protocol = self._design_experiment(hypothesis)
             self._set_status(hypothesis, "testing")
-            task = f"Verify this conjecture: {hypothesis}"
-            event = ExplorationBegin(hypothesis=hypothesis, task=task)
-            emitted.append(event)
-            self._emit(event)
-            env = self.agent.run(
-                task, max_steps=self.max_steps, reflect=True, hypothesis=hypothesis
+            begin = ExplorationBegin(hypothesis=hypothesis, task=protocol["task"])
+            designed = ExperimentDesigned(
+                hypothesis=hypothesis,
+                method=protocol["method"],
+                success_criteria=protocol["criteria"],
             )
-            record_event = self._record_experiment(hypothesis, env.history, env.stop_reason)
+            emitted.extend((begin, designed))
+            self._emit(begin)
+            self._emit(designed)
+            env = self.agent.run(
+                protocol["task"],
+                max_steps=self.max_steps,
+                reflect=True,
+                hypothesis=hypothesis,
+            )
+            verdict = self._adjudicate(protocol, env.history)
+            record_event = self._record_experiment(
+                hypothesis, env.history, env.stop_reason, protocol=protocol, verdict=verdict
+            )
             emitted.append(record_event)
             self._emit(record_event)
             end = ExplorationEnd(
                 hypothesis=hypothesis,
-                status=env.stop_reason or "unknown",
+                status=f"{env.stop_reason or 'unknown'}/{verdict.get('verdict', 'unknown')}",
             )
             emitted.append(end)
             self._emit(end)
@@ -109,19 +158,115 @@ class SelfEvolutionDirector:
 
     # -- internals ------------------------------------------------------
 
-    def _record_experiment(
-        self, hypothesis: str, history: list[dict], stop_reason: str | None
-    ) -> ExperimentRecorded:
+    def _design_experiment(self, hypothesis: str) -> dict:
+        """Turn an open question into a falsifiable protocol.
+
+        The designer sees prior experiments on the same question so
+        successive rounds go deeper instead of repeating. Falls back to a
+        generic protocol when the brain yields nothing parseable.
+        """
+        prior = ""
+        memory = self.agent.memory
+        if memory is not None:
+            prior_records = [
+                m.content[:150]
+                for m in memory.query(kind="experiment", scope="long_term", limit=10)
+                if getattr(m, "relation", "") == hypothesis
+            ]
+            if prior_records:
+                prior = "\nPrior experiments on this question:\n" + "\n".join(
+                    f"- {r}" for r in prior_records
+                )
+        prompt = (
+            "Design ONE experiment to make progress on this open question:\n"
+            f"  {hypothesis}\n{prior}\n"
+            "If the question is not yet testable, first sharpen it into a concrete "
+            "falsifiable conjecture. Reply ONLY with a JSON object:\n"
+            '{"conjecture": "<falsifiable statement>", "method": "<what to do, '
+            'concretely, with the available tools>", "success_criteria": '
+            '"<what observation would count as support, and what as refutation>"}'
+        )
+        # thinking 模型偶发空返回/非 JSON——重试一次再落兜底协议
+        parsed = _parse_json_object(_ask_brain(self.agent, prompt))
+        if not (
+            parsed
+            and parsed.get("conjecture")
+            and parsed.get("method")
+            and parsed.get("success_criteria")
+        ):
+            parsed = _parse_json_object(_ask_brain(self.agent, prompt))
+        if (
+            parsed
+            and parsed.get("conjecture")
+            and parsed.get("method")
+            and parsed.get("success_criteria")
+        ):
+            conjecture = str(parsed["conjecture"])
+            method = str(parsed["method"])
+            criteria = str(parsed["success_criteria"])
+        else:
+            conjecture = hypothesis
+            method = "Investigate directly with the available tools."
+            criteria = "The run ends with a concrete final_answer addressing the question."
+        task = (
+            "Execute this experiment.\n"
+            f"Conjecture: {conjecture}\n"
+            f"Method: {method}\n"
+            f"Success criteria: {criteria}\n"
+            "Follow the method with the available tools, check the outcome "
+            "against the criteria, then finish with final_answer stating "
+            "supported / refuted / inconclusive plus the evidence you saw."
+        )
+        return {"conjecture": conjecture, "method": method, "criteria": criteria, "task": task}
+
+    def _adjudicate(self, protocol: dict, history: list[dict]) -> dict:
+        """Judge the run against the protocol's success criteria (LLM, with
+        deterministic fallback)."""
+        trace = "\n".join(
+            f"- {entry.get('action')} -> {str(entry.get('result'))[:120]}"
+            for entry in history
+        )
+        answer = _ask_brain(
+            self.agent,
+            "Adjudicate this experiment run against its success criteria.\n"
+            f"Criteria: {protocol['criteria']}\n"
+            f"Run trace:\n{trace}\n"
+            'Reply ONLY with JSON: {"verdict": "supported|refuted|inconclusive", '
+            '"evidence": "<one sentence citing the trace>"}'
+        )
+        parsed = _parse_json_object(answer)
+        if parsed and parsed.get("verdict") in ("supported", "refuted", "inconclusive"):
+            return {"verdict": parsed["verdict"], "evidence": str(parsed.get("evidence", ""))[:300]}
         final = ""
         for entry in reversed(history):
             action = entry.get("action") or {}
             if action.get("name") == "final_answer":
-                final = str((action.get("args") or {}).get("answer", ""))
+                final = str((action.get("args") or {}).get("answer", "")).lower()
                 break
+        for verdict in ("refuted", "inconclusive", "supported"):
+            if verdict in final:
+                return {"verdict": verdict, "evidence": "from final_answer text"}
+        return {"verdict": "inconclusive", "evidence": ""}
+
+    def _record_experiment(
+        self,
+        hypothesis: str,
+        history: list[dict],
+        stop_reason: str | None,
+        *,
+        protocol: dict | None = None,
+        verdict: dict | None = None,
+    ) -> ExperimentRecorded:
+        protocol = protocol or {}
+        verdict = verdict or {}
         summary = (
-            f"outcome={stop_reason}, steps={len(history)}, "
-            f"final_answer={final[:200] or 'none'}"
+            f"outcome={stop_reason}, verdict={verdict.get('verdict', 'n/a')}, "
+            f"steps={len(history)}"
         )
+        if protocol.get("method"):
+            summary += f", method={protocol['method'][:120]}"
+        if verdict.get("evidence"):
+            summary += f", evidence={verdict['evidence'][:160]}"
         memory = self.agent.memory
         if memory is not None:
             memory.add(
@@ -465,19 +610,7 @@ class LifeRunner:
     # -- helpers --------------------------------------------------------
 
     def _ask_brain(self, prompt: str) -> str:
-        perception = {
-            "task": prompt[:200],
-            "step": 0,
-            # max_steps=2 让散文 fallback 走 echo→final_answer 恢复链
-            # （max_steps=1 时 step+1>=max 直接 done，答案丢失）
-            "max_steps": 2,
-            "messages": [{"role": "user", "content": prompt}],
-            "tool_descriptions": [],
-        }
-        action = self.agent.brain.think(perception, ["final_answer"])
-        if action.get("name") == "final_answer":
-            return str(action.get("args", {}).get("answer", ""))
-        return ""
+        return _ask_brain(self.agent, prompt)
 
     def _emit(self, event: Event) -> None:
         if self._emit_sink is not None:

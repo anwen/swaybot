@@ -61,7 +61,9 @@ class LLMBrain:
         base_url: str | None = None,
         model: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 1024,
+        # 8192: thinking 模型的推理预算会吃掉可见输出——1024 时代默认值
+        # 会让长提示的答案变成空串（life 实验设计相位 3/3 落空的原因）
+        max_tokens: int = 8192,
         max_retries: int = 3,
         backoff: float = 1.0,
         timeout: float = 60.0,
