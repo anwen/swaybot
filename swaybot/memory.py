@@ -361,32 +361,45 @@ class MemoryStore:
 class AutoCompact:
     """Compress excess short-term steps into a summary memory.
 
-    When the number of short-term steps for a tag exceeds ``max_steps``,
-    the oldest excess steps are summarized by a brain/model callable and
-    replaced with a single long-term memory.
+    Two triggers, whichever fires first: more than ``keep_recent`` steps,
+    or an estimated context size over ``max_context_chars`` (a long
+    observation can blow the window in a few steps — step count alone is
+    a poor proxy). The oldest steps beyond the recent window are
+    summarized — by the brain callable when it produces one, otherwise by
+    a deterministic digest — and replaced with a single long-term memory.
     """
 
     def __init__(
         self,
         brain: Callable[[list[dict]], str] | None = None,
         max_steps: int = 6,
+        max_context_chars: int = 32_000,
     ) -> None:
         self.brain = brain
         self.max_steps = max_steps
+        self.max_context_chars = max_context_chars
 
     def compact(self, store: MemoryStore, tag: str | None = None) -> bool:
-        """Compact short-term steps if they exceed the threshold.
+        """Compact short-term steps if a threshold is exceeded.
 
         Returns ``True`` if compaction happened.
         """
-        candidates = list(store.iter_short_term(tag))
-        if len(candidates) <= self.max_steps:
+        # TaskStep 是任务陈述锚点，永不参与压缩
+        candidates = [s for s in store.iter_short_term(tag) if not isinstance(s, TaskStep)]
+        total_chars = sum(self._step_chars(step) for step in candidates)
+        if len(candidates) > self.max_steps:
+            keep = self.max_steps  # 步数触发：保留最近 keep 步
+        elif total_chars > self.max_context_chars and len(candidates) > 1:
+            # 字符触发（步数不多但单条很大）：保留最近一半，至少留 1 步
+            keep = max(1, len(candidates) // 2)
+        else:
             return False
 
-        to_compact = candidates[: -self.max_steps]
+        to_compact = candidates[: -keep] if keep else candidates
         if not to_compact:
             return False
 
+        summary = ""
         if self.brain:
             messages = [
                 {
@@ -399,8 +412,14 @@ class AutoCompact:
             ]
             for step in to_compact:
                 messages.extend(step.to_messages())
-            summary = self.brain(messages)
-        else:
+            try:
+                summary = (self.brain(messages) or "").strip()
+            except Exception:
+                # 默认开启后，摘要失败绝不能炸掉运行中的 agent —— 回退确定性摘要
+                summary = ""
+        if not summary:
+            # No summarizer, or the brain produced nothing useful
+            # (e.g. EchoBrain) — deterministic digest instead.
             summary = self._fallback_summary(to_compact)
 
         for step in to_compact:
@@ -416,6 +435,12 @@ class AutoCompact:
         else:
             store.save()
         return True
+
+    @staticmethod
+    def _step_chars(step: MemoryStep) -> int:
+        data = step.to_dict()
+        content = data.get("content") or data.get("action") or data.get("observation")
+        return len(str(content))
 
     def _fallback_summary(self, steps: list[MemoryStep]) -> str:
         snippets = []

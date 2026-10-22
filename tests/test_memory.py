@@ -205,7 +205,7 @@ def test_autocompact_summarizes_excess_short_term_steps():
     def summarize(messages):
         return "eight echo steps"
 
-    compactor = AutoCompact(brain=summarize, max_steps=4)
+    compactor = AutoCompact(brain=summarize, max_steps=4, max_context_chars=200)
     compacted = compactor.compact(store, tag="demo")
 
     assert compacted
@@ -232,7 +232,7 @@ def test_autocompact_fallback_without_brain():
             ObservationStep(step=i, observation=f"saw {i}", tags=["demo"])
         )
 
-    compactor = AutoCompact(max_steps=2)
+    compactor = AutoCompact(max_steps=2, max_context_chars=200)
     compacted = compactor.compact(store, tag="demo")
 
     assert compacted
@@ -273,3 +273,39 @@ def test_batch_saves_on_exception(tmp_path):
             store.add(TaskStep(task="x", tags=["x"]))
             raise RuntimeError("boom")
     assert len(writes) == 1  # 异常退出仍保留已写步骤
+
+
+def test_autocompact_char_budget_fires_on_few_large_steps():
+    """字符预算触发：步数不多但单条观察巨大时也要压缩。"""
+    store = MemoryStore()
+    store.add(
+        ActionStep(step=1, action={"name": "read_file"}, tags=["demo"])
+    )
+    store.add(
+        ObservationStep(
+            step=1, observation="x" * 5000, tags=["demo"]
+        )
+    )
+    compactor = AutoCompact(max_steps=6, max_context_chars=2000)
+    assert compactor.compact(store, tag="demo")
+    # 大观察被摘要替换，短期步只剩保留窗口
+    assert len(list(store.iter_short_term("demo"))) <= 6
+
+
+def test_autocompact_within_both_budgets_not_compacted():
+    """步数与字符都在预算内 → 不压。"""
+    store = MemoryStore()
+    for i in range(6):
+        store.add(ObservationStep(step=i, observation=f"saw {i}", tags=["demo"]))
+    assert not AutoCompact(max_steps=6).compact(store, tag="demo")
+
+
+def test_autocompact_never_compacts_task_step():
+    """TaskStep（任务陈述）永远保留。"""
+    store = MemoryStore()
+    store.add(TaskStep(task="demo", max_steps=10, tags=["demo"]))
+    for i in range(10):
+        store.add(ObservationStep(step=i, observation="x" * 500, tags=["demo"]))
+    AutoCompact(max_steps=4, max_context_chars=1000).compact(store, tag="demo")
+    tasks = [m for m in store.memories if isinstance(m, TaskStep)]
+    assert len(tasks) == 1

@@ -41,7 +41,7 @@ class Agent:
         reflector: Reflector | None = None,
         permission_level: str = "medium",
         permission_policy: PermissionPolicy | None = None,
-        auto_compact: bool = False,
+        auto_compact: bool = True,
         compactor: AutoCompact | None = None,
         skills: SkillLibrary | None = None,
         on_event: Callable[[Event], None] | None = None,
@@ -58,6 +58,13 @@ class Agent:
                 mode=permission_level_to_mode(permission_level)
             )
         self.auto_compact = auto_compact
+        # Default-on since 0.3.x: experience accumulation is the point of
+        # the memory system, and long runs need bounded context. The
+        # summarizer asks the brain via final_answer; brains that cannot
+        # summarize (EchoBrain) yield an empty answer and the compactor's
+        # deterministic digest takes over — safe by construction.
+        if compactor is None and auto_compact:
+            compactor = AutoCompact(brain=self._summarize_steps)
         self.compactor = compactor
         # The repeat-call guard now lives on the LLMBrain (so it also fires on
         # the tau3bench path, which calls brain.think() directly and bypasses
@@ -76,6 +83,20 @@ class Agent:
         shell_impl = getattr(shell_tool, "_shell", None)
         if shell_impl is not None:
             shell_impl.set_guard_mode(self.permission_policy.mode.value)
+
+    def _summarize_steps(self, step_messages: list[dict]) -> str:
+        """Brain-backed summarizer for AutoCompact (empty string = fallback)."""
+        perception = {
+            "task": "Summarize the previous agent steps for future reference.",
+            "step": 0,
+            "max_steps": 1,
+            "messages": step_messages,
+            "tool_descriptions": [],
+        }
+        action = self.brain.think(perception, ["final_answer"])
+        if action.get("name") == "final_answer":
+            return str(action.get("args", {}).get("answer", "")).strip()
+        return ""
 
     def _emit(self, event: Event) -> None:
         """Deliver an event to every active sink (run-log recorder, callers)."""

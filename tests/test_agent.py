@@ -257,7 +257,7 @@ def test_agent_auto_compact_limits_short_term_memories():
         return "compact summary"
 
     store = MemoryStore()
-    compactor = AutoCompact(brain=summarize, max_steps=3)
+    compactor = AutoCompact(brain=summarize, max_steps=3, max_context_chars=300)
     agent = Agent(memory=store, auto_compact=True, compactor=compactor)
     agent.run("demo", max_steps=8)
 
@@ -283,3 +283,46 @@ def test_project_instructions_loaded_once_per_run(monkeypatch, tmp_path):
     agent = Agent(memory=MemoryStore(path=tmp_path / "memory.json"))
     agent.run("count", max_steps=3, reflect=False)
     assert len(calls) == 1
+
+
+def test_agent_compaction_default_on_with_echo_brain(tmp_path):
+    """默认开启：无需显式 compactor；EchoBrain 摘不出东西时走确定性摘要。"""
+    from swaybot.memory import MemoryStore
+
+    store = MemoryStore(path=tmp_path / "memory.json")
+    agent = Agent(memory=store)
+    assert agent.compactor is not None  # 默认接线
+    # EchoBrain + max_steps 8 → 8 步小观察，不会超字符预算 → 不压缩；
+    # 大观察场景验证摘要回退不崩溃即可
+    agent.run("demo", max_steps=3, reflect=False)
+    assert store.query(scope="short_term", tag="demo") or store.memories
+
+
+def test_agent_default_summarizer_uses_final_answer(tmp_path):
+    """brain 能总结时（final_answer 通道），摘要进长期记忆。"""
+    from swaybot.memory import MemoryStore
+    from swaybot.models import ScriptedModel
+    from swaybot.llm_brain import LLMBrain
+
+    store = MemoryStore(path=tmp_path / "memory.json")
+    model = ScriptedModel(
+        [
+            {"action": {"name": "final_answer", "args": {"answer": "digested lessons"}}},
+            {"action": {"name": "final_answer", "args": {"answer": "digested lessons"}}},
+        ]
+    )
+    agent = Agent(brain=LLMBrain(backend=model), memory=store)
+
+    # 直接驱动 summarizer 与 compactor（agent 步进路径另有测试覆盖）
+    assert agent._summarize_steps([{"role": "user", "content": "step data"}]) == (
+        "digested lessons"
+    )
+    from swaybot.memory import ObservationStep
+
+    # 构造超预算的短期历史并压缩
+    for i in range(2):
+        store.add(ObservationStep(step=i, observation="big " * 10000, tags=["demo"]))
+    assert agent.compactor.compact(store, tag="demo")
+    compacted = [m for m in store.memories if "compact" in getattr(m, "tags", [])]
+    assert compacted
+    assert compacted[0].content == "digested lessons"

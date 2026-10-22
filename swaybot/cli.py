@@ -195,6 +195,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Permission mode: read-only, workspace-write, or danger (default: workspace-write)",
     )
     parser.add_argument(
+        "--no-compaction",
+        action="store_true",
+        help="Disable auto-compaction of short-term memory (on by default)",
+    )
+    parser.add_argument(
         "--output-format",
         choices=["text", "json"],
         default="text",
@@ -241,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
         reflector=reflector,
         permission_policy=permission_policy,
         skills=skills,
+        auto_compact=not args.no_compaction,
         on_event=_make_output_sink(args),
     )
 

@@ -64,7 +64,7 @@ python -m swaybot "interact with github" --brain llm --skills ./skills
 
 ## Memory
 
-SwayBot can optionally keep a `MemoryStore` to record experiences, facts, theories, conjectures, and inspirations. Memories are scoped as either `short_term` (raw per-run experiences) or `long_term` (validated knowledge produced by reflection). Each memory carries source, evidence, credibility, surprise, and tags so the agent can later retrieve relevant long-term context or search for counterexamples.
+SwayBot can optionally keep a `MemoryStore` to record experiences, facts, theories, conjectures, and inspirations. Memories are scoped as either `short_term` (raw per-run experiences) or `long_term` (validated knowledge produced by reflection). Each memory carries source, evidence, credibility, surprise, and tags so the agent can later retrieve relevant long-term context or search for counterexamples. Short-term steps are auto-compacted (summarized into long-term memories) when they exceed a step or context-size budget — on by default, disable with `--no-compaction`.
 
 ```python
 from swaybot import Agent, MemoryStore
