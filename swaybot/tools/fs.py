@@ -12,7 +12,7 @@ from ..guards import PathGuard
 from ..violations import SecurityError
 from .code_quality import run_quality_hooks
 from .file_locks import PathLockManager
-from .output_limits import truncate_lines, truncate_text
+from .output_limits import truncate_lines
 from . import tool
 
 
@@ -34,8 +34,12 @@ _fs = FileSystem()
 
 
 @tool(read_only=True)
-def read_file(path: str, max_length: int = 10000) -> str:
-    """Read the contents of a file inside the workspace."""
+def read_file(path: str, max_length: int = 10000, offset: int = 1) -> str:
+    """Read a file inside the workspace with line numbers (``N<TAB>line``).
+
+    Line numbers let you reference exact locations when editing; ``offset``
+    is the 1-based first line to return.
+    """
     target = _fs.resolve(path)
     if not target.is_file():
         return f"Error: {path} is not a file"
@@ -43,7 +47,18 @@ def read_file(path: str, max_length: int = 10000) -> str:
         content = target.read_text(encoding="utf-8", errors="replace")
     except Exception as exc:
         return f"Error: {exc}"
-    return truncate_text(content, _fs.root, max_chars=max_length, max_lines=200)
+    lines = content.split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+    if offset < 1:
+        return "Error: offset must be >= 1"
+    if offset > len(lines):
+        return (
+            f"Warning: {path} exists but is shorter than offset "
+            f"({offset}); the file has {len(lines)} lines."
+        )
+    numbered = [f"{n}\t{lines[n - 1]}" for n in range(offset, len(lines) + 1)]
+    return "\n".join(truncate_lines(numbered, _fs.root, max_lines=200))
 
 
 @tool(read_only=False, risk_level="medium")

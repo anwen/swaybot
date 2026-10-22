@@ -65,7 +65,7 @@ def test_tool_registry_descriptions():
         "final_answer(answer)",
         "web_fetch(url, max_length=4000)",
         "web_search(query, max_results=3)",
-        "read_file(path, max_length=10000)",
+        "read_file(path, max_length=10000, offset=1)",
         "write_file(path, content)",
         "edit_file(path, old_string, new_string, replace_all=False)",
         "list_directory(path='.')",
@@ -73,6 +73,8 @@ def test_tool_registry_descriptions():
         "grep(pattern, path='.', max_results=50)",
         "run_shell_command(command, cwd='.')",
         "env_info()",
+        "todo_read()",
+        "todo_write(todos)",
     }
 
 

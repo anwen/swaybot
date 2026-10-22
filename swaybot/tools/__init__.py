@@ -394,6 +394,7 @@ def build_default_registry() -> ToolRegistry:
     # ``from . import tool``, which previously relied on the ordering of
     # bottom-of-file imports in this module (a partial-init cycle).
     from .env import env_info
+    from .todos import create_todo_tools
     from .fs import edit_file, grep, list_directory, read_file, search_files, write_file
     from .shell import run_shell_command
     from .web import web_fetch, web_search
@@ -404,6 +405,9 @@ def build_default_registry() -> ToolRegistry:
     registry.register("done", done)
     registry.register("final_answer", final_answer)
     registry.register("env_info", env_info, read_only=True, risk_level="low")
+    todo_read, todo_write = create_todo_tools()
+    registry.register("todo_read", todo_read, read_only=True, risk_level="low")
+    registry.register("todo_write", todo_write, read_only=True, risk_level="low")
     registry.register("web_fetch", web_fetch, read_only=True, risk_level="medium")
     registry.register("web_search", web_search, read_only=True, risk_level="medium")
     registry.register("read_file", read_file, read_only=True, risk_level="low")

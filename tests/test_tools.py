@@ -56,6 +56,8 @@ def test_tool_registry_schemas():
         "done",
         "final_answer",
         "env_info",
+        "todo_read",
+        "todo_write",
         "web_fetch",
         "web_search",
         "read_file",

@@ -26,7 +26,21 @@ def fs(tmp_path, monkeypatch):
 
 def test_read_file(fs):
     fs.root.joinpath("hello.txt").write_text("world", encoding="utf-8")
-    assert read_file(path="hello.txt") == "world"
+    assert read_file(path="hello.txt") == "1\tworld"
+
+
+def test_read_file_numbers_lines_and_supports_offset(fs):
+    fs.root.joinpath("code.txt").write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+    full = read_file(path="code.txt")
+    assert full == "1\talpha\n2\tbeta\n3\tgamma"  # 尾部空行不占行号
+    tail = read_file(path="code.txt", offset=2)
+    assert tail == "2\tbeta\n3\tgamma"
+
+
+def test_read_file_offset_beyond_eof_is_warning(fs):
+    fs.root.joinpath("short.txt").write_text("only\n", encoding="utf-8")
+    out = read_file(path="short.txt", offset=99)
+    assert out.startswith("Warning:") and "1 lines" in out
 
 
 def test_write_file(fs):
@@ -107,7 +121,9 @@ def test_read_file_truncates_large_file_to_overflow(fs):
     overflow = result.split("saved to ")[-1].rstrip("]")
     full_path = fs.root / overflow
     assert full_path.exists()
-    assert full_path.read_text(encoding="utf-8") == content
+    # 溢出文件保存的是带行号的完整内容（与返回预览同格式）
+    numbered = "\n".join(f"{n}\tx" for n in range(1, 501))
+    assert full_path.read_text(encoding="utf-8") == numbered
 
 
 def test_grep_finds_content(fs):
