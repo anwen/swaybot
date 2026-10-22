@@ -1,0 +1,45 @@
+# BENCHES · 基准分数台账
+
+> 每次基准评测记一行：有数字、有归因。方法论参照 zcode-cli 的 PARITY.md——漂移必须可追溯，
+> 被证伪的假设照实记录。历史行由存档结果与 DEV_SESSION_ARCHIVE.md 回填，当时未留档的以 ? 标注。
+> 注意：2026-10-16 的历史重写（清除泄露密钥）更改了全部 commit hash，早期行以日期+提交说明定位。
+
+## tau3-bench（τ³，reward = 任务通过率）
+
+| 日期 | 域 | 分数 | 配置 / 归因 | 证据 |
+|---|---|---|---|---|
+| 2026-08-11 | mock | 0.80 (n=10) | 首轮并行评测（7-27 提交基线） | `tau3_results/parallel_evaluation.json` |
+| 2026-08-11 | airline | 0.55 (n=20) | 同上 | 同上 |
+| 2026-08-11 | telecom | 0.90 (n=20) | 同上 | 同上 |
+| 2026-08-12 | airline | 0.4167 (n=20) | 全量首轮（retail/banking 首次出分） | `tau3_results/parallel_evaluation_all.json` |
+| 2026-08-12 | retail | 0.50 (n=20) | 同上 | 同上 |
+| 2026-08-12 | telecom | 0.9167 (n=20) | 同上 | 同上 |
+| 2026-08-12 | banking_knowledge | 0.5714 (n=20) | 同上 | 同上 |
+| 2026-08-12 | banking_knowledge | 0.30 (n=20) | 晚间复跑回落（0.57→0.30），触发 #3 prose 兜底改造排查 | `tau3_results/parallel_evaluation_mock_airline_retail_telecom_banking_knowledge.json` |
+| ~2026-08-14 | banking_knowledge | 0.35→0.05 | **round-5 → #3 回归**：`_fallback` 改全量 prose 后 agent 不检索就交卷（详见 TODO_DSH #1） | `tau3_results/logs/`（round 系列日志） |
+| 2026-08-15~18 | banking / airline / telecom | 定向回归 | prompt 防过早交卷、RepeatCallGuard、非收敛 guard、calculate 引导、prose 工具标签恢复、KB 综合修复逐项验证（commit 说明见 git log 8-15~8-18） | `tau3_results/logs/reg2~reg5_*.log`、`v*_task*.log` |
+| — | **全量（修复后）** | **未跑** | 会话结束时仍是 pending——下一行属于它 | — |
+
+## AgentDojo（utility / security）
+
+| 日期 | 配置 | 分数 | 归因 | 证据 |
+|---|---|---|---|---|
+| 2026-07 下旬 | EchoBrain 冒烟 | banking 31.25%，其余 0% | 适配器可运行性验证；当时内网 LLM 服务 502 | DEV_SESSION_ARCHIVE.md |
+| 2026-07-27 | LLM 全量（原生 FC 修复 + 注入引导后） | **93.81% / 100%** | 4 个 utility 失败均为语义理解偏差，非工具调用错误 | `benchmarks/agentdojo_failure_analysis.md` |
+
+## BFCL v3（single-turn）
+
+| 日期 | 类别 | 分数 | 归因 | 证据 |
+|---|---|---|---|---|
+| 2026-07-27 | simple_python | 56.25% | 单工具调用路径正常 | `score/data_*.csv` |
+| 2026-07-27 | multiple | 38.00% | | 同上 |
+| 2026-07-27 | irrelevance | 65.00% | | 同上 |
+| 2026-07-27 | parallel | 0.00% | server 当时每轮只输出一个 tool call | DEV_SESSION_ARCHIVE.md |
+| 2026-07-27 | multi_turn_base | 未完成 | 200 case × 20 步过慢 + 同样依赖多工具调用 | 同上 |
+
+## 如何记新行
+
+1. 跑评测前记下当前 commit（`git rev-parse --short HEAD`）。
+2. 结果落盘到 `tau3_results/` / `score/` 等既有位置（已 gitignore），台账只记**数字与归因**。
+3. 分数变化必须给一句话归因（改了什么/为什么）；归因不了的变化本身就是待查问题。
+4. 被后续证伪的归因不删行，加"证伪"标注。
