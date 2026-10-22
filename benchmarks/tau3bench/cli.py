@@ -21,6 +21,23 @@ import argparse
 import sys
 
 
+def _domain_accepts_retrieval_variant(domain: str) -> bool:
+    """Whether the domain's environment constructor takes retrieval_variant.
+
+    Probe the signature rather than hardcoding a domain list, so this
+    survives future tau2 signature changes in either direction.
+    """
+    try:
+        import importlib
+        import inspect
+
+        module = importlib.import_module(f"tau2.domains.{domain}.environment")
+        params = inspect.signature(module.get_environment).parameters
+        return "retrieval_variant" in params
+    except Exception:
+        return True  # cannot probe: keep legacy behavior, let tau2 complain
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run tau3-bench evaluation with SwayBot agent",
@@ -131,7 +148,16 @@ def main() -> None:
         num_trials=args.num_trials,
     )
     if args.retrieval_config:
-        config_kwargs["retrieval_config"] = args.retrieval_config
+        if _domain_accepts_retrieval_variant(args.domain):
+            config_kwargs["retrieval_config"] = args.retrieval_config
+        else:
+            # tau2's 2026-10 signature change: only banking_knowledge's
+            # environment constructor takes retrieval_variant; airline/
+            # retail/telecom reject the kwarg outright.
+            print(
+                f"  note: domain '{args.domain}' takes no retrieval variant; "
+                f"ignoring --retrieval-config '{args.retrieval_config}'"
+            )
 
     config = TextRunConfig(**config_kwargs)
 
