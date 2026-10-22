@@ -396,7 +396,7 @@ def build_default_registry() -> ToolRegistry:
     from .env import env_info
     from .todos import create_todo_tools
     from .fs import edit_file, grep, list_directory, read_file, search_files, write_file
-    from .shell import run_shell_command
+    from .shell import create_shell_tool
     from .web import web_fetch, web_search
 
     registry = ToolRegistry()
@@ -416,5 +416,5 @@ def build_default_registry() -> ToolRegistry:
     registry.register("list_directory", list_directory, read_only=True, risk_level="low")
     registry.register("search_files", search_files, read_only=True, risk_level="low")
     registry.register("grep", grep, read_only=True, risk_level="low")
-    registry.register("run_shell_command", run_shell_command, read_only=False, risk_level="high")
+    registry.register("run_shell_command", create_shell_tool(), read_only=False, risk_level="medium")
     return registry

@@ -72,7 +72,8 @@ def test_tool_required_permission_mapping():
     assert registry.get("read_file").required_permission == "read"
     assert registry.get("write_file").required_permission == "write"
     assert registry.get("edit_file").required_permission == "write"
-    assert registry.get("run_shell_command").required_permission == "danger"
+    # shell 为 medium（write 级）：workspace-write 允许受限执行，danger 放开全 shell
+    assert registry.get("run_shell_command").required_permission == "write"
 
 
 def test_agent_permission_policy_blocks_unauthorized_tools():

@@ -69,6 +69,13 @@ class Agent:
         if skills is not None and not skills._skills:
             skills.load()
         self.context_builder = ContextBuilder(self.memory, self.tools, skills=skills)
+        # The shell tool's CommandGuard enforces the same tiered policy the
+        # PermissionPolicy applies at the tool level: read-only -> inspection
+        # commands, workspace-write -> interpreters too, danger -> full shell.
+        shell_tool = self.tools.get("run_shell_command")
+        shell_impl = getattr(shell_tool, "_shell", None)
+        if shell_impl is not None:
+            shell_impl.set_guard_mode(self.permission_policy.mode.value)
 
     def _emit(self, event: Event) -> None:
         """Deliver an event to every active sink (run-log recorder, callers)."""

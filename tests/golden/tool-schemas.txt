@@ -248,7 +248,7 @@
     }
   },
   {
-    "description": "Run an allowed shell command inside the workspace.",
+    "description": "Run a shell command inside the workspace.\n\n        What is allowed depends on the permission mode: read-only allows a\n        few inspection commands; workspace-write additionally runs\n        python/python3/pytest (one command per call, no pipes); danger\n        allows the full shell including pipes and redirection. Prefer\n        ``python3 <script>`` over inline code; give long-running commands a\n        larger ``timeout`` (seconds, max 600).",
     "name": "run_shell_command",
     "parameters": {
       "properties": {
@@ -258,6 +258,10 @@
         "cwd": {
           "default": ".",
           "type": "string"
+        },
+        "timeout": {
+          "default": 60,
+          "type": "integer"
         }
       },
       "required": [

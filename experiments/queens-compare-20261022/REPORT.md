@@ -59,3 +59,10 @@ zcode-cli 的 yolo 语义下同一模型 2 次工具调用收工：Write（一�
 
 - `swaybot-rollout.jsonl` / `zcode-rollout.jsonl`：两侧逐调用 model-io 记录
 - `swaybot-session.ndjson`：swaybot 事件流会话记录（12 步全程）
+
+
+## 后记（同日）
+
+沙箱执行策略已修复（CommandGuard 三档 + danger 全 shell）：同一八皇后任务在
+`--permission-mode danger` 下 **3 步完成**（write_file → 运行验证 → final_answer），
+与 zcode-cli 的 3 次模型调用同级。对照实验使命完成。

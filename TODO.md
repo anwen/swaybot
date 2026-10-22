@@ -385,7 +385,7 @@ OpenCode/Claw Code 借鉴中，下一步可考虑：交互式 ask/allow/deny 确
 
 ## 2026-10-22 八皇后对照实验暴露的缺口（experiments/queens-compare-20261022/）
 
-### [ ] 沙箱执行策略：让 agent 能运行自己写的代码
+### [x] 沙箱执行策略：让 agent 能运行自己写的代码
 - **问题**：`CommandGuard` 允许列表只有 9 个只读命令（无任何解释器），且与权限模式无关——
   danger 模式下 `python`/`pytest` 仍被拒。"写代码 → 运行验证"任务结构性无法完成；
   对照实验中同模型在 zcode-cli（yolo）上 2 次调用收工，swaybot 12 步失败收场（4 万 input tokens 耗在重试循环）。
@@ -395,3 +395,7 @@ OpenCode/Claw Code 借鉴中，下一步可考虑：交互式 ask/allow/deny 确
   guard 错误关联到该引导）。
 - **文件**：`swaybot/guards.py`、`swaybot/tools/shell.py`、`swaybot/prompts/*.j2`
 - **验收**：八皇后任务在 `--permission-mode danger` 下 5 步内完成并验证 92。
+- **状态**：已完成（2026-10-22）。`CommandGuard` 分三档（read-only 检视命令 /
+  workspace-write +解释器单命令 / danger 全 shell 含管道），Agent 把权限策略接进 guard，
+  拒绝文案带"终局"语义。八皇后 danger 模式 **3 步完成**（write_file → 运行验证 →
+  final_answer），与 zcode-cli（3 次模型调用）同级。

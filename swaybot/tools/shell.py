@@ -14,15 +14,18 @@ class ShellError(SecurityError):
 
 
 class Shell:
-    """Run a restricted set of commands inside the workspace."""
+    """Run commands inside the workspace under a tiered CommandGuard."""
 
-    def __init__(self, root: Path | str | None = None) -> None:
+    def __init__(self, root: Path | str | None = None, mode: str = "read-only") -> None:
         self.path_guard = PathGuard(root)
-        self.command_guard = CommandGuard()
+        self.command_guard = CommandGuard(mode)
 
     @property
     def root(self) -> Path:
         return self.path_guard.root
+
+    def set_guard_mode(self, mode: str) -> None:
+        self.command_guard.set_mode(mode)
 
     def resolve(self, cwd: str) -> Path:
         try:
@@ -30,25 +33,29 @@ class Shell:
         except SecurityError as exc:
             raise ShellError(str(exc)) from exc
 
-    def run(self, command: str, cwd: str = ".") -> str:
+    def run(self, command: str, cwd: str = ".", timeout: int = 60) -> str:
         try:
             parts = self.command_guard.validate(command)
         except SecurityError as exc:
             raise ShellError(str(exc)) from exc
         workdir = self.resolve(cwd)
-        self._validate_arguments(parts)
+        full_shell = self.command_guard.full_shell
+        if not full_shell:
+            self._validate_arguments(parts)
         try:
             result = subprocess.run(
-                parts,
+                command if full_shell else parts,
                 cwd=workdir,
                 capture_output=True,
                 text=True,
-                timeout=30,
-                shell=False,
+                timeout=max(1, min(timeout, 600)),
+                shell=full_shell,
             )
             output = result.stdout
             if result.stderr:
                 output += "\n" + result.stderr
+            if result.returncode != 0 and not output.strip():
+                return f"Error: exit code {result.returncode}"
             return output.strip() or f"exit code {result.returncode}"
         except subprocess.TimeoutExpired:
             return "Error: command timed out"
@@ -74,11 +81,29 @@ class Shell:
                     )
 
 
-_shell = Shell()
+def create_shell_tool(root: Path | str | None = None):
+    """Build a run_shell_command tool bound to its own Shell instance.
 
+    One per registry so each Agent's permission policy can set the guard
+    mode independently (the old module-level instance shared state across
+    agents). The Shell is exposed on the Tool as ``_shell`` for that wiring.
+    """
 
-@tool(read_only=True, risk_level="high")
-def run_shell_command(command: str, cwd: str = ".") -> str:
-    """Run an allowed shell command inside the workspace."""
-    output = _shell.run(command, cwd)
-    return truncate_text(output, _shell.path_guard.root)
+    shell = Shell(root)
+
+    @tool(read_only=False, risk_level="medium")
+    def run_shell_command(command: str, cwd: str = ".", timeout: int = 60) -> str:
+        """Run a shell command inside the workspace.
+
+        What is allowed depends on the permission mode: read-only allows a
+        few inspection commands; workspace-write additionally runs
+        python/python3/pytest (one command per call, no pipes); danger
+        allows the full shell including pipes and redirection. Prefer
+        ``python3 <script>`` over inline code; give long-running commands a
+        larger ``timeout`` (seconds, max 600).
+        """
+        output = shell.run(command, cwd, timeout)
+        return truncate_text(output, shell.path_guard.root)
+
+    run_shell_command._shell = shell  # type: ignore[attr-defined]
+    return run_shell_command

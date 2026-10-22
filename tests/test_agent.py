@@ -71,7 +71,7 @@ def test_tool_registry_descriptions():
         "list_directory(path='.')",
         "search_files(query, path='.')",
         "grep(pattern, path='.', max_results=50)",
-        "run_shell_command(command, cwd='.')",
+        "run_shell_command(command, cwd='.', timeout=60)",
         "env_info()",
         "todo_read()",
         "todo_write(todos)",

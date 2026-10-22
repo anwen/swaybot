@@ -34,22 +34,68 @@ class PathGuard:
 
 
 class CommandGuard:
-    """Restrict shell commands to an allowlist and safe characters."""
+    """Tiered shell command policy, mirroring the permission modes.
 
-    ALLOWED = {"ls", "cat", "grep", "find", "pwd", "echo", "wc", "head", "tail"}
+    - ``read-only``: a small allowlist of read-only inspection commands;
+      no metacharacters. Agents can look, not touch.
+    - ``workspace-write``: the read-only set plus interpreters/test runners
+      (python/python3/pytest), still one command per call — agents can run
+      the code they wrote, but not chain commands or open pipes.
+    - ``danger``: full shell (pipes, redirects, chaining). Parity with a
+      yolo harness; the workspace cwd still applies.
+
+    The allowlist tiers prevent casual damage, not determined escape —
+    interpreters run with the process owner's privileges. Real isolation
+    is a future sandbox concern, not a command list.
+    """
+
+    READ_ONLY_COMMANDS = frozenset(
+        {"ls", "cat", "grep", "find", "pwd", "echo", "wc", "head", "tail"}
+    )
+    EXTENDED_COMMANDS = READ_ONLY_COMMANDS | frozenset(
+        {"python", "python3", "pytest"}
+    )
+    MODES = ("read-only", "workspace-write", "danger")
     FORBIDDEN = re.compile(r"[;|&$`\n\r]")
 
+    def __init__(self, mode: str = "read-only") -> None:
+        self.set_mode(mode)
+
+    def set_mode(self, mode: str) -> None:
+        if mode not in self.MODES:
+            raise ValueError(f"unknown guard mode {mode!r}; use one of {self.MODES}")
+        self.mode = mode
+
+    @property
+    def full_shell(self) -> bool:
+        return self.mode == "danger"
+
     def validate(self, command: str) -> list[str]:
+        if self.full_shell:
+            if not command.strip():
+                raise SecurityError("empty command")
+            # Full shell executes via shell=True; no allowlist applies.
+            return [command]
         if self.FORBIDDEN.search(command):
-            raise SecurityError("shell metacharacters are not allowed")
+            raise SecurityError(
+                f"shell metacharacters are not allowed in {self.mode} mode "
+                "(they enable command chaining; danger mode allows them)"
+            )
         try:
             parts = shlex.split(command)
         except ValueError as exc:
             raise SecurityError(str(exc)) from exc
         if not parts:
             raise SecurityError("empty command")
-        if parts[0] not in self.ALLOWED:
+        allowed = (
+            self.READ_ONLY_COMMANDS
+            if self.mode == "read-only"
+            else self.EXTENDED_COMMANDS
+        )
+        if parts[0] not in allowed:
             raise SecurityError(
-                f"command '{parts[0]}' is not in the allowed list"
+                f"command '{parts[0]}' is not allowed in {self.mode} mode "
+                f"(allowed: {', '.join(sorted(allowed))}). This denial is "
+                "final for this command — adjust your approach or finish."
             )
         return parts

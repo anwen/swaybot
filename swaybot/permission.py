@@ -16,7 +16,8 @@ class PermissionMode(str, Enum):
     """Coarse permission modes for agent execution.
 
     - ``read-only``: only reads and safe queries.
-    - ``workspace-write``: read-only plus file writes within the workspace.
+    - ``workspace-write``: file writes within the workspace, plus running
+      the code the agent wrote (python/python3/pytest, single command).
     - ``danger``: arbitrary shell execution and other high-risk tools.
     """
 
