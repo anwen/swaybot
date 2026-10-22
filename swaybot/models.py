@@ -418,6 +418,12 @@ class OpenAIModel:
                 # Some providers accept chat completions but reject native tool-calling.
                 # Drop the tools parameter and retry immediately; the system prompt
                 # still describes available tools as JSON schema.
+                # REMOVAL CRITERION (PRINCIPLES.md): this fallback exists for
+                # endpoints that reject the tools parameter (self-hosted vLLM
+                # without --enable-auto-tool-choice, degraded quantized serving).
+                # Models without native tool calls are effectively extinct in
+                # 2026 — if this event stays unfired across an entire gateway
+                # era, delete text mode with it.
                 lowered = last_error.lower()
                 if openai_tools and (
                     ("tool" in lowered and "not supported" in lowered)
@@ -425,6 +431,9 @@ class OpenAIModel:
                     or "enable-auto-tool-choice" in lowered
                     or "tool_call_parser" in lowered
                 ):
+                    from .logging import log_event
+
+                    log_event("model.text_mode_fallback", error=last_error[:200])
                     openai_tools = []
                     continue
                 if not _is_retryable(exc):

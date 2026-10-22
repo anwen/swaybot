@@ -186,3 +186,50 @@ def test_llm_brain_auto_wraps_with_rollout_dir(tmp_path, monkeypatch):
         ["final_answer"],
     )
     assert list(tmp_path.glob("model-io-*.jsonl"))
+
+
+def test_text_mode_fallback_logs_event(tmp_path):
+    """自动降级必须显形（PRINCIPLES 移除标准依赖这个事件可观察）。"""
+    import io
+    import json
+    import logging
+    from unittest.mock import MagicMock, patch
+
+    import swaybot.models as models_mod
+    from swaybot.logging import JSONFormatter
+
+    logger = logging.getLogger("swaybot.events")
+    original_handlers, original_propagate = list(logger.handlers), logger.propagate
+    logger.handlers, logger.propagate = [], False
+    logger.setLevel(logging.INFO)
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JSONFormatter())
+    logger.addHandler(handler)
+    try:
+        with patch.object(models_mod, "OpenAI") as mock_openai:
+            model = models_mod.OpenAIModel(
+                api_key="k", base_url="http://x/v1", model="m", max_retries=1
+            )
+            ok = MagicMock()
+            ok.choices = [MagicMock()]
+            ok.choices[0].message.content = "done"
+            ok.choices[0].finish_reason = "stop"
+            ok.usage = None
+            model._client.chat.completions.create = MagicMock(
+                side_effect=[
+                    RuntimeError("tool choice requires enable-auto-tool-choice"),
+                    ok,
+                ]
+            )
+            response = model.generate(
+                [{"role": "user", "content": "q"}], tools=[{"name": "done"}]
+            )
+            assert response is not None and response.text == "done"
+        lines = [l for l in stream.getvalue().splitlines() if l.strip()]
+        assert lines, "fallback 事件未落日志"
+        payload = json.loads(lines[-1])
+        assert payload["event"]["type"] == "model.text_mode_fallback"
+        assert "enable-auto-tool-choice" in payload["event"]["error"]
+    finally:
+        logger.handlers, logger.propagate = original_handlers, original_propagate
