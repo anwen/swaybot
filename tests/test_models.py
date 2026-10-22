@@ -1,4 +1,10 @@
-from swaybot.models import FallbackModel, Model, ScriptedModel, ScriptedModelError
+from swaybot.models import (
+    FallbackModel,
+    Model,
+    RecordingModel,
+    ScriptedModelError,
+    ScriptedModel,
+)
 
 
 class FakeModel:
@@ -115,3 +121,64 @@ def test_scripted_model_rejects_malformed_step():
         pass
     else:
         raise AssertionError("expected ScriptedModelError for ambiguous step")
+
+
+def test_recording_model_writes_one_line_per_call(tmp_path):
+    import json
+
+    model = RecordingModel(
+        ScriptedModel(
+            [
+                {"text": "hello"},
+                {"action": {"name": "done", "args": {}}},
+            ]
+        ),
+        tmp_path,
+    )
+    assert model.generate([{"role": "user", "content": "q"}]) == "hello"
+    model.generate([{"role": "user", "content": "q"}], tools=[{"name": "done"}])
+    files = list(tmp_path.glob("model-io-*.jsonl"))
+    assert len(files) == 1
+    lines = [json.loads(l) for l in files[0].read_text().splitlines()]
+    assert len(lines) == 2
+    assert lines[0]["raw_output"] == "hello"
+    assert lines[0]["message_count"] == 1
+    assert lines[1]["tool_names"] == ["done"]
+    assert lines[1]["error"] is None
+
+
+def test_recording_model_records_failure_without_swallowing(tmp_path):
+    import json
+    import pytest as _pytest
+
+    model = RecordingModel(ScriptedModel([{"raise": RuntimeError("boom")}]), tmp_path)
+    with _pytest.raises(RuntimeError):
+        model.generate([{"role": "user", "content": "q"}])
+    lines = [json.loads(l) for l in tmp_path.glob("model-io-*.jsonl").__next__().read_text().splitlines()]
+    assert "RuntimeError: boom" in lines[0]["error"]
+
+
+def test_recording_model_redacts_base_url_to_host(tmp_path):
+    import json
+
+    class _UrlModel(ScriptedModel):
+        base_url = "https://gw.example.com/v1?apikey=secret"
+
+    model = RecordingModel(_UrlModel([{"text": "hi"}]), tmp_path)
+    model.generate([{"role": "user", "content": "q"}])
+    line = json.loads(tmp_path.glob("model-io-*.jsonl").__next__().read_text().splitlines()[0])
+    assert line["base_url_host"] == "https://gw.example.com"
+    assert "secret" not in json.dumps(line)
+
+
+def test_llm_brain_auto_wraps_with_rollout_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWAYBOT_ROLLOUT_DIR", str(tmp_path))
+    from swaybot.llm_brain import LLMBrain
+
+    brain = LLMBrain(backend=ScriptedModel([{"text": "hi"}]))
+    assert isinstance(brain._model, RecordingModel)
+    brain.think(
+        {"task": "t", "step": 0, "max_steps": 3, "history": [], "tool_descriptions": []},
+        ["final_answer"],
+    )
+    assert list(tmp_path.glob("model-io-*.jsonl"))

@@ -19,6 +19,7 @@ Available tools: {{ available_tools | join(', ') if available_tools else 'none' 
 When you want to respond to the user or have the final answer, call the 'final_answer' tool with argument 'answer'.
 When the task is complete or you cannot proceed, call the 'done' tool.
 Do not repeat the same tool call with the same arguments. If a search/retrieval tool has already returned relevant results, call 'final_answer' with the answer instead of searching again. After receiving search results, respond to the user with the information found rather than performing another search.
+If a tool call is denied by the permission system, the denial is final for that call: do not retry it unchanged. Adjust your approach or finish with an explanation.
 
 Completing your responses:
 - Before calling final_answer, gather the information needed to actually answer. If a search/retrieval tool (such as KB_search) is available and you have not used it yet for this task, call it before answering. Do not end with only clarifying questions when you can retrieve the answer yourself.

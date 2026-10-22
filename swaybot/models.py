@@ -3,6 +3,8 @@
 import json
 import os
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Protocol, cast, runtime_checkable
 
 
@@ -150,6 +152,95 @@ class ScriptedModel:
             for start_idx in range(0, len(content), self._CHUNK_CHARS):
                 stream_callback(content[start_idx : start_idx + self._CHUNK_CHARS])
         return content
+
+
+class RecordingModel:
+    """Wrap any Model, appending one JSONL line per generate() call.
+
+    Full-fidelity model I/O for debugging and replay: the exact messages
+    and tool schemas sent, the raw output, the metadata dict (finish
+    reason, token usage, duration), and errors. Enable by setting
+    SWAYBOT_ROLLOUT_DIR (LLMBrain wraps its outermost backend) or by
+    wrapping explicitly. Loop and provider code are untouched.
+
+    No credentials are recorded: request bodies contain only messages and
+    tool schemas, and base_url is reduced to scheme://host.
+    """
+
+    def __init__(self, inner: Model, directory: Path | str) -> None:
+        self._inner = inner
+        self._dir = Path(directory).expanduser()
+        self._dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        self._path = self._dir / f"model-io-{stamp}-{id(self):x}.jsonl"
+
+    @property
+    def supports_tools(self) -> bool:  # passthrough for brain capability checks
+        return bool(getattr(self._inner, "supports_tools", False))
+
+    def generate(
+        self,
+        messages: list[dict],
+        metadata: dict | None = None,
+        tools: list[dict] | None = None,
+        stream_callback: StreamCallback | None = None,
+        reasoning_callback: ReasoningCallback | None = None,
+    ) -> str | None:
+        call_metadata: dict = {}
+        start = time.perf_counter()
+        error = ""
+        result: str | None = None
+        try:
+            result = self._inner.generate(
+                messages,
+                metadata=call_metadata,
+                tools=tools,
+                stream_callback=stream_callback,
+                reasoning_callback=reasoning_callback,
+            )
+            if result is None:
+                error = str(call_metadata.get("error", "model returned None"))
+            return result
+        except Exception as exc:  # noqa: BLE001 —— 记录后原样上抛，不吞错
+            error = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            self._record(messages, tools, result, call_metadata, error, start)
+
+    def _record(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None,
+        output: str | None,
+        call_metadata: dict,
+        error: str,
+        start: float,
+    ) -> None:
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "model": getattr(self._inner, "model", None),
+            "base_url_host": _host_of(getattr(self._inner, "base_url", None)),
+            "duration_ms": (time.perf_counter() - start) * 1000,
+            "tool_names": [t.get("name") for t in (tools or []) if isinstance(t, dict)],
+            "message_count": len(messages),
+            "messages": messages,
+            "raw_output": output,
+            "metadata": call_metadata,
+            "error": error or None,
+        }
+        with self._path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _host_of(base_url: str | None) -> str | None:
+    """Reduce a base URL to scheme://host — query strings can carry keys."""
+    if not base_url:
+        return None
+    parts = base_url.split("://", 1)
+    if len(parts) != 2:
+        return None
+    host = parts[1].split("/", 1)[0]
+    return f"{parts[0]}://{host}"
 
 
 def _is_retryable(exc: Exception) -> bool:

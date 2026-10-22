@@ -23,6 +23,7 @@ Available tools: {{ available_tools | join(', ') if available_tools else 'none' 
 Use 'final_answer' when you have the answer to the task, with argument 'answer'.
 Use 'done' when the task is complete or you cannot proceed.
 Before calling final_answer, gather the information needed to actually answer. If a search/retrieval tool is available and you have not used it yet for this task, call it before answering. Do not end with only clarifying questions when you can retrieve the answer yourself.
+If a tool call is denied by the permission system, the denial is final for that call: do not retry it unchanged. Adjust your approach or finish with an explanation.
 Do not include any explanation or markdown formatting outside the JSON.
 {% if behavior_guidance %}
 Lessons learned from past runs:

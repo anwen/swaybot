@@ -1,8 +1,9 @@
+import os
 from typing import Any
 
 from .brain import ReasoningCallback, StreamCallback
 from .loop_guards import NonConvergenceGuard, RepeatCallGuard
-from .models import FallbackModel, Model, OpenAIModel
+from .models import FallbackModel, Model, OpenAIModel, RecordingModel
 from .parsing import (
     PROSE_CAP_CHARS,
     PROSE_TOOL_TAG_RE,
@@ -73,6 +74,12 @@ class LLMBrain:
             )
         if fallback_models:
             backend = FallbackModel([backend] + fallback_models)
+        # Opt-in full-fidelity model I/O recording (one JSONL line per call):
+        # set SWAYBOT_ROLLOUT_DIR and every generate() lands with the exact
+        # messages/tools/output/metadata. Zero loop changes, no credentials.
+        rollout_dir = os.environ.get("SWAYBOT_ROLLOUT_DIR", "").strip()
+        if rollout_dir and not isinstance(backend, RecordingModel):
+            backend = RecordingModel(backend, rollout_dir)
         self._model = backend
         self.api_key = getattr(backend, "api_key", None)
         self.base_url = getattr(backend, "base_url", None)
