@@ -89,7 +89,8 @@ class Agent:
         perception = {
             "task": "Summarize the previous agent steps for future reference.",
             "step": 0,
-            "max_steps": 1,
+            # 2 而非 1：见 LifeRunner._ask_brain 的注释——1 会把散文兜底变 done
+            "max_steps": 2,
             "messages": step_messages,
             "tool_descriptions": [],
         }

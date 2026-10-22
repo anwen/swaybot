@@ -195,6 +195,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Permission mode: read-only, workspace-write, or danger (default: workspace-write)",
     )
     parser.add_argument(
+        "--life",
+        type=str,
+        default=None,
+        help="Live continuously from a seed prompt: explore, wonder, and "
+        "dream until interrupted (Ctrl-C). Requires --brain llm.",
+    )
+    parser.add_argument(
         "--allow-soul-edit",
         action="store_true",
         help="Approve soul-channel digest writes (without it, proposals are "
@@ -247,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         permission_policy = PermissionPolicy(mode=args.permission_mode)
 
     memory = MemoryStore(path=memory_path) if memory_path else None
-    needs_reflector = args.reflect or args.explore or args.auto_evolve
+    needs_reflector = args.reflect or args.explore or args.auto_evolve or bool(args.life)
     reflector = Reflector(memory) if memory and needs_reflector else None
     skills = None
     if args.skills is not None:
@@ -263,6 +270,16 @@ def main(argv: list[str] | None = None) -> int:
         auto_compact=not args.no_compaction,
         on_event=_make_output_sink(args),
     )
+
+    if args.life is not None:
+        if args.brain != "llm":
+            print("--life requires --brain llm (wonder/dream need a model)", file=sys.stderr)
+            return 1
+        from .evolution import LifeRunner
+
+        sink = _make_output_sink(args)
+        LifeRunner(agent, args.life, emit=sink, workspace=Path.cwd()).live()
+        return 0
 
     if args.explore:
         Explorer(agent, max_steps=args.max_steps).run()

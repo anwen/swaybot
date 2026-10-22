@@ -86,6 +86,23 @@ class ExperimentRecorded:
 
 
 @dataclass(frozen=True)
+class Wondered:
+    """New open questions were generated from memory state."""
+
+    questions: tuple
+
+
+@dataclass(frozen=True)
+class DreamBegin:
+    """Reflection-only phase: no new experiments, consolidate memory."""
+
+
+@dataclass(frozen=True)
+class DreamEnd:
+    summary: str
+
+
+@dataclass(frozen=True)
 class SoulProposed:
     """The slow lane proposes a digest of stable knowledge (diff only —
     writing requires the explicit approval gate)."""
@@ -103,6 +120,9 @@ Event = Union[
     ExplorationBegin,
     ExplorationEnd,
     ExperimentRecorded,
+    Wondered,
+    DreamBegin,
+    DreamEnd,
     SoulProposed,
 ]
 
@@ -158,6 +178,12 @@ def to_ndjson(event: Event) -> Optional[dict]:
             "hypothesis": event.hypothesis,
             "summary": event.summary[:200],
         }
+    if isinstance(event, Wondered):
+        return {"event": "wondered", "questions": list(event.questions)}
+    if isinstance(event, DreamBegin):
+        return {"event": "dream_begin"}
+    if isinstance(event, DreamEnd):
+        return {"event": "dream_end", "summary": event.summary[:300]}
     if isinstance(event, SoulProposed):
         return {"event": "soul_proposed", "excerpt": event.excerpt[:300]}
     return None

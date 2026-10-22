@@ -25,8 +25,16 @@ import difflib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .agent_events import Event, ExplorationBegin, ExplorationEnd, ExperimentRecorded
-from .memory import Memory, MemoryStore
+from .agent_events import (
+    DreamBegin,
+    DreamEnd,
+    Event,
+    ExplorationBegin,
+    ExplorationEnd,
+    ExperimentRecorded,
+    Wondered,
+)
+from .memory import Memory, MemoryStore, ReflectionStep
 
 
 class SelfEvolutionDirector:
@@ -282,3 +290,195 @@ def _parse_iso(value: str):
         return datetime.fromisoformat(value)
     except (TypeError, ValueError):
         return None
+
+
+class LifeRunner:
+    """Continuous self-directed operation until externally stopped.
+
+    The loop a person would recognize: explore what you are uncertain
+    about (director rounds), wonder — when the open set runs dry, look at
+    your own memory and let new questions form — and periodically dream:
+    run NO new experiments, only reflect over recent ones into durable
+    theories (duplicates corroborate instead of stacking) and propose a
+    soul digest as a diff. Stops only by external force: the
+    ``stop_check`` callback or KeyboardInterrupt/SIGTERM; memory persists
+    at every run boundary, so an interrupted life loses nothing.
+    """
+
+    def __init__(
+        self,
+        agent,
+        seed: str,
+        *,
+        emit=None,
+        workspace=None,
+        min_open: int = 1,
+        max_rounds_per_cycle: int = 2,
+        rounds_between_dreams: int = 3,
+        stop_check=None,
+    ) -> None:
+        self.agent = agent
+        self.seed = seed
+        self._emit_sink = emit
+        self.workspace = workspace
+        self.min_open = min_open
+        self.max_rounds_per_cycle = max_rounds_per_cycle
+        self.rounds_between_dreams = rounds_between_dreams
+        self.stop_check = stop_check
+
+    def live(self) -> dict:
+        """Run until external stop; returns a small life summary."""
+        self._seed_questions()
+        rounds = 0
+        wonders = 0
+        dreams = 0
+        dry_streak = 0
+        try:
+            while True:
+                if self.stop_check is not None and self.stop_check():
+                    break
+                director = SelfEvolutionDirector(
+                    self.agent,
+                    min_open=self.min_open,
+                    max_runs=self.max_rounds_per_cycle,
+                    emit=self._emit_sink,
+                )
+                explored = director.cycle()
+                rounds += len(explored) // 3  # 每轮 3 个 director 事件
+                if not director.open_candidates():
+                    added = self._wonder()
+                    wonders += len(added)
+                    dry_streak = dry_streak + 1 if not added else 0
+                    if dry_streak >= 3:
+                        # 无法再产生好奇心（如确定性大脑）——生命自然止息
+                        break
+                else:
+                    dry_streak = 0
+                rounds_total = rounds
+                if rounds_total and rounds_total % self.rounds_between_dreams == 0:
+                    self._dream()
+                    dreams += 1
+        except KeyboardInterrupt:
+            pass  # 外力停止：记忆已在每个 run 边界持久化
+        return {"rounds": rounds, "wonders": wonders, "dreams": dreams}
+
+    # -- phases ---------------------------------------------------------
+
+    def _seed_questions(self) -> None:
+        """Split the seed prompt into initial open questions."""
+        if self.agent.memory is None:
+            return
+        import re
+
+        parts = [p.strip() for p in re.split(r"[？！?;；\n]", self.seed) if p.strip()]
+        for content in parts:
+            self.agent.memory.add(
+                ReflectionStep(
+                    content=content,
+                    kind="question",
+                    scope="long_term",
+                    status="open",
+                )
+            )
+
+    def _wonder(self) -> list[str]:
+        """Generate new open questions from memory state (curiosity)."""
+        if self.agent.memory is None:
+            return []
+        memory_digest = "\n".join(
+            getattr(m, "content", "")[:120]
+            for m in self.agent.memory.query(scope="long_term", limit=15)
+        )
+        answer = self._ask_brain(
+            "You just finished what you could verify. Here is your memory:\n"
+            f"{memory_digest}\n\n"
+            "What are you now MOST uncertain about? Reply with up to 3 "
+            "questions, one per line, no numbering."
+        )
+        questions = [
+            line.strip(" -•\t")
+            for line in answer.splitlines()
+            if line.strip() and len(line.strip()) > 4
+        ][:3]
+        for content in questions:
+            self.agent.memory.add(
+                ReflectionStep(
+                    content=content, kind="question", scope="long_term", status="open"
+                )
+            )
+        if questions:
+            self._emit(Wondered(questions=tuple(questions)))
+        return questions
+
+    def _dream(self) -> None:
+        """Reflection-only consolidation; no new experiments."""
+        self._emit(DreamBegin())
+        summary = "nothing to consolidate"
+        memory = self.agent.memory
+        if memory is not None:
+            experiments = memory.query(kind="experiment", scope="long_term", limit=10)
+            digest = "\n".join(
+                f"- {getattr(m, 'content', '')[:150]}" for m in experiments
+            )
+            answer = self._ask_brain(
+                "Dream phase: no new experiments. Reflect ONLY over these "
+                f"experiment records:\n{digest or '(none yet)'}\n\n"
+                "State up to 3 durable theories you now hold (one per line, "
+                "each starting with '- '), then at most 1 new open question "
+                "on a line starting with '? '."
+            )
+            theories = 0
+            new_questions = 0
+            for line in answer.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("- ") and len(stripped) > 6:
+                    memory.add(
+                        ReflectionStep(
+                            content=stripped[2:].strip(),
+                            kind="theory",
+                            scope="long_term",
+                            credibility=0.6,
+                        )
+                    )
+                    theories += 1
+                elif stripped.startswith("?") and len(stripped) > 6:
+                    memory.add(
+                        ReflectionStep(
+                            content=stripped[1:].strip(),
+                            kind="question",
+                            scope="long_term",
+                            status="open",
+                        )
+                    )
+                    new_questions += 1
+            proposal = ""
+            if self.workspace is not None:
+                channel = SoulChannel(memory, self.workspace)
+                if channel.propose() is not None:
+                    proposal = " (soul digest proposed as diff)"
+            summary = (
+                f"consolidated {theories} theories, {new_questions} new "
+                f"questions from {len(experiments)} experiments{proposal}"
+            )
+        self._emit(DreamEnd(summary=summary))
+
+    # -- helpers --------------------------------------------------------
+
+    def _ask_brain(self, prompt: str) -> str:
+        perception = {
+            "task": prompt[:200],
+            "step": 0,
+            # max_steps=2 让散文 fallback 走 echo→final_answer 恢复链
+            # （max_steps=1 时 step+1>=max 直接 done，答案丢失）
+            "max_steps": 2,
+            "messages": [{"role": "user", "content": prompt}],
+            "tool_descriptions": [],
+        }
+        action = self.agent.brain.think(perception, ["final_answer"])
+        if action.get("name") == "final_answer":
+            return str(action.get("args", {}).get("answer", ""))
+        return ""
+
+    def _emit(self, event: Event) -> None:
+        if self._emit_sink is not None:
+            self._emit_sink(event)
