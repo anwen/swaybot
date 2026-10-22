@@ -195,6 +195,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Permission mode: read-only, workspace-write, or danger (default: workspace-write)",
     )
     parser.add_argument(
+        "--auto-evolve",
+        action="store_true",
+        help="After the task, run the self-evolution cycle (explore open "
+        "conjectures, record experiments, update beliefs) while open "
+        "questions remain",
+    )
+    parser.add_argument(
         "--no-compaction",
         action="store_true",
         help="Disable auto-compaction of short-term memory (on by default)",
@@ -234,7 +241,8 @@ def main(argv: list[str] | None = None) -> int:
         permission_policy = PermissionPolicy(mode=args.permission_mode)
 
     memory = MemoryStore(path=memory_path) if memory_path else None
-    reflector = Reflector(memory) if memory and (args.reflect or args.explore) else None
+    needs_reflector = args.reflect or args.explore or args.auto_evolve
+    reflector = Reflector(memory) if memory and needs_reflector else None
     skills = None
     if args.skills is not None:
         from .skills import SkillLibrary
@@ -256,6 +264,10 @@ def main(argv: list[str] | None = None) -> int:
         agent.run(
             args.task, max_steps=args.max_steps, reflect=args.reflect, plan=args.plan
         )
+    if args.auto_evolve and memory is not None:
+        from .evolution import SelfEvolutionDirector
+
+        SelfEvolutionDirector(agent, emit=_make_output_sink(args)).cycle()
     return 0
 
 

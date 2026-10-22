@@ -63,7 +63,39 @@ class RunEnd:
     reflections: list[str] = field(default_factory=list)
 
 
-Event = Union[RunBegin, StepBegin, StepEnd, TokenDelta, ReasoningDelta, RunEnd]
+@dataclass(frozen=True)
+class ExplorationBegin:
+    """The self-evolution director picked a conjecture to test."""
+
+    hypothesis: str
+    task: str
+
+
+@dataclass(frozen=True)
+class ExplorationEnd:
+    hypothesis: str
+    status: str
+
+
+@dataclass(frozen=True)
+class ExperimentRecorded:
+    """An exploration run was written into memory as an experiment record."""
+
+    hypothesis: str
+    summary: str
+
+
+Event = Union[
+    RunBegin,
+    StepBegin,
+    StepEnd,
+    TokenDelta,
+    ReasoningDelta,
+    RunEnd,
+    ExplorationBegin,
+    ExplorationEnd,
+    ExperimentRecorded,
+]
 
 
 def to_ndjson(event: Event) -> Optional[dict]:
@@ -98,5 +130,23 @@ def to_ndjson(event: Event) -> Optional[dict]:
             "steps": event.steps,
             "done": event.done,
             "status": event.status,
+        }
+    if isinstance(event, ExplorationBegin):
+        return {
+            "event": "exploration_begin",
+            "hypothesis": event.hypothesis,
+            "task": event.task,
+        }
+    if isinstance(event, ExplorationEnd):
+        return {
+            "event": "exploration_end",
+            "hypothesis": event.hypothesis,
+            "status": event.status,
+        }
+    if isinstance(event, ExperimentRecorded):
+        return {
+            "event": "experiment_recorded",
+            "hypothesis": event.hypothesis,
+            "summary": event.summary[:200],
         }
     return None
