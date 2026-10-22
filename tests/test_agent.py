@@ -72,6 +72,7 @@ def test_tool_registry_descriptions():
         "search_files(query, path='.')",
         "grep(pattern, path='.', max_results=50)",
         "run_shell_command(command, cwd='.')",
+        "env_info()",
     }
 
 

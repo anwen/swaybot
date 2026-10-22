@@ -55,6 +55,7 @@ def test_tool_registry_schemas():
         "add",
         "done",
         "final_answer",
+        "env_info",
         "web_fetch",
         "web_search",
         "read_file",

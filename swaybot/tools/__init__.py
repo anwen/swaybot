@@ -393,6 +393,7 @@ def build_default_registry() -> ToolRegistry:
     # submodules during its own initialization. fs.py and shell.py do
     # ``from . import tool``, which previously relied on the ordering of
     # bottom-of-file imports in this module (a partial-init cycle).
+    from .env import env_info
     from .fs import edit_file, grep, list_directory, read_file, search_files, write_file
     from .shell import run_shell_command
     from .web import web_fetch, web_search
@@ -402,6 +403,7 @@ def build_default_registry() -> ToolRegistry:
     registry.register("add", add)
     registry.register("done", done)
     registry.register("final_answer", final_answer)
+    registry.register("env_info", env_info, read_only=True, risk_level="low")
     registry.register("web_fetch", web_fetch, read_only=True, risk_level="medium")
     registry.register("web_search", web_search, read_only=True, risk_level="medium")
     registry.register("read_file", read_file, read_only=True, risk_level="low")
