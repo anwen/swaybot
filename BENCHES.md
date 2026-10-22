@@ -18,7 +18,7 @@
 | 2026-08-12 | banking_knowledge | 0.30 (n=20) | 晚间复跑回落（0.57→0.30），触发 #3 prose 兜底改造排查 | `tau3_results/parallel_evaluation_mock_airline_retail_telecom_banking_knowledge.json` |
 | ~2026-08-14 | banking_knowledge | 0.35→0.05 | **round-5 → #3 回归**：`_fallback` 改全量 prose 后 agent 不检索就交卷（详见 TODO_DSH #1） | `tau3_results/logs/`（round 系列日志） |
 | 2026-08-15~18 | banking / airline / telecom | 定向回归 | prompt 防过早交卷、RepeatCallGuard、非收敛 guard、calculate 引导、prose 工具标签恢复、KB 综合修复逐项验证（commit 说明见 git log 8-15~8-18） | `tau3_results/logs/reg2~reg5_*.log`、`v*_task*.log` |
-| — | **全量（修复后）** | **未跑** | 会话结束时仍是 pending——下一行属于它 | — |
+| — | **全量（修复后）** | **未跑** | 会话结束时仍是 pending。2026-10-22 尝试启动：`.env` 中凭据为已作废的泄露密钥（401），待更换新密钥后连同本轮改动（拒绝引导文案/env_info/RecordingModel）一起跑 | — |
 
 ## AgentDojo（utility / security）
 
