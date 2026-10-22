@@ -146,7 +146,8 @@ def test_recording_model_writes_one_line_per_call(tmp_path):
     assert lines[0]["text"] == "hello"
     assert lines[0]["tool_call"] is None
     assert lines[0]["message_count"] == 1
-    assert lines[1]["tool_names"] == ["done"]
+    assert lines[0]["tools"] == []
+    assert lines[1]["tools"][0]["name"] == "done"
     assert lines[1]["tool_call"]["name"] == "done"
     assert lines[1]["error"] is None
 
@@ -233,3 +234,27 @@ def test_text_mode_fallback_logs_event(tmp_path):
         assert "enable-auto-tool-choice" in payload["event"]["error"]
     finally:
         logger.handlers, logger.propagate = original_handlers, original_propagate
+
+
+def test_recording_model_ids_and_usage(tmp_path):
+    import json
+
+    model = RecordingModel(
+        ScriptedModel(
+            [
+                {"text": "one"},
+                {"action": {"name": "done", "args": {}}},
+            ]
+        ),
+        tmp_path,
+    )
+    session = model._session_id
+    model.generate([{"role": "user", "content": "q"}])
+    model.generate([{"role": "user", "content": "q"}])
+    lines = [json.loads(l) for l in tmp_path.glob("model-io-*.jsonl").__next__().read_text().splitlines()]
+    assert lines[0]["session_id"] == lines[1]["session_id"] == session
+    assert [l["call_index"] for l in lines] == [1, 2]
+    assert all("started_at" in l and "ts" in l for l in lines)
+    # usage 来自 metadata.token_usage（OpenAIModel 约定），结构化提升到顶层
+    assert "metadata" not in lines[0]
+    assert "tool_names" not in lines[0]

@@ -4,6 +4,7 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
+from uuid import uuid4
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol, cast, runtime_checkable
@@ -196,11 +197,15 @@ class ScriptedModel:
 class RecordingModel:
     """Wrap any Model, appending one JSONL line per generate() call.
 
-    Full-fidelity model I/O for debugging and replay: the exact messages
-    and tool schemas sent, the raw output, the metadata dict (finish
-    reason, token usage, duration), and errors. Enable by setting
-    SWAYBOT_ROLLOUT_DIR (LLMBrain wraps its outermost backend) or by
-    wrapping explicitly. Loop and provider code are untouched.
+    Semantic model-I/O record for debugging, replay, and analysis: the
+    exact messages and FULL tool schemas sent, the structured tool call
+    or text that came back, finish reason, token usage, duration, and
+    errors — plus correlation ids (session/call/request) so lines can be
+    tied back to a brain session and, when one is active, an API request.
+    Enable by setting SWAYBOT_ROLLOUT_DIR (LLMBrain wraps its outermost
+    backend) or by wrapping explicitly. Loop and provider code are
+    untouched; retries inside the inner model are not visible here (one
+    line per generate(), not per HTTP attempt).
 
     No credentials are recorded: request bodies contain only messages and
     tool schemas, and base_url is reduced to scheme://host.
@@ -210,6 +215,8 @@ class RecordingModel:
         self._inner = inner
         self._dir = Path(directory).expanduser()
         self._dir.mkdir(parents=True, exist_ok=True)
+        self._session_id = f"sess_{uuid4().hex[:12]}"
+        self._call_index = 0
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
         self._path = self._dir / f"model-io-{stamp}-{id(self):x}.jsonl"
 
@@ -255,14 +262,27 @@ class RecordingModel:
         error: str,
         start: float,
     ) -> None:
+        self._call_index += 1
+        try:
+            from .request_context import current_context
+
+            request_id = current_context().request_id or None
+        except Exception:
+            request_id = None
         record = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "started_at": datetime.fromtimestamp(
+                time.time() - (time.perf_counter() - start), timezone.utc
+            ).isoformat(timespec="milliseconds"),
+            "session_id": self._session_id,
+            "call_index": self._call_index,
+            "request_id": request_id,
             "model": getattr(self._inner, "model", None),
             "base_url_host": _host_of(getattr(self._inner, "base_url", None)),
             "duration_ms": (time.perf_counter() - start) * 1000,
-            "tool_names": [t.get("name") for t in (tools or []) if isinstance(t, dict)],
             "message_count": len(messages),
             "messages": messages,
+            "tools": [dict(t) for t in (tools or []) if isinstance(t, dict)],
             "text": response.text if response else None,
             "tool_call": (
                 {"name": response.tool_call.name, "args": response.tool_call.args}
@@ -270,7 +290,8 @@ class RecordingModel:
                 else None
             ),
             "finish_reason": response.finish_reason if response else None,
-            "metadata": call_metadata,
+            "usage": (response.usage if response and response.usage else None)
+            or call_metadata.get("token_usage"),
             "error": error or None,
         }
         with self._path.open("a", encoding="utf-8") as handle:
