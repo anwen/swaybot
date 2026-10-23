@@ -350,3 +350,39 @@ def test_sediment_views_render_knowledge_and_curiosity(tmp_path):
     assert "a vs b conflict" in first_line  # 矛盾优先
     assert "resolved q" not in c  # 已解决不出现
     assert c.index("shallow q") < c.index("deep sub q")  # 浅层在前
+
+
+def test_belief_counts_and_decay(tmp_path):
+    """裁决累加计数 + last_verified_at；有效置信度随未验证时间半衰。"""
+    from datetime import datetime, timedelta, timezone
+
+    from swaybot.evolution import SelfEvolutionDirector, _parse_json_object
+    from swaybot.llm_brain import LLMBrain
+    from swaybot.memory import Memory, MemoryStore, effective_credibility
+    from swaybot.models import ScriptedModel
+
+    store = MemoryStore(path=tmp_path / "m.json")
+    store.add(Memory(content="conj", kind="conjecture", scope="long_term",
+                     relation="q?", credibility=0.5, supported_count=0, refuted_count=0))
+    agent = _agent_with_questions(store, ["q?", "another"])
+    agent.brain = LLMBrain(backend=ScriptedModel([
+        {"action": {"name": "final_answer", "args": {"answer":
+            '{"conjecture": "c", "method": "m", "success_criteria": "s", "applicability": "macOS sandbox"}'}}},
+        {"action": {"name": "final_answer", "args": {"answer": "ran"}}},
+        {"action": {"name": "final_answer", "args": {"answer": '{"verdict": "supported", "evidence": "e"}'}}},
+    ]))
+    SelfEvolutionDirector(agent, min_open=1, max_runs=1).cycle()
+    conj = next(m for m in store.memories if getattr(m, "kind", "") == "conjecture" and m.relation == "q?")
+    assert conj.supported_count == 1 and conj.last_verified_at
+    # 设计带出的适用条件入库存（新猜想）
+    designed = [m for m in store.memories if getattr(m, "kind", "") == "conjecture"
+                and getattr(m, "applicability", "")]
+    assert designed and designed[0].applicability == "macOS sandbox"
+
+    # 半衰：30 天前验证过的 0.8 → 有效 ~0.4（一个半衰期）
+    old = Memory(content="old", kind="theory", scope="long_term", credibility=0.8,
+                 last_verified_at=(datetime.now(timezone.utc) - timedelta(days=30)).isoformat())
+    assert abs(effective_credibility(old, half_life_days=30) - 0.4) < 0.01
+    fresh = Memory(content="new", kind="theory", scope="long_term", credibility=0.6,
+                   last_verified_at=datetime.now(timezone.utc).isoformat())
+    assert effective_credibility(fresh) > effective_credibility(old)

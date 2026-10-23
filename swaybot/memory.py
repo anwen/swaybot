@@ -60,6 +60,13 @@ class Memory(MemoryStep):
     relation: str = ""
     kind: str = "experience"
     scope: str = "long_term"
+    # 适用条件：该信念成立的前提（如"macOS 沙箱内验证；Linux 未验证"）
+    applicability: str = ""
+    # 证据量：裁决计数（成功/失败各多少次实验）
+    supported_count: int = 0
+    refuted_count: int = 0
+    # 最近一次成功验证时间（无则退回 created_at）——有效置信度按它衰减
+    last_verified_at: str = ""
     step_kind: ClassVar[str] = "memory"
 
     def to_messages(self) -> list[dict]:
@@ -155,6 +162,9 @@ class ReflectionStep(MemoryStep):
     relation: str = ""
     # depth: 0 for root questions; guards runaway decomposition chains
     depth: int = 0
+    # 猜想类条目的适用条件与验证时间（与 Memory 同义）
+    applicability: str = ""
+    last_verified_at: str = ""
     step_kind: ClassVar[str] = "reflection"
 
     def to_messages(self) -> list[dict]:
@@ -553,6 +563,33 @@ _STOP_WORDS = {
     "some", "such", "no", "not", "only", "own", "same", "so", "than", "too",
     "very", "can", "will", "just", "should", "now", "do", "does", "did",
 }
+
+
+def effective_credibility(memory: MemoryStep, *, half_life_days: float = 30.0) -> float:
+    """Credibility discounted by time since its last successful verification.
+
+    Stored credibility is the pure evidence record; the EFFECTIVE score is
+    what behavior should trust — unverified-for-long knowledge decays toward
+    zero regardless of how credible it once was (the curse-of-knowledge
+    defense: stale beliefs lose their seat at the table).
+    """
+    credibility = float(getattr(memory, "credibility", 0.0) or 0.0)
+    anchor = getattr(memory, "last_verified_at", "") or getattr(
+        memory, "created_at", ""
+    )
+    parsed = None
+    try:
+        from datetime import datetime, timezone
+
+        parsed = datetime.fromisoformat(anchor)
+    except (TypeError, ValueError):
+        pass
+    if parsed is None:
+        return credibility
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    days = (datetime.now(timezone.utc) - parsed).total_seconds() / 86400
+    return credibility * (0.5 ** (max(0.0, days) / half_life_days))
 
 
 def _tokenize(text: str) -> list[str]:

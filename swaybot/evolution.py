@@ -103,21 +103,39 @@ def write_sediment(memory: MemoryStore, directory) -> tuple:
         content = getattr(m, "content", "")
         return bool(content) and not content.startswith("Run '")
 
+    from .memory import effective_credibility
+
     ranked = sorted(
         [m for m in conjectures + theories if _is_sediment(m)],
-        key=lambda m: -float(m.credibility),
+        key=lambda m: -effective_credibility(m),
     )
     if not ranked:
         lines.append("_Nothing settled yet._")
     for m in ranked:
-        cred = float(m.credibility)
-        flag = " ★" if cred >= 0.8 else ""
+        cred = effective_credibility(m)
+        raw = float(getattr(m, "credibility", 0.0))
+        flag = " ★" if round(cred, 4) >= 0.8 else ""
         question = getattr(m, "relation", "")
         source_line = f" — question: {question}; {_trail(question)}" if question else ""
+        counts = (
+            f"; ✓{int(getattr(m, 'supported_count', 0))} ✗{int(getattr(m, 'refuted_count', 0))}"
+            if (getattr(m, "supported_count", 0) or getattr(m, "refuted_count", 0))
+            else ""
+        )
+        verified = getattr(m, "last_verified_at", "")
+        verified_tag = f"; verified {verified[:10]}" if verified else "; never re-verified"
+        apply_tag = (
+            f"; applies when: {getattr(m, 'applicability', '')[:120]}"
+            if getattr(m, "applicability", "")
+            else ""
+        )
+        stale_note = f" (stale: raw {raw:.2f})" if raw - cred > 0.15 else ""
         content = getattr(m, "content", "")
         if len(content) > 400:
             content = content[:400] + "…"
-        lines.append(f"- **[{cred:.2f}]{flag}** {content}{source_line}")
+        lines.append(
+            f"- **[{cred:.2f}]{flag}** {content}{source_line}{counts}{verified_tag}{apply_tag}{stale_note}"
+        )
     knowledge.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     curiosity = directory / "curiosity.md"
@@ -246,7 +264,9 @@ class SelfEvolutionDirector:
             entry = candidates[0]
             hypothesis = entry.content
             protocol = self._design_experiment(hypothesis)
-            self._record_conjecture(hypothesis, protocol["conjecture"])
+            self._record_conjecture(
+                hypothesis, protocol["conjecture"], protocol.get("applicability", "")
+            )
             self._set_status(hypothesis, "testing")
             begin = ExplorationBegin(hypothesis=hypothesis, task=protocol["task"])
             designed = ExperimentDesigned(
@@ -341,7 +361,9 @@ class SelfEvolutionDirector:
             "Reply ONLY with a JSON object:\n"
             '{"conjecture": "<falsifiable statement>", "method": "<what to do, '
             'concretely, with the available tools>", "success_criteria": '
-            '"<what observation would count as support, and what as refutation>"}'
+            '"<what observation would count as support, and what as refutation>", '
+            '"applicability": "<conditions under which this conjecture is claimed '
+            'to hold, e.g. the OS/environment/versions tested>"}'
         )
         # thinking 模型偶发空返回/非 JSON——重试一次再落兜底协议
         parsed = _parse_json_object(_ask_brain(self.agent, prompt))
@@ -365,6 +387,7 @@ class SelfEvolutionDirector:
             conjecture = hypothesis
             method = "Investigate directly with the available tools."
             criteria = "The run ends with a concrete final_answer addressing the question."
+        applicability = str(parsed.get("applicability", "")) if parsed else ""
         task = (
             "Execute this experiment.\n"
             f"Conjecture: {conjecture}\n"
@@ -374,12 +397,20 @@ class SelfEvolutionDirector:
             "against the criteria, then finish with final_answer stating "
             "supported / refuted / inconclusive plus the evidence you saw."
         )
-        return {"conjecture": conjecture, "method": method, "criteria": criteria, "task": task}
+        return {
+            "conjecture": conjecture,
+            "method": method,
+            "criteria": criteria,
+            "applicability": applicability,
+            "task": task,
+        }
 
-    def _record_conjecture(self, question: str, conjecture: str) -> None:
+    def _record_conjecture(
+        self, question: str, conjecture: str, applicability: str = ""
+    ) -> None:
         """Store the designed conjecture as a first-class belief (kind=conjecture,
-        linked to its question) so verdicts can move ITS credibility precisely
-        instead of by keyword relevance."""
+        linked to its question, with its stated applicability conditions) so
+        verdicts can move ITS credibility precisely instead of by relevance."""
         memory = self.agent.memory
         if memory is None or not conjecture or conjecture == question:
             return
@@ -391,6 +422,7 @@ class SelfEvolutionDirector:
                 relation=question,
                 source="director",
                 credibility=0.3,
+                applicability=applicability,
                 tags=["conjecture"],
             )
         )
@@ -403,6 +435,8 @@ class SelfEvolutionDirector:
         delta = {"supported": 0.2, "refuted": -0.3}.get(verdict, 0.0)
         if delta == 0.0:
             return
+        from .utils import utc_now_iso
+
         for mem in memory.memories:
             if (
                 getattr(mem, "kind", "") == "conjecture"
@@ -410,6 +444,11 @@ class SelfEvolutionDirector:
                 and hasattr(mem, "credibility")
             ):
                 mem.credibility = max(0.0, min(1.0, float(mem.credibility) + delta))
+                if verdict == "supported":
+                    mem.supported_count = int(getattr(mem, "supported_count", 0)) + 1
+                    mem.last_verified_at = utc_now_iso()
+                elif verdict == "refuted":
+                    mem.refuted_count = int(getattr(mem, "refuted_count", 0)) + 1
         memory.save()
 
     def _decompose(self, entry) -> SubQuestionsAdded | None:

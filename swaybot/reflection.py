@@ -148,6 +148,19 @@ class Reflector:
                 continue
             old = float(mem.credibility)
             new = max(0.0, min(1.0, old + delta))
+            if verdict == "supported":
+                try:
+                    mem.supported_count = int(getattr(mem, "supported_count", 0)) + 1
+                    from .utils import utc_now_iso
+
+                    mem.last_verified_at = utc_now_iso()
+                except AttributeError:
+                    pass
+            elif verdict == "refuted":
+                try:
+                    mem.refuted_count = int(getattr(mem, "refuted_count", 0)) + 1
+                except AttributeError:
+                    pass
             if new != old:
                 mem.credibility = new
                 content = getattr(mem, "content", str(mem))

@@ -68,9 +68,13 @@ class ContextBuilder:
         return format_memory_bullets(relevant)
 
     def _behavior_guidance(self, task: str, relevant: list) -> str:
+        from .memory import effective_credibility
+
         lines: list[str] = []
         for theory in relevant:
-            if getattr(theory, "credibility", 0.0) < 0.5:
+            # 有效置信度：随"距上次成功验证的时间"半衰（30 天），陈旧教训
+            # 即使原始置信度高也会逐渐失去注入资格（知识诅咒的防线）
+            if effective_credibility(theory) < 0.5:
                 continue
             content = getattr(theory, "content", str(theory))
             if content:
