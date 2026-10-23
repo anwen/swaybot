@@ -202,6 +202,13 @@ def main(argv: list[str] | None = None) -> int:
         "dream until interrupted (Ctrl-C). Requires --brain llm.",
     )
     parser.add_argument(
+        "--think-timeout",
+        type=float,
+        default=None,
+        help="Per-step wall clock for model calls in seconds (life mode "
+        "defaults to 120; guards against trickle-hung gateway connections)",
+    )
+    parser.add_argument(
         "--allow-soul-edit",
         action="store_true",
         help="Approve soul-channel digest writes (without it, proposals are "
@@ -269,6 +276,9 @@ def main(argv: list[str] | None = None) -> int:
         skills=skills,
         auto_compact=not args.no_compaction,
         on_event=_make_output_sink(args),
+        think_timeout=(120 if args.life is not None else None)
+        if getattr(args, "think_timeout", None) is None
+        else args.think_timeout,
     )
 
     if args.life is not None:
@@ -278,7 +288,9 @@ def main(argv: list[str] | None = None) -> int:
         from .evolution import LifeRunner
 
         sink = _make_output_sink(args)
-        LifeRunner(agent, args.life, emit=sink, workspace=Path.cwd()).live()
+        LifeRunner(
+            agent, args.life, emit=sink, workspace=Path.cwd(), max_steps=args.max_steps
+        ).live()
         return 0
 
     if args.explore:

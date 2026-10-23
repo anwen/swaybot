@@ -45,12 +45,17 @@ class Agent:
         compactor: AutoCompact | None = None,
         skills: SkillLibrary | None = None,
         on_event: Callable[[Event], None] | None = None,
+        think_timeout: float | None = None,
     ):
         self.brain = brain or EchoBrain()
         self.tools = tools or build_default_registry()
         self.memory = memory
         self.reflector = reflector
         self.on_event = on_event
+        # Per-step wall clock for brain calls. Thinking gateways can trickle
+        # keepalive bytes that reset read timeouts indefinitely (observed:
+        # 530s hung step, no error). None = unbounded (default).
+        self.think_timeout = think_timeout
         if permission_policy is not None:
             self.permission_policy = permission_policy
         else:
@@ -233,23 +238,49 @@ class Agent:
         self._sinks = []
 
     def _think(self, perception: dict, stream: bool) -> tuple[dict, dict]:
-        """Ask the brain for the next action, capturing call metadata."""
+        """Ask the brain for the next action, capturing call metadata.
+
+        With ``think_timeout`` set, a call that exceeds the wall clock
+        falls back to an echo carrying the timeout message — the loop keeps
+        moving and the step is observable as an error instead of hanging.
+        """
         call_info: dict = {}
+        if self.think_timeout is None:
+            return self._brain_call(perception, stream, call_info), call_info
+        import threading
+
+        box: dict = {}
+
+        def _call() -> None:
+            try:
+                box["action"] = self._brain_call(perception, stream, call_info)
+            except BaseException:
+                box.setdefault("action", None)
+
+        thread = threading.Thread(target=_call, daemon=True)
+        thread.start()
+        thread.join(self.think_timeout)
+        if "action" in box and box["action"] is not None:
+            return box["action"], call_info
+        call_info["error"] = f"model call exceeded {self.think_timeout}s wall clock"
+        from .parsing import fallback_action
+
+        return fallback_action(perception, call_info["error"]), call_info
+
+    def _brain_call(self, perception: dict, stream: bool, call_info: dict) -> dict:
         if stream:
-            action = self.brain.think(
+            return self.brain.think(
                 perception,
                 self.tools.names(),
                 metadata=call_info,
                 stream_callback=self._on_token,
                 reasoning_callback=self._on_reasoning,
             )
-        else:
-            action = self.brain.think(
-                perception,
-                self.tools.names(),
-                metadata=call_info,
-            )
-        return action, call_info
+        return self.brain.think(
+            perception,
+            self.tools.names(),
+            metadata=call_info,
+        )
 
     def _execute_action(
         self, action: dict, request_context: RequestContext | None = None

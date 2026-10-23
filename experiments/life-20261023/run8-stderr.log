@@ -1,0 +1,6 @@
+Exception ignored in atexit callback: <function exit_cacert_ctx at 0x12126bc40>
+Traceback (most recent call last):
+  File "/opt/homebrew/Caskroom/miniforge/base/envs/py312/lib/python3.12/site-packages/certifi/core.py", line 10, in exit_cacert_ctx
+    def exit_cacert_ctx() -> None:
+    
+KeyboardInterrupt: 

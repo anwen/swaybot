@@ -1,0 +1,44 @@
+[
+  {
+    "kind": "question",
+    "scope": "long_term",
+    "source": "reflector",
+    "tags": [],
+    "created_at": "2026-10-22T18:07:41.327504+00:00",
+    "content": "探索：我是谁",
+    "credibility": 0.5,
+    "evidence": [],
+    "status": "open",
+    "relation": "",
+    "depth": 0,
+    "step_kind": "reflection"
+  },
+  {
+    "kind": "question",
+    "scope": "long_term",
+    "source": "reflector",
+    "tags": [],
+    "created_at": "2026-10-22T18:07:41.327916+00:00",
+    "content": "这个世界是怎样的",
+    "credibility": 0.5,
+    "evidence": [],
+    "status": "open",
+    "relation": "",
+    "depth": 0,
+    "step_kind": "reflection"
+  },
+  {
+    "kind": "question",
+    "scope": "long_term",
+    "source": "reflector",
+    "tags": [],
+    "created_at": "2026-10-22T18:07:41.328299+00:00",
+    "content": "我做什么是有价值的",
+    "credibility": 0.5,
+    "evidence": [],
+    "status": "open",
+    "relation": "",
+    "depth": 0,
+    "step_kind": "reflection"
+  }
+]

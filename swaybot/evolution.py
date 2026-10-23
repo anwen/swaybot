@@ -57,20 +57,38 @@ def _parse_json_object(text: str) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _ask_brain(agent, prompt: str) -> str:
-    """Ask a brain via the final_answer channel ('' when it cannot answer)."""
-    perception = {
-        "task": prompt[:200],
-        "step": 0,
-        # max_steps=2: 见 LifeRunner._ask_brain 注释——1 会把散文兜底变 done
-        "max_steps": 2,
-        "messages": [{"role": "user", "content": prompt}],
-        "tool_descriptions": [],
-    }
-    action = agent.brain.think(perception, ["final_answer"])
-    if action.get("name") == "final_answer":
-        return str(action.get("args", {}).get("answer", ""))
-    return ""
+def _ask_brain(agent, prompt: str, *, wall_clock_s: float = 240.0) -> str:
+    """Ask a brain via the final_answer channel ('' when it cannot answer).
+
+    Wall-clock capped: thinking gateways can trickle keepalive bytes that
+    reset read timeouts indefinitely (observed: one design call hanging
+    600s with no error). A daemon thread + join(timeout) bounds every
+    orchestration call; empty answers fall back to defaults upstream.
+    """
+    import threading
+
+    box: dict = {}
+
+    def _call() -> None:
+        perception = {
+            "task": prompt[:200],
+            "step": 0,
+            # max_steps=2: 1 会把散文兜底变 done（见历史提交说明）
+            "max_steps": 2,
+            "messages": [{"role": "user", "content": prompt}],
+            "tool_descriptions": [],
+        }
+        try:
+            action = agent.brain.think(perception, ["final_answer"])
+            if action.get("name") == "final_answer":
+                box["answer"] = str(action.get("args", {}).get("answer", ""))
+        except BaseException:
+            box.setdefault("answer", "")
+
+    thread = threading.Thread(target=_call, daemon=True)
+    thread.start()
+    thread.join(wall_clock_s)
+    return box.get("answer", "")
 
 
 class SelfEvolutionDirector:
@@ -564,6 +582,7 @@ class LifeRunner:
         min_open: int = 1,
         max_rounds_per_cycle: int = 2,
         rounds_between_dreams: int = 3,
+        max_steps: int = 5,
         stop_check=None,
     ) -> None:
         self.agent = agent
@@ -573,6 +592,7 @@ class LifeRunner:
         self.min_open = min_open
         self.max_rounds_per_cycle = max_rounds_per_cycle
         self.rounds_between_dreams = rounds_between_dreams
+        self.max_steps = max_steps
         self.stop_check = stop_check
 
     def live(self) -> dict:
@@ -590,6 +610,7 @@ class LifeRunner:
                     self.agent,
                     min_open=self.min_open,
                     max_runs=self.max_rounds_per_cycle,
+                    max_steps=self.max_steps,
                     emit=self._emit_sink,
                 )
                 explored = director.cycle()

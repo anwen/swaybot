@@ -326,3 +326,31 @@ def test_agent_default_summarizer_uses_final_answer(tmp_path):
     compacted = [m for m in store.memories if "compact" in getattr(m, "tags", [])]
     assert compacted
     assert compacted[0].content == "digested lessons"
+
+
+def test_think_timeout_falls_back_instead_of_hanging():
+    """步骤墙钟：挂死的模型调用被截断为可观察的错误步，循环继续。"""
+    import time as _time
+
+    from swaybot.brain import Brain
+    from swaybot.memory import MemoryStore
+
+    class HungBrain:
+        def think(self, perception, tools, metadata=None, **kwargs):
+            _time.sleep(10)
+            return {"name": "done", "args": {}}
+
+    events: list = []
+    agent = Agent(
+        brain=HungBrain(),
+        memory=MemoryStore(),
+        on_event=events.append,
+        think_timeout=0.5,
+    )
+    env = agent.run("t", max_steps=2, reflect=False)
+    assert env.done
+    from swaybot.agent_events import StepEnd
+
+    steps = [e for e in events if isinstance(e, StepEnd)]
+    assert steps and steps[0].error and "wall clock" in steps[0].error
+    assert steps[0].action["name"] == "echo"
