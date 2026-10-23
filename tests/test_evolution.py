@@ -308,3 +308,45 @@ def test_decomposition_depth_cap(tmp_path):
     director = SelfEvolutionDirector(agent, min_open=1, max_runs=1, max_depth=2)
     emitted = director.cycle()
     assert not any(type(e).__name__ == "SubQuestionsAdded" for e in emitted)
+
+
+def test_sediment_views_render_knowledge_and_curiosity(tmp_path):
+    """沉淀视图：知识按置信度排序带证据链；好奇按调度优先级排序。"""
+    from swaybot.evolution import write_sediment
+    from swaybot.memory import Memory, MemoryStore
+
+    store = MemoryStore(path=tmp_path / "memory.json")
+    # 三条猜想不同置信度 + 一条理论
+    store.add(Memory(content="I am my policy", kind="conjecture", scope="long_term",
+                     relation="who am I?", credibility=0.8))
+    store.add(Memory(content="world is sandboxed", kind="conjecture", scope="long_term",
+                     relation="what world?", credibility=0.3))
+    store.add(Memory(content="weak guess", kind="conjecture", scope="long_term",
+                     relation="x?", credibility=0.1))
+    # 证据链：两条实验（supported + inconclusive）挂在 who am I?
+    store.add(Memory(content="Experiment on 'who am I?': verdict=supported", kind="experiment",
+                     scope="long_term", relation="who am I?", credibility=0.5))
+    store.add(Memory(content="Experiment on 'who am I?': verdict=inconclusive", kind="experiment",
+                     scope="long_term", relation="who am I?", credibility=0.5))
+    # 好奇列表：一个矛盾（应排最前）+ 深浅两个问题
+    from swaybot.memory import ReflectionStep
+
+    store.add(ReflectionStep(content="deep sub q", kind="question", scope="long_term",
+                             depth=1, relation="parent"))
+    store.add(ReflectionStep(content="shallow q", kind="question", scope="long_term", depth=0))
+    store.add(ReflectionStep(content="a vs b conflict", kind="contradiction", scope="long_term"))
+    store.add(ReflectionStep(content="resolved q", kind="question", scope="long_term",
+                             status="resolved"))
+
+    knowledge, curiosity = write_sediment(store, tmp_path)
+    k = knowledge.read_text(encoding="utf-8")
+    assert "I am my policy" in k and "★" in k  # ≥0.8 标星
+    assert k.index("I am my policy") < k.index("weak guess")  # 置信度降序
+    assert "2 experiment(s): supported=1" in k  # 证据链
+
+    c = curiosity.read_text(encoding="utf-8")
+    numbered = [l for l in c.splitlines() if l.startswith("1. ")]
+    first_line = numbered[0]  # 排序后的第一条
+    assert "a vs b conflict" in first_line  # 矛盾优先
+    assert "resolved q" not in c  # 已解决不出现
+    assert c.index("shallow q") < c.index("deep sub q")  # 浅层在前

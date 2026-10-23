@@ -39,6 +39,121 @@ from .agent_events import (
 from .memory import Memory, MemoryStore, ReflectionStep
 
 
+def write_sediment(memory: MemoryStore, directory) -> tuple:
+    """Render memory's two sediment views into ``directory``.
+
+    - knowledge.md  — settled beliefs ranked by credibility, each with its
+      evidence trail (the experiments that moved it). This is the FAST
+      research ledger, regenerated every dream; the soul channel stays the
+      slow, gated, approval-required lane and may later feed on this.
+    - curiosity.md  — the open-question priority list in the exact order
+      the director schedules them (contradictions before questions,
+      shallower before deeper): what the agent is most curious about.
+
+    Regenerable projections — the store remains the source of truth.
+    """
+    from pathlib import Path as _P
+
+    directory = _P(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    experiments_by_question: dict = {}
+    for mem in memory.query(kind="experiment", scope="long_term", limit=500):
+        question = getattr(mem, "relation", "") or ""
+        verdict = "unknown"
+        content = getattr(mem, "content", "")
+        for marker in ("verdict=supported", "verdict=refuted", "verdict=inconclusive"):
+            if marker in content:
+                verdict = marker.split("=")[1]
+                break
+        experiments_by_question.setdefault(question, []).append(verdict)
+
+    def _trail(question: str) -> str:
+        verdicts = experiments_by_question.get(question, [])
+        if not verdicts:
+            return "no experiments yet"
+        counts = {v: verdicts.count(v) for v in ("supported", "refuted", "inconclusive")}
+        return (
+            f"{len(verdicts)} experiment(s): "
+            f"supported={counts['supported']}, refuted={counts['refuted']}, "
+            f"inconclusive={counts['inconclusive']}"
+        )
+
+    knowledge = directory / "knowledge.md"
+    lines = [
+        "# Knowledge",
+        "",
+        "> Sedimented beliefs ranked by credibility; regenerated every dream.",
+        "> The memory store is the source of truth — this is its projection.",
+        "",
+    ]
+    conjectures = [
+        m
+        for m in memory.query(kind="conjecture", scope="long_term", limit=500)
+        if hasattr(m, "credibility")
+    ]
+    theories = [
+        m
+        for m in memory.query(kind="theory", scope="long_term", limit=500)
+        if hasattr(m, "credibility")
+    ]
+    # 运行摘要（"Run '…' completed"）是流水账不是沉淀知识，排除；
+    # 超长条目截断展示——全文始终在 memory store 里。
+    def _is_sediment(m) -> bool:
+        content = getattr(m, "content", "")
+        return bool(content) and not content.startswith("Run '")
+
+    ranked = sorted(
+        [m for m in conjectures + theories if _is_sediment(m)],
+        key=lambda m: -float(m.credibility),
+    )
+    if not ranked:
+        lines.append("_Nothing settled yet._")
+    for m in ranked:
+        cred = float(m.credibility)
+        flag = " ★" if cred >= 0.8 else ""
+        question = getattr(m, "relation", "")
+        source_line = f" — question: {question}; {_trail(question)}" if question else ""
+        content = getattr(m, "content", "")
+        if len(content) > 400:
+            content = content[:400] + "…"
+        lines.append(f"- **[{cred:.2f}]{flag}** {content}{source_line}")
+    knowledge.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    curiosity = directory / "curiosity.md"
+    lines = [
+        "# Curiosity",
+        "",
+        "> Open questions in scheduling order (contradictions first, then",
+        "> shallower before deeper) — what I most want to know next.",
+        "> Regenerated every dream.",
+        "",
+    ]
+    questions = [
+        m for m in memory.query(kind="question", scope="long_term", limit=500)
+        if getattr(m, "status", "open") == "open"
+    ]
+    contradictions = [
+        m for m in memory.query(kind="contradiction", scope="long_term", limit=500)
+        if getattr(m, "status", "open") == "open"
+    ]
+    ordered = sorted(
+        contradictions + questions,
+        key=lambda m: int(getattr(m, "depth", 0) or 0),
+    )
+    if not ordered:
+        lines.append("_Nothing left to wonder about._")
+    for i, m in enumerate(ordered, 1):
+        kind = getattr(m, "kind", "question")
+        depth = int(getattr(m, "depth", 0) or 0)
+        parent = getattr(m, "relation", "")
+        depth_tag = f", depth={depth}" if depth else ""
+        parent_tag = f" ← {parent}" if parent else ""
+        lines.append(f"{i}. **[{kind}{depth_tag}]** {getattr(m, 'content', '')}{parent_tag}")
+    curiosity.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return knowledge, curiosity
+
+
 def _parse_json_object(text: str) -> dict | None:
     """Leniently extract a JSON object from a model answer."""
     import json as _json
@@ -630,6 +745,10 @@ class LifeRunner:
                     dreams += 1
         except KeyboardInterrupt:
             pass  # 外力停止：记忆已在每个 run 边界持久化
+        finally:
+            # 沉淀视图总是刷新——即使从未进入 dream 也留下当前的知识与好奇
+            if self.agent.memory is not None and self.agent.memory.path is not None:
+                write_sediment(self.agent.memory, Path(self.agent.memory.path).parent)
         return {"rounds": rounds, "wonders": wonders, "dreams": dreams}
 
     # -- phases ---------------------------------------------------------
@@ -730,6 +849,8 @@ class LifeRunner:
                 f"consolidated {theories} theories, {new_questions} new "
                 f"questions from {len(experiments)} experiments{proposal}"
             )
+        if self.agent.memory is not None and self.agent.memory.path is not None:
+            write_sediment(self.agent.memory, Path(self.agent.memory.path).parent)
         self._emit(DreamEnd(summary=summary))
 
     # -- helpers --------------------------------------------------------
