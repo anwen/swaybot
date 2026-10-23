@@ -102,3 +102,20 @@ def test_life_runner_dies_gracefully_without_curiosity(tmp_path):
     summary = runner.live()
     assert summary["rounds"] >= 1
     assert summary["wonders"] == 0  # EchoBrain 每次都答不出问题
+
+
+def test_life_resume_does_not_reopen_settled_seeds(tmp_path):
+    """续命：同一 data-dir 重启，种子问题不重复入库、resolved 不被重开。"""
+    store = MemoryStore(path=tmp_path / "memory.json")
+    agent = Agent(brain=EchoBrain(), memory=store, reflector=Reflector(store))
+    LifeRunner(agent, SEED, stop_check=lambda: True).live()
+    first = [m for m in store.memories if getattr(m, "kind", "") == "question"]
+    assert len(first) == 3
+    for m in first:
+        m.status = "resolved"  # 模拟已被探索解决
+    store.save()
+
+    LifeRunner(agent, SEED, stop_check=lambda: True).live()
+    second = [m for m in store.memories if getattr(m, "kind", "") == "question"]
+    assert len(second) == 3  # 无重复
+    assert all(getattr(m, "status", "") == "resolved" for m in second)  # 不重开

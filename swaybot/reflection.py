@@ -139,6 +139,11 @@ class Reflector:
             # Skip other reflections; only adjust factual/empirical memories.
             if getattr(mem, "step_kind", None) == "reflection":
                 continue
+            # Conjectures have their own precise relation-linked channel in
+            # the director (+0.2/-0.3 per verdict); the keyword-relevance
+            # channel must not double-count on them.
+            if getattr(mem, "kind", "") == "conjecture":
+                continue
             if not hasattr(mem, "credibility"):
                 continue
             old = float(mem.credibility)

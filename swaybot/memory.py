@@ -220,7 +220,19 @@ class MemoryStore:
             return None
         kind = getattr(memory, "kind", "")
         content = getattr(memory, "content", "")
-        if not content or kind not in self._MERGEABLE_KINDS:
+        if not content:
+            return None
+        if kind in ("question", "contradiction"):
+            # 仅精确内容合并（resolved 条目因此不会被重开），不做相似合并
+            for existing in self.memories:
+                if (
+                    getattr(existing, "scope", "") == "long_term"
+                    and getattr(existing, "kind", "") == kind
+                    and getattr(existing, "content", "") == content
+                ):
+                    return existing
+            return None
+        if kind not in self._MERGEABLE_KINDS:
             return None
         tokens = set(_tokenize(content)) - _STOP_WORDS
         if not tokens:

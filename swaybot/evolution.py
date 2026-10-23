@@ -760,7 +760,14 @@ class LifeRunner:
         import re
 
         parts = [p.strip() for p in re.split(r"[？！?;；\n]", self.seed) if p.strip()]
+        existing = {
+            getattr(m, "content", "")
+            for m in self.agent.memory.memories
+            if getattr(m, "kind", "") == "question"
+        }
         for content in parts:
+            if content in existing:
+                continue  # 续命：种子已存在（哪怕已 resolved）不重开
             self.agent.memory.add(
                 ReflectionStep(
                     content=content,

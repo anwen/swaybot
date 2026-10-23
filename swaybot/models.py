@@ -236,13 +236,20 @@ class RecordingModel:
         start = time.perf_counter()
         error = ""
         result = None
+        reasoning_parts: list[str] = []
+
+        def _capture_reasoning(text: str) -> None:
+            reasoning_parts.append(text)
+            if reasoning_callback is not None:
+                reasoning_callback(text)
+
         try:
             result = self._inner.generate(
                 messages,
                 metadata=call_metadata,
                 tools=tools,
                 stream_callback=stream_callback,
-                reasoning_callback=reasoning_callback,
+                reasoning_callback=_capture_reasoning,
             )
             if result is None:
                 error = str(call_metadata.get("error", "model returned None"))
@@ -251,7 +258,15 @@ class RecordingModel:
             error = f"{type(exc).__name__}: {exc}"
             raise
         finally:
-            self._record(messages, tools, normalize_response(result), call_metadata, error, start)
+            self._record(
+                messages,
+                tools,
+                normalize_response(result),
+                call_metadata,
+                error,
+                start,
+                reasoning="".join(reasoning_parts) or None,
+            )
 
     def _record(
         self,
@@ -261,6 +276,7 @@ class RecordingModel:
         call_metadata: dict,
         error: str,
         start: float,
+        reasoning: str | None = None,
     ) -> None:
         self._call_index += 1
         try:
@@ -292,6 +308,7 @@ class RecordingModel:
             "finish_reason": response.finish_reason if response else None,
             "usage": (response.usage if response and response.usage else None)
             or call_metadata.get("token_usage"),
+            "reasoning": reasoning,
             "error": error or None,
         }
         with self._path.open("a", encoding="utf-8") as handle:

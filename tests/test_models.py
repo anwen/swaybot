@@ -258,3 +258,18 @@ def test_recording_model_ids_and_usage(tmp_path):
     # usage 来自 metadata.token_usage（OpenAIModel 约定），结构化提升到顶层
     assert "metadata" not in lines[0]
     assert "tool_names" not in lines[0]
+
+
+def test_recording_model_captures_reasoning(tmp_path):
+    import json
+
+    class ReasoningModel(ScriptedModel):
+        def generate(self, messages, metadata=None, tools=None, stream_callback=None, reasoning_callback=None):
+            if reasoning_callback:
+                reasoning_callback("I should compute 1+1 carefully.")
+            return super().generate(messages, metadata=metadata, tools=tools)
+
+    model = RecordingModel(ReasoningModel([{"text": "2"}]), tmp_path)
+    assert model.generate([{"role": "user", "content": "q"}]).text == "2"
+    line = json.loads(tmp_path.glob("model-io-*.jsonl").__next__().read_text().splitlines()[0])
+    assert line["reasoning"] == "I should compute 1+1 carefully."
