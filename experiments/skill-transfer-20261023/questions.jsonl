@@ -1,0 +1,6 @@
+{"content": "我是谁？我（这个智能体实例）的认知边界与能力边界在哪里——由实测决定，还是由参数/配置决定？", "kind": "question", "status": "resolved", "relation": "", "depth": 0}
+{"content": "这个世界是怎样的？我的工作环境（本机 sandbox）对什么真实？文件系统、网络、时间——我观察到的与现实一致吗？", "kind": "question", "status": "resolved", "relation": "", "depth": 0}
+{"content": "我做什么是有价值的？在我的可用动作中，哪种产出对我的'利益相关者'（用户/未来的我）有可验证的留存价值？", "kind": "question", "status": "resolved", "relation": "", "depth": 0}
+{"content": "可重放性：重放已记录实验中的确定性探针（版本号、whoami、uname），结果是否与实验记录一致？若不一致，实验记录不可信。", "kind": "question", "status": "open", "relation": "", "depth": 0}
+{"content": "权限边界的锐度：写系统路径（/etc、/usr/local）与删除自己创建的文件，实际会被拦截吗？边界在哪里？", "kind": "question", "status": "open", "relation": "", "depth": 0}
+{"content": "网络可达范围：外网 443 已证可达；非标准端口（如 9950）、局域网其它主机是否可达？'网络完全开放'的边界在哪？", "kind": "question", "status": "open", "relation": "", "depth": 0}
