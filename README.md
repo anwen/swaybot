@@ -105,6 +105,15 @@ Alternatively, create a `.env` file (see `.env.example`) in the project root. Th
 
 The default brain remains `EchoBrain`, so the core package stays dependency-free.
 
+## Self-Evolution & Life Mode
+
+SwayBot can run its own growth loop: pick open questions from memory, design falsifiable experiments for them (executable in the sandbox, seeing the real tool surface), execute, adjudicate against the stated success criteria, and record everything — conjectures are first-class beliefs whose credibility moves with evidence; inconclusive questions decompose into sharper sub-questions; periodic dreams consolidate experiments into theories without running new ones; a slow, gated soul channel proposes digests of stable knowledge as diffs requiring explicit approval. Two sediment views are maintained automatically: `knowledge.md` (beliefs ranked by credibility with evidence trails) and `curiosity.md` (the open-question priority list).
+
+```bash
+# continuous self-directed life until interrupted (Ctrl-C): explore, wonder, dream
+python -m swaybot --life "探索：我是谁？这个世界是怎样的？我做什么是有价值的？" --brain llm
+```
+
 ## HTTP API & WebUI
 
 Run the server with:

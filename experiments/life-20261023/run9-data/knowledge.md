@@ -1,0 +1,11 @@
+# Knowledge
+
+> Sedimented beliefs ranked by credibility; regenerated every dream.
+> The memory store is the source of truth — this is its projection.
+
+- **[0.60]** Both inquiries ('探索：我是谁' and '这个世界是怎样的') ended by hitting the step budget (max_steps=5) rather than reaching a conclusion, so the durable bottleneck is step allocation to broad questions, not missing tools or an unobservable environment.
+- **[0.60]** Open-ended questions like 'who am I' / 'what is this world' consume steps on unbounded exploration; the second experiment's approach (concrete, enumerable probes via env_info: OS/Python version, paths, limits) shows that pre-scoping a question into specific measurable parameters is the more reliable method.
+- **[0.60]** Inconclusive verdicts still leave durable assets: the probe-script plan (write_file probe, env_info baseline) is a reusable template, and '5 steps is not enough for a from-scratch world investigation' is itself a calibrated fact about this agent's limits.
+- **[0.30]** 「这个世界」(即本沙箱向代理呈现的世界)是一个规则固定、资源有限的确定性计算环境：在排除可识别的熵源(系统时钟、os.urandom、未设种子的 random、跨进程哈希种子)之后，任何无副作用的纯计算(算术、哈希、排序、浮点)无论在同进程内重复执行还是在独立子进程中执行，都产生逐位相同的结果，且其资源边界(递归深度、可用内存、文件系统行为)有限、可探测、跨次稳定。 — question: 这个世界是怎样的; 1 experiment(s): supported=0, refuted=0, inconclusive=1
+- **[0.30]** Falsifiable conjecture: verdict=refute was a fallback classification triggered by outcome=max_steps, NOT a substantive contradiction — in this sandbox the claimed memory ceiling and CPU cap actually HOLD under direct measurement, and a complete limit-measurement protocol fits inside the step budget when batched into a single shell call; the original probe hit max_steps only because it spent >=1 to… — question: Why did the resource/capability boundary experiment end with verdict=refute plus outcome=max_steps — were the measured memory/CPU limits actually contradicted, or did the probe simply never finish within the step budget?; no experiments yet
+- **[0.00]** 本沙盒是一个共享宿主内核的 Linux 容器：根文件系统是 overlay(或只读层)，唯一可写区域是当前工作区；任何向工作区之外(如 /usr、/etc、/)的写入都会以 EACCES/EROFS 失败，而环境变量中留有容器/沙盒指纹。这把'物理基础是什么'收敛为一个单次可验证的命题。 — question: 这个世界的物理基础是什么:用 shell 命令(uname -a、df -h、ls -la、env)探测沙盒的操作系统、文件系统结构和可读写的路径范围,绘制一张'地形图'。; 1 experiment(s): supported=0, refuted=1, inconclusive=0

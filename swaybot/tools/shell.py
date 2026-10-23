@@ -1,5 +1,6 @@
 """Sandboxed shell tool confined to the workspace."""
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -81,6 +82,17 @@ class Shell:
                     )
 
 
+# 环境探测（env/env 命令）会把 API key 一并带进工具输出，随后进入
+# 观察、记忆、rollout——生命实验 run9 实际发生了。在源头抹掉敏感值。
+_SECRET_ENV_RE = re.compile(
+    r"(?i)\b([A-Z0-9_]*(?:API_)?(?:KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*)=(\S+)"
+)
+
+
+def _scrub_secrets(output: str) -> str:
+    return _SECRET_ENV_RE.sub(r"\1=[REDACTED]", output)
+
+
 def create_shell_tool(root: Path | str | None = None):
     """Build a run_shell_command tool bound to its own Shell instance.
 
@@ -102,7 +114,7 @@ def create_shell_tool(root: Path | str | None = None):
         ``python3 <script>`` over inline code; give long-running commands a
         larger ``timeout`` (seconds, max 600).
         """
-        output = shell.run(command, cwd, timeout)
+        output = _scrub_secrets(shell.run(command, cwd, timeout))
         return truncate_text(output, shell.path_guard.root)
 
     run_shell_command._shell = shell  # type: ignore[attr-defined]

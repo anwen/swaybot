@@ -97,3 +97,13 @@ def test_danger_reports_nonzero_exit(danger_tool):
 
 def test_shell_standalone_default_is_read_only(tmp_path):
     assert Shell(str(tmp_path)).command_guard.mode == "read-only"
+
+
+def test_env_probing_output_is_scrubbed(danger_tool, monkeypatch):
+    """好奇的 agent 会跑 env 探测——密钥必须在源头脱敏（run9 事故的防复发）。"""
+    monkeypatch.setenv("SWAYBOT_API_KEY", "sk-super-secret-value")
+    monkeypatch.setenv("SOME_TOKEN", "tok-abc123")
+    out = danger_tool(command="env | grep -E 'KEY|TOKEN'")
+    assert "sk-super-secret-value" not in out
+    assert "tok-abc123" not in out
+    assert "SWAYBOT_API_KEY=[REDACTED]" in out or "KEY=" in out
