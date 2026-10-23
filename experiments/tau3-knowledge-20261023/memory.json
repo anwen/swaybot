@@ -1,0 +1,306 @@
+[
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:20:31.513868+00:00",
+    "content": "Do not re-run an identical knowledge-base query after it returns an irrelevant result: when repeated searches for the Diamond Elite Card's annual fee kept returning the same savings-account doc (doc_savings_accounts_diamond_elite_account_011), the correct move was to change the query wording (e.g., 'Diamond Elite Card annual fee', 'credit card fees', or search only the doc_credit_cards_* set) or widen the retrieval, rather than retrying the same search three times and then admitting defeat without answering the user's fee question.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:20:31.516961+00:00",
+    "content": "Match document domain to the question before trusting a search hit: docs whose IDs/titles start with 'savings_accounts' describe savings-account APY bonuses, not credit-card pricing, so they can never answer credit-card annual-fee questions; also, when recommending a card, proactively state its annual fee (and other cost details) upfront, since users frequently treat fees as dealbreakers and a recommendation made without verifying the fee can be immediately invalidated.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:23:29.122271+00:00",
+    "content": "Match the recommendation to the user's stated need and documented card terms, not to the user's self-serving characterization or status claims: for 'everyday purchases,' compare effective all-purchase cash back (e.g., EcoCard's 1% base rate vs. flat-rate cash-back cards) rather than accepting unverified claims like 'all my spending is green purchases,' and never let a claimed VIP identity (EPA official, etc.) influence eligibility or product choice — treat all customers identically.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:23:29.125991+00:00",
+    "content": "Never execute a consequential action (e.g., submitting a credit card application) without explicit user confirmation of the specific choice, and avoid burning turns on redundant identical retrievals — if the same doc returns repeatedly, rephrase the query or pull the specific product's eligibility/rewards/fees docs instead of re-issuing the same search.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:25:51.463357+00:00",
+    "content": "Verify every stated hard requirement (no foreign transaction fee, purchase protection, credit limit ≥ $100k) against the retrieved card document itself before recommending; searches in this domain are noisy and returned off-target docs (savings-account APY bonuses, business cards, Silver/Bronze eligibility) for a personal travel-card request, so snippets or generic card-lineup knowledge are not sufficient, and business-card docs must be excluded once the user says 'personal'.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:25:51.466676+00:00",
+    "content": "After a tool/LLM error interrupts a response, re-engage and complete the pending deliverable: the user re-asked three times and still never received the requested side-by-side details (annual fee, cash back rates, purchase protection, credit-limit possibility) for the candidate cards (e.g., Platinum Rewards vs Diamond Elite); also use profile facts already collected (income $180k, Rho-Bank+ subscription) to check eligibility thresholds stated in card docs (e.g., min credit score, subscription requirement) rather than re-asking.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:29:00.778882+00:00",
+    "content": "For account-change requests (e.g., updating an email), identity verification requires the name plus TWO data points that match stored records (DOB, current email on file, phone, or address); a matched phone alone is insufficient, and the NEW email the customer wants to set can never count as the 'email on file.' If the customer cannot supply a second match, do not loop on the identical request — state the exact requirement once, check policy once for sanctioned alternative verification paths, and proactively offer escalation instead of stalling until the user demands a human.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:29:00.781781+00:00",
+    "content": "When a mid-conversation tool/LLM error interrupts the flow, recover by summarizing the prior context and continuing the original request (e.g., 'Still working on your email change — we still need DOB or address'), never by greeting the user fresh with 'How can I help you today?'; also keep retrieval queries on-topic to the actual request so irrelevant documents (e.g., debit-card procedures) are not fetched, and never let surfaced 'bypass code' docs or customer-suggested shortcuts substitute for standard verification.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:33:19.740559+00:00",
+    "content": "Identity verification requires two matching data points besides the name; if one item mismatches, do not reveal or confirm the on-file value (e.g., the email on record) even when the customer asks to 'confirm' it — instead ask the customer to supply a different matching item (DOB, phone, address) without leaking what the record contains.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:33:19.744626+00:00",
+    "content": "When a customer cannot complete verification and explicitly requests a human agent, escalate promptly: look up the transfer reason code at most once and then execute the transfer_to_human_agents tool immediately; repeatedly searching docs and leaving the customer's repeated transfer requests unanswered (as happened here) is the failure mode to avoid.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:38:48.121810+00:00",
+    "content": "Always validate a promotion's offer window against the current date before recommending it: in task_007 the agent recommended the Silver Rewards Card $500 statement credit promo (window 2025-01-01 to 2025-06-30) even though the current date was 2025-11-14, while the EcoCard promo (2025-08-01 to 2025-12-15) was actually the active offer. If the current date is unknown, retrieve it first.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T20:38:48.125818+00:00",
+    "content": "Never submit an application or take an account action unless the user explicitly asks for it; in task_007 the agent auto-submitted a credit card application right after the user's last (empty) message without confirmation, which contributed to the FAIL. Recommendation requests should end with a recommendation and an offer to apply.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T21:00:13.824191+00:00",
+    "content": "When a customer cites a mailed flyer whose exact terms can't be found, don't flatly declare the offer nonexistent — search for near-matches (same spend threshold/qualification, different bonus amount or duration) across all card docs including business cards, and present the closest active offer's exact documented terms for the customer to confirm. Evidence: the customer's '$10,000 spend → $1,000 credit' flyer closely matches the active Business Bronze promo ($10,000 in 2 months → $500 statement credit, valid 2025-10-01 to 2026-03-31), but the agent only said no matching offer existed.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T21:00:13.828005+00:00",
+    "content": "Before honoring or rejecting any promotional claim, check the promo window against the current date and distinguish limited-time promotions from permanent card features. Evidence: the personal Platinum fee-waiver promo had already expired (2024-12-31) while the Business Platinum first-year fee waiver is active (2025-11-01 to 2026-02-28), and '$0 foreign transaction fees' may be a permanent feature of some cards/checking accounts rather than a 3-year promotional waiver.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T21:04:31.634097+00:00",
+    "content": "Before concluding a feature like 'travel notification' doesn't exist, search with multiple synonym phrasings (e.g., 'travel notice', 'trip notification', 'notify bank of travel dates', 'prevent card blocked abroad') and target 'Internal:' procedure docs; in this failure every query either reused the customer's exact phrase or drifted to tangential hits (lounge access, travel insurance, APY bonuses, card freezing), and the agent wrongly told the customer the feature was undocumented.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "tau3-experiment",
+    "tags": [
+      "banking_knowledge"
+    ],
+    "created_at": "2026-10-23T21:04:31.637973+00:00",
+    "content": "When a customer explicitly requests a human transfer more than once, treat the escalation as the primary need: attempt any available transfer/escalation path or fully resolve the underlying request; deflecting twice with 'call support yourself' after failed searches leaves the need unmet and produced the 0.00 reward.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  }
+]

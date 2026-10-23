@@ -207,19 +207,43 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
     # ------------------------------------------------------------------
 
     def _build_behavior_guidance(self) -> str:
-        """Combine the domain policy with identifier-handling guidance."""
+        """Combine the domain policy with identifier-handling guidance.
+
+        SWAYBOT_EXTRA_GUIDANCE_FILE (if set) appends learned-knowledge lines
+        to the guidance — the injection point for the knowledge-transfer
+        experiment (memory-derived rules vs baseline).
+        """
         parts = []
         if self._instructions:
             parts.append(self._instructions)
         parts.append(_BEHAVIOR_GUIDANCE)
+        import os
+
+        extra = os.environ.get("SWAYBOT_EXTRA_GUIDANCE_FILE", "").strip()
+        if extra:
+            from pathlib import Path as _P
+
+            try:
+                learned = _P(extra).read_text(encoding="utf-8").strip()
+            except OSError:
+                learned = ""
+            if learned:
+                parts.append(
+                    "Lessons learned from earlier tasks in this domain "
+                    "(respect them unless they conflict with the policies "
+                    "above):\n" + learned
+                )
         return "\n\n".join(parts)
 
     def _schema_for_tool(self, tool_name: str) -> dict[str, Any]:
-        """Return the JSON schema for a tau2 tool, if available."""
+        """Return the JSON schema for a tau2 tool (or registry fallback)."""
         tool = self._tau2_tools.get(tool_name)
-        if tool is None:
-            return {}
-        return tool_schema_from_tau2(tool)
+        if tool is not None:
+            return tool_schema_from_tau2(tool)
+        for schema in self._registry.schemas():
+            if schema.get("name") == tool_name:
+                return schema
+        return {}
 
     def _tool_name_for_call_id(
         self,
@@ -452,12 +476,22 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         # — a small k silently drops it, leaving the agent unable to find the
         # card it must recommend. Clamp k up to 20 for any KB_search call.
         if _is_kb_search(tool_name):
-            try:
-                k_val = int(normalized.get("k", 0) or 0)
-            except (TypeError, ValueError):
-                k_val = 0
-            if k_val < 20:
-                normalized["k"] = 20
+            # Only clamp when THIS variant's schema accepts k; the bm25
+            # variant's KB_search() rejects it (the agent diagnosed this
+            # through repeated signature errors and said so — correctly).
+            schema = self._schema_for_tool(tool_name) or {}
+            accepts_k = "k" in (schema.get("parameters", {}) or {}).get(
+                "properties", {}
+            )
+            if accepts_k:
+                try:
+                    k_val = int(normalized.get("k", 0) or 0)
+                except (TypeError, ValueError):
+                    k_val = 0
+                if k_val < 20:
+                    normalized["k"] = 20
+            else:
+                normalized.pop("k", None)
         return normalized
 
     def _collect_kb_content(self, messages: list[dict]) -> str:
