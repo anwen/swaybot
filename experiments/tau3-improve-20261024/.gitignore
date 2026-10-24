@@ -1,0 +1,8 @@
+transcripts/
+rollouts/
+run-*.log
+__pycache__/
+ids-lane*.txt
+results-full-lane*.jsonl
+results-base*.jsonl
+results-fix*.jsonl
