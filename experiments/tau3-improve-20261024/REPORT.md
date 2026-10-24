@@ -85,6 +85,17 @@ API 通过 ZCode 编程套餐 key + `open.bigmodel.cn/api/coding/paas/v4` 恢复
 base 0.100(dev-20) → v2 0.150(dev-20) → v4 0.062(全量) → **v5 0.083(全量)**。
 全量含 78 道程序题稀释分母；dev-20 无程序题。
 
+## 跨域抽样（v5 栈，套餐端点，2026-10-25）
+
+| 域 | n | 分数 | 对照 |
+|---|---|---|---|
+| banking_knowledge（全量） | 97 | 0.083 | 程序型 78 题为主，检索+对账瓶颈 |
+| airline | 20 | **0.800** | 8 月旧网关历史 0.417（不可直接对比，模型/网关不同） |
+| retail | 20 | **0.550** | 失败集中 100+ 高号任务段 |
+
+结论：修复栈（裁剪/边界/协议）在事务型域（airline/retail）收益最大；banking 的程序题
+瓶颈在检索与多步对账（模型能力），不在 harness。telecom（2285 题）未测，留待后续。
+
 ## 局限与后续
 
 1. bm25 对释义型查询弱（"cash back wrong" 匹配不到 "update_transaction_rewards"）；dense 变体
