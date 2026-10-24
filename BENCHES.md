@@ -22,6 +22,8 @@
 | 2026-10-22 | retail | task 5 **0.0**（修复后正常跑完） | 首跑报 `get_environment() got unexpected keyword 'retrieval_variant'`——tau2 2026-10 签名变化（retrieval_config 仅 banking_knowledge 构造器接受）。已在 tau3bench CLI 按域签名探测转发，修复后跑通；0.0 为新模型单点数据，全量见下一行 | `tau3_results/rollout/` |
 | 2026-10-24 | banking_knowledge（bm25） | dev-20 = **0.100**（旧适配器，修复前） | 失败归因：18/20 题命中 bigmodel error 1214（上下文裁剪产生孤儿 tool 消息/连续 assistant），9 题陷入重验证死循环；隐藏工具协议（78/97 题所需）指导为零 | `experiments/tau3-improve-20261024/transcripts/base/` |
 | 2026-10-24 | banking_knowledge（bm25，941755f+4f70880） | 同 20 题 **0.150**；干净段 001-027（24 题）**0.125** | 结构修复（裁剪预算 8k→60k、边界安全、程序文档整篇保留）+ 协议/验证指导：1214 清零、验证恰好一次、010 首过。全量 97 题在 task_028 处 **API 余额耗尽**中断（028-101 以 RateLimitError 记 0，非 agent 失败），待充值补跑 | `experiments/tau3-improve-20261024/`（REPORT.md + transcripts/full-lane*） |
+| 2026-10-25 | banking_knowledge 97/97 全量（ee5d869，套餐端点 coding/paas/v4） | **0.062**（6 过：001/006/010/034/035/046） | v4 协议编译器（KB 协议语言→点名调用指令）：**程序题零的突破**（035 完整 unlock+call 内部工具链；034 转接型；046）；用户模拟器开始主动尝试用户侧工具（30 次"not given"错误）→ v5（11bcf9c）针对该缺口：指令持续注入至真正调用 + 错误即时触发 | `experiments/tau3-improve-20261024/`（transcripts/full-lane*-v4bak） |
+| 2026-10-25 | banking_knowledge 97/97 全量（11bcf9c = v5） | **0.083**（8 过：+002/032，v4 全保） | 持续指令+错误触发生效：give 链路首次走通（018：give→用户提交争议）；剩余瓶颈=检索质量+多卡对账（模型边界）。轨迹：base 0.100(dev-20)→v2 0.150(dev-20)→v4 0.062(全量)→v5 0.083(全量) | `experiments/tau3-improve-20261024/`（transcripts/full-lane*-v5bak，REPORT.md） |
 | — | **全量（修复后）** | **未跑** | retail 适配器已修复可跑；网关/模型已换（open.bigmodel.cn / glm-5.3-flash，与 8 月不可直接对比），分数重开基线 | — |
 
 ## AgentDojo（utility / security）

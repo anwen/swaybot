@@ -63,6 +63,28 @@ harness 改进逐步提高得分率，然后放大到完整评测？
 2. 恢复命令：`cd experiments/tau3-improve-20261024 && python run_full.py`（重跑会清空 lane 结果重记）
 3. airline/retail 抽样：`python run_dev.py --domain airline --retrieval none --label airline-sample --limit 20`
 
+## 恢复后：v4/v5 全量双跑（2026-10-25，套餐端点）
+
+API 通过 ZCode 编程套餐 key + `open.bigmodel.cn/api/coding/paas/v4` 恢复（标准端点欠费、
+套餐端点可用；同模型 glm-5.3-flash，速度约 2 倍）。v4 跑完后实施 v5（11bcf9c：协议指令
+持续注入至真正调用 + "has not been given/unlocked" 错误即时触发点名指令），再跑 v5。
+
+| 臂 | 配置 | 全量 97 题分数 | 通过任务 |
+|---|---|---|---|
+| v4（ee5d869） | 协议编译器（一次性指令） | **0.062** | 001/006/010/034/035/046 |
+| v5（11bcf9c） | 持续指令 + 错误触发 | **0.083** | +002/032（v4 全保） |
+
+- **程序题零的突破发生在 v4**（035 完整 unlock→call 内部工具链；034 转接型；046）
+- v5 的 give 链路首次走通（task_018：give→用户实际提交 2 笔争议），但 golden 期望 6 笔——
+  4 卡 47 笔交易的全量对账是模型算力边界，非 harness 缺陷
+- unlock/call 使用量两臂持平（85/102-108），瓶颈已从"不知道协议"移到"检索质量 + 多步对账"
+- 参照：v2 同口径干净段（001-027）= 0.125；dev-20 对照 base 0.100 → v2 0.150
+
+### 全程改进轨迹（banking，同模型同检索器）
+
+base 0.100(dev-20) → v2 0.150(dev-20) → v4 0.062(全量) → **v5 0.083(全量)**。
+全量含 78 道程序题稀释分母；dev-20 无程序题。
+
 ## 局限与后续
 
 1. bm25 对释义型查询弱（"cash back wrong" 匹配不到 "update_transaction_rewards"）；dense 变体
