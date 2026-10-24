@@ -79,12 +79,25 @@ Costs and arithmetic:
 - Call the `calculate` tool for any arithmetic over tool data (sums, differences, products). Never state a computed figure you did not calculate with the tool.
 
 Knowledge tasks (banking_knowledge):
-- Some banking_knowledge tasks are pure knowledge questions (answer from KB_search); others are transactional (verify identity, then apply_for_credit_card / submit_referral / change_user_email). Read the user's request: if they want you to TAKE AN ACTION on their account, use the transactional tools, not just KB_search.
+- Some banking_knowledge tasks are pure knowledge questions (answer from KB_search); others are transactional (verify identity, then apply_for_credit_card / submit_referral / change_user_email) or procedure-based (see "Internal procedures" below). Read the user's request: if they want you to TAKE AN ACTION on their account, use the transactional tools or the documented procedure, not just KB_search.
 - The `shell` sandbox browses raw knowledge documents via filesystem commands. It is for inspecting a document you cannot get via KB_search — NOT a general-purpose tool, and NOT the way to answer the user. Prefer KB_search_bm25 (ranked retrieval) over `shell`. If you find yourself running `ls`/`cat`/`grep` more than once or twice, stop and use KB_search_bm25 or a transactional tool instead.
-- Limit yourself to at most 2-3 KB_search calls for pure knowledge questions. Synthesize the findings and call final_answer. Do not keep searching indefinitely.
-- Do not call tools that are not in your available tool list (e.g. get_order_details, get_user_details). If you have KB results, call final_answer.
+- Limit yourself to at most 2-3 KB_search calls for pure knowledge questions. Synthesize the findings and call final_answer. Procedure tasks legitimately need more searches (one or two per procedure document).
+- Do not call tools that are not in your available tool list (e.g. get_order_details, get_user_details). When the user's question is fully answered, call final_answer; when the user asked for an ACTION, complete the documented procedure (including unlocking and calling internal tools) instead of answering from the KB alone.
 - For credit-card recommendation tasks, first ask the user for their annual income and whether they have a Rho-Bank+ subscription. Then search for each specific product document using ONLY the exact card name as the KB_search query (e.g., query="Gold Rewards Card"). Compare annual fees, cash back/rewards rates, and foreign transaction fees, then recommend the best-fit personal card and explain why. Call `KB_search_bm25` with `k=20` so you see enough candidate documents — the best-fit card is often not bm25's top-3 result.
-- For account-action tasks (referral bonus, email change, card application), first verify the user's identity (get_user_information_by_name/email, then log_verification with two matching pieces), then perform the action (submit_referral, change_user_email, apply_for_credit_card). Do not answer from the knowledge base alone when the user wants you to change something on their account.
+- For account-action tasks (referral bonus, email change, card application), first verify the user's identity, then perform the action (submit_referral, change_user_email, apply_for_credit_card). Do not answer from the knowledge base alone when the user wants you to change something on their account.
+
+Identity verification (banking_knowledge):
+- Fetch the record first: get_user_information_by_name (name is case-sensitive), or by_email / by_id. Then ask the user for TWO of: date of birth, email on file, phone number, address — both must MATCH the record. A value the user wants to SET or CHANGE (e.g. a new email) can never count as a match, and one matched item alone is never enough.
+- After two matches, call log_verification with ALL SEVEN fields copied EXACTLY from the record: name, user_id, address, email, phone_number, date_of_birth, plus time_verified taken from get_current_time().
+- Never reveal or confirm an on-file value the user failed to match. If verification cannot be completed, state the requirement once, check the KB for sanctioned alternative paths, and offer escalation if the user asks for a human.
+
+Internal procedures & discoverable tools (banking_knowledge):
+- Many customer requests (disputes, rewards corrections, card/PIN changes, account closure, balance payments, limit increases, ...) are handled by SPECIALIZED INTERNAL TOOLS that are not usable until you unlock them. Each procedure is documented in a knowledge-base document (titles often marked "(Internal)").
+- When the user asks for an action you have no direct tool for, search the KB for that procedure. The procedure document names an internal tool (usually with a numeric suffix, e.g. update_transaction_rewards_3847) and lists its required arguments.
+- Agent-side tools: call unlock_discoverable_agent_tool(agent_tool_name="...") FIRST, then call_discoverable_agent_tool(agent_tool_name="...", arguments='{"param": value}') — arguments is a JSON string of the named parameters.
+- User-side tools: when the document says the CUSTOMER must perform the action themselves, call give_discoverable_user_tool(discoverable_tool_name="...", arguments='{...}') and instruct the user to run it; the user will execute it and report back.
+- Follow the document's numbered process EXACTLY, in order, one step at a time. Do NOT perform extra state-changing actions beyond the documented procedure — extra writes corrupt the outcome. Look up any account data the procedure needs (transactions, balances, account IDs) with the read-only tools first.
+- After completing every step, confirm the outcome to the user, then final_answer.
 
 Finishing:
 - When the task is complete, call final_answer with the answer for the user, then call done.
@@ -93,9 +106,14 @@ Finishing:
 # Long conversations (especially banking_knowledge with large KB_search results)
 # can exhaust the model's context window and leave no tokens for the response.
 # We keep the message history under a rough character budget so the model has
-# room to generate complete tool calls / answers.
-_MAX_CONTEXT_CHARS: int = 8000
-_MAX_CONTEXT_MESSAGES: int = 14
+# room to generate complete tool calls / answers. glm-5.3-flash has a 128k-token
+# window; 60k chars (~18k tokens) leaves ample headroom while still bounding
+# runaway conversations. The previous 8k budget was so small that two or three
+# summarized KB results filled it, silently discarding the user's request and
+# all earlier findings (observed: a 16-message history trimmed to 2 messages,
+# followed by API error 1214 "messages 参数非法" from orphaned tool messages).
+_MAX_CONTEXT_CHARS: int = 60_000
+_MAX_CONTEXT_MESSAGES: int = 60
 
 # Cap open-ended KB_search loops. Multi-document banking tasks (e.g. compare
 # 4 credit cards) legitimately need several KB_search calls, so the cap must be
@@ -624,6 +642,19 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             r"(?i)cash\s*back|annual\s*fee|rewards?\s*rate|foreign\s*transaction"
             r"|rho[\s\-]*bank\s*\+|subscription\s*required|apy"
         )
+        # Procedure documents describe internal/discoverable tools the agent
+        # must unlock/call (or hand to the user) step by step. Truncating them
+        # to 3 snippet lines hides the tool name and argument list — the exact
+        # lines the task depends on (observed: the agent re-searched the same
+        # doc 4 times and never saw `get_referral_link(user_id, card_name)`).
+        # Keep such documents whole (capped) instead of summarizing.
+        _PROCEDURE_HINT_RE = re.compile(
+            r"(?i)unlock_discoverable|call_discoverable|give_discoverable"
+            r"|[a-z][a-z0-9]*(?:_[a-z0-9]+)*_\d{4}"
+            r"|instruct them to run|provide the customer with this tool"
+            r"|##\s*(process|prerequisites|tool arguments)"
+        )
+        _PROCEDURE_DOC_CAP = 1800
         for entry in entries:
             entry = entry.strip()
             if not entry:
@@ -633,11 +664,13 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             content_match = re.search(
                 r"Content:\s*(.*?)(?=\n\s*\d+\.\s|\Z)", entry, re.DOTALL
             )
-            snippet = ""
-            if content_match:
+            body = content_match.group(1) if content_match else ""
+            if _PROCEDURE_HINT_RE.search(body):
+                snippet = body.strip()[:_PROCEDURE_DOC_CAP]
+            else:
                 lines = [
                     line.strip()
-                    for line in content_match.group(1).splitlines()
+                    for line in body.splitlines()
                     if line.strip()
                 ]
                 # Keep the first _SNIPPET_LINES for context, plus EVERY line
@@ -664,9 +697,15 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
     def _trim_messages_for_context(messages: list[dict]) -> list[dict]:
         """Drop old messages so the prompt stays within a rough token budget.
 
-        Keeps the earliest user message (usually the task) and as many recent
-        messages as fit under _MAX_CONTEXT_CHARS.  This prevents long
-        multi-turn runs from running out of output tokens.
+        Keeps the leading anchors (the agent greeting and the first user
+        message, which carries the task) plus as many recent messages as fit
+        under _MAX_CONTEXT_CHARS.
+
+        Boundary safety: the OpenAI-compatible API rejects a ``tool`` message
+        whose matching assistant ``tool_calls`` entry is absent (bigmodel
+        returns error 1214 "messages 参数非法"). Because the recent window is
+        taken from the end, a tool result can land at the boundary without its
+        assistant call — such leading orphan tool messages are dropped.
         """
         if len(messages) <= _MAX_CONTEXT_MESSAGES:
             return messages
@@ -679,19 +718,50 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                 extra += tc.get("function", {}).get("arguments", "") or ""
             return len(str(content)) + len(extra)
 
-        # Always keep the first user message (task) so the model knows the goal.
-        first = messages[0] if messages else None
-        budget = _MAX_CONTEXT_CHARS - (_message_chars(first) if first else 0)
+        anchors: list[dict] = []
+        anchor_idx: set[int] = set()
+        for idx, msg in enumerate(messages[:3]):
+            if msg.get("role") == "user" or (
+                msg.get("role") == "assistant" and not msg.get("tool_calls")
+            ):
+                anchors.append(msg)
+                anchor_idx.add(idx)
+            if len(anchors) >= 2:
+                break
+        budget = _MAX_CONTEXT_CHARS - sum(_message_chars(m) for m in anchors)
         recent: list[dict] = []
-        for msg in reversed(messages[1:]):
+        for idx in range(len(messages) - 1, -1, -1):
+            if idx in anchor_idx:
+                continue
+            msg = messages[idx]
             cost = _message_chars(msg)
             if cost > budget and recent:
                 break
             recent.append(msg)
             budget -= cost
-        trimmed = [first] if first else []
-        trimmed.extend(reversed(recent))
-        return trimmed
+        recent.reverse()
+        # Drop leading orphan tool messages (results whose assistant call fell
+        # outside the kept window) — they make the API reject the request.
+        while recent and recent[0].get("role") == "tool":
+            recent.pop(0)
+        trimmed = list(anchors)
+        trimmed.extend(recent)
+        # Some OpenAI-compatible providers (bigmodel among them) reject two
+        # consecutive assistant messages ("messages 参数非法"). If trimming
+        # removed the interleaving user turn, drop the earlier plain-text
+        # assistant (the greeting is expendable; tool-call messages are not,
+        # because dropping one would orphan its tool results).
+        out: list[dict] = []
+        for msg in trimmed:
+            if (
+                msg.get("role") == "assistant"
+                and out
+                and out[-1].get("role") == "assistant"
+                and not out[-1].get("tool_calls")
+            ):
+                out.pop()
+            out.append(msg)
+        return out
 
     def _remember_task(
         self,
