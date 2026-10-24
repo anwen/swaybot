@@ -41,7 +41,7 @@ def _env_from_dotenv():
             os.environ.setdefault(k.strip(), v.strip())
 
 
-def _setup():
+def _setup(domain: str, retrieval: str | None):
     _env_from_dotenv()
     model = os.environ["SWAYBOT_MODEL"]
     os.environ["OPENAI_API_KEY"] = os.environ["SWAYBOT_API_KEY"]
@@ -56,8 +56,11 @@ def _setup():
     from tau2.run import get_tasks, run_single_task
 
     def make_config():
+        kwargs = {}
+        if retrieval:
+            kwargs["retrieval_config"] = retrieval
         return TextRunConfig(
-            domain=DOMAIN,
+            domain=domain,
             agent="swaybot",
             user="user_simulator",
             llm_agent=model,
@@ -65,10 +68,10 @@ def _setup():
             max_steps=50,
             num_trials=1,
             seed=0,
-            retrieval_config="bm25",
+            **kwargs,
         )
 
-    tasks = {t.id: t for t in get_tasks(DOMAIN)}
+    tasks = {t.id: t for t in get_tasks(domain)}
     return make_config, run_single_task, tasks
 
 
@@ -105,6 +108,9 @@ def _dump_messages(result) -> list[dict]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", required=True, help="run label, e.g. base / fix1")
+    ap.add_argument("--domain", default=DOMAIN)
+    ap.add_argument("--retrieval", default="bm25",
+                    help="retrieval_config; pass 'none' to omit (airline/retail)")
     ap.add_argument("--tasks", nargs="*", default=[], help="task ids")
     ap.add_argument("--tasks-file", type=Path, default=None)
     ap.add_argument("--guidance", type=Path, default=None,
@@ -112,13 +118,14 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=None, help="first N tasks of the domain")
     args = ap.parse_args()
 
-    make_config, run_single_task, tasks = _setup()
+    retrieval = None if args.retrieval == "none" else args.retrieval
+    make_config, run_single_task, tasks = _setup(args.domain, retrieval)
 
     ids = list(args.tasks)
     if args.tasks_file:
         ids += [ln.strip() for ln in args.tasks_file.read_text().splitlines() if ln.strip()]
     if args.limit:
-        ids += [t for t in sorted(tasks) if t.startswith("task_")][: args.limit]
+        ids += sorted(tasks)[: args.limit]
     missing = [i for i in ids if i not in tasks]
     if missing:
         sys.exit(f"unknown task ids: {missing}")
