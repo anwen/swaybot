@@ -146,6 +146,30 @@ _RETRIEVAL_SANDBOX_TOOLS = frozenset({"shell"})
 # retrieval tool name is the model attempting a blocked call, not an answer.
 _TOOL_RESIDUE_RE = re.compile(r"^\s*(?:KB_search_\w+|shell)\b", re.IGNORECASE)
 
+# Procedure documents hand tools to one side or the other using consistent
+# language ("Tool to provide to the user: `name(...)`", "Unlock the internal
+# `name` tool"). Weak models read the doc yet fail to map that language onto
+# give_discoverable_user_tool / unlock_discoverable_agent_tool. When a KB
+# result carries this protocol language, the adapter extracts the tool name
+# and injects a one-time directive naming the exact call. This compiles the
+# KB's own protocol wording — the same text the agent already sees — into an
+# explicit instruction; it knows nothing about any specific task.
+_USER_SIDE_TOOL_RE = re.compile(
+    r"(?:tool to provide to the user|provide the customer with this tool"
+    r"|instruct (?:them|the customer) to run|have the (?:user|customer) (?:call|run))"
+    r"[^`]{0,120}?`?([a-z][a-z0-9]*(?:_[a-z0-9]+)*)\s*\(",
+    re.IGNORECASE,
+)
+_AGENT_SIDE_TOOL_RE = re.compile(
+    r"unlock (?:the )?(?:internal |agent )?`?([a-z][a-z0-9]*(?:_[a-z0-9]+)*_\d{3,4})`?\s+tool"
+    r"|unlock_discoverable_agent_tool[^`]{0,60}?`?([a-z][a-z0-9]*(?:_[a-z0-9]+)*_\d{3,4})"
+    r"|unlock (?:the )?(?:internal |agent )?tool[^`]{0,40}?`?([a-z][a-z0-9]*(?:_[a-z0-9]+)*_\d{3,4})"
+    r"|unlock[^`\n]{0,20}?`([a-z][a-z0-9]*(?:_[a-z0-9]+)*_\d{3,4})`"
+    r"|\buse (?:the )?([a-z][a-z0-9]*(?:_[a-z0-9]+)*_\d{3,4})(?:\s+tool)?\s*(?:with|to\b)"
+    r"|\btool:?\s*`?([a-z][a-z0-9]*(?:_[a-z0-9]+)*_\d{3,4})\b",
+    re.IGNORECASE,
+)
+
 
 def _is_kb_search(tool_name: str) -> bool:
     """True for any KB_search-family tool (KB_search, KB_search_bm25, ...)."""
@@ -189,6 +213,8 @@ class SwayBotState:
     kb_search_count: int = 0
     kb_exhausted: bool = False
     last_kb_content: str = ""
+    protocol_hints: list[str] = field(default_factory=list)
+    prompted_tools: set[str] = field(default_factory=set)
 
 
 class SwayBotHalfDuplexAgent(HalfDuplexAgent):
@@ -613,6 +639,34 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             or "I'm not sure; please contact support."
         )
 
+    def _collect_protocol_hints(self, kb_content: str, state: SwayBotState) -> None:
+        """Compile the KB's own protocol language into explicit directives.
+
+        Procedure docs consistently phrase tool handoffs ("Tool to provide to
+        the user: `name(...)`", "unlock the internal `name` tool"), but weak
+        models read the doc and still never issue the mapped call. Extract
+        the tool name and queue a one-time directive naming the exact call.
+        """
+        for regex, template in (
+            (_USER_SIDE_TOOL_RE,
+             "The knowledge base just told you to hand tool '{name}' to the "
+             "CUSTOMER: call give_discoverable_user_tool(discoverable_tool_name="
+             "'{name}', arguments='<JSON of the doc-listed parameters>') and "
+             "instruct the user to run it. This is the documented procedure — "
+             "do it now; do not just describe it."),
+            (_AGENT_SIDE_TOOL_RE,
+             "The knowledge base just told you to unlock the internal agent "
+             "tool '{name}': call unlock_discoverable_agent_tool(agent_tool_name="
+             "'{name}') and then call_discoverable_agent_tool with the "
+             "documented arguments."),
+        ):
+            m = regex.search(kb_content)
+            if m:
+                name = next(g for g in m.groups() if g)
+                if name not in state.prompted_tools:
+                    state.prompted_tools.add(name)
+                    state.protocol_hints.append(template.format(name=name))
+
     @staticmethod
     def _summarize_kb_search(content: str) -> str:
         """Compress KB_search results to compact per-document summaries.
@@ -677,11 +731,18 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                     if line.strip()
                 ]
                 # Keep the first _SNIPPET_LINES for context, plus EVERY line
-                # carrying a comparison-critical term, de-duplicated, in order.
+                # carrying a comparison-critical term or a discoverable-tool
+                # protocol mention (the tool name the task may hinge on),
+                # de-duplicated, in order.
                 selected: list[str] = []
                 seen: set[str] = set()
                 for line in lines:
-                    if len(selected) < _SNIPPET_LINES or _KEY_TERM_RE.search(line):
+                    if (
+                        len(selected) < _SNIPPET_LINES
+                        or _KEY_TERM_RE.search(line)
+                        or _USER_SIDE_TOOL_RE.search(line)
+                        or _AGENT_SIDE_TOOL_RE.search(line)
+                    ):
                         if line not in seen:
                             seen.add(line)
                             selected.append(line)
@@ -867,6 +928,7 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                     break
             if last_tool_content:
                 state.last_kb_content = last_tool_content
+                self._collect_protocol_hints(last_tool_content, state)
             if state.kb_search_count >= _MAX_KB_SEARCH_CALLS:
                 state.kb_exhausted = True
 
@@ -901,6 +963,11 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             )
         )
         behavior_guidance = self._behavior_guidance
+        if state.protocol_hints:
+            behavior_guidance = behavior_guidance + "\n\n" + "\n".join(
+                state.protocol_hints
+            )
+            state.protocol_hints = []
         if state.force_final:
             behavior_guidance = (
                 behavior_guidance
