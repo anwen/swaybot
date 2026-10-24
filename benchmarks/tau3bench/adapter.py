@@ -213,7 +213,13 @@ class SwayBotState:
     kb_search_count: int = 0
     kb_exhausted: bool = False
     last_kb_content: str = ""
-    protocol_hints: list[str] = field(default_factory=list)
+    # Pending discoverable-tool directives: {"tool", "text", "turns"} dicts.
+    # They are re-injected into behavior_guidance every turn until the mapped
+    # call (give_/unlock_ with that tool name) actually appears in the
+    # conversation, or the injection cap is hit. One-shot directives were
+    # ignored by the model on a single turn (observed: the user attempted
+    # get_referral_link 3 times while the agent only SAID it had sent it).
+    protocol_hints: list[dict] = field(default_factory=list)
     prompted_tools: set[str] = field(default_factory=set)
 
 
@@ -645,27 +651,101 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         Procedure docs consistently phrase tool handoffs ("Tool to provide to
         the user: `name(...)`", "unlock the internal `name` tool"), but weak
         models read the doc and still never issue the mapped call. Extract
-        the tool name and queue a one-time directive naming the exact call.
+        the tool name and queue a persistent directive naming the exact call.
         """
         for regex, template in (
             (_USER_SIDE_TOOL_RE,
-             "The knowledge base just told you to hand tool '{name}' to the "
-             "CUSTOMER: call give_discoverable_user_tool(discoverable_tool_name="
+             "The knowledge base says tool '{name}' must be run BY THE "
+             "CUSTOMER. Call give_discoverable_user_tool(discoverable_tool_name="
              "'{name}', arguments='<JSON of the doc-listed parameters>') and "
-             "instruct the user to run it. This is the documented procedure — "
-             "do it now; do not just describe it."),
+             "instruct the user to run it. Describing or claiming to have "
+             "sent the tool is NOT the same as calling it — make the actual "
+             "tool call."),
             (_AGENT_SIDE_TOOL_RE,
-             "The knowledge base just told you to unlock the internal agent "
-             "tool '{name}': call unlock_discoverable_agent_tool(agent_tool_name="
-             "'{name}') and then call_discoverable_agent_tool with the "
-             "documented arguments."),
+             "The knowledge base names the internal agent tool '{name}': "
+             "call unlock_discoverable_agent_tool(agent_tool_name='{name}') "
+             "and then call_discoverable_agent_tool with the documented "
+             "arguments."),
         ):
             m = regex.search(kb_content)
             if m:
                 name = next(g for g in m.groups() if g)
                 if name not in state.prompted_tools:
                     state.prompted_tools.add(name)
-                    state.protocol_hints.append(template.format(name=name))
+                    state.protocol_hints.append(
+                        {"tool": name, "text": template.format(name=name), "turns": 0}
+                    )
+
+    _NOT_GIVEN_ERROR_RE = re.compile(
+        r"Tool '([a-z][a-z0-9_]*(?:_[a-z0-9]+)*)' has not been given", re.IGNORECASE
+    )
+    _NOT_UNLOCKED_ERROR_RE = re.compile(
+        r"Tool '([a-z][a-z0-9_]*(?:_[a-z0-9]+)*)' has not been unlocked", re.IGNORECASE
+    )
+
+    def _queue_error_directives(self, message, state: SwayBotState) -> None:
+        """Turn explicit environment errors into immediate directives.
+
+        When the USER tried to run a discoverable tool and got "has not been
+        given", the agent must call give_discoverable_user_tool for that
+        exact tool now (not narrate that it sent it). Same for the agent-side
+        "has not been unlocked" error.
+        """
+        contents: list[str] = []
+        if isinstance(message, MultiToolMessage):
+            contents = [extract_message_content(tm) or "" for tm in message.tool_messages]
+        elif isinstance(message, ToolMessage):
+            contents = [extract_message_content(message) or ""]
+        for text in contents:
+            if not isinstance(text, str):
+                continue
+            m = self._NOT_GIVEN_ERROR_RE.search(text)
+            if m:
+                name = m.group(1)
+                if name not in state.prompted_tools:
+                    state.prompted_tools.add(name)
+                    state.protocol_hints.append({
+                        "tool": name,
+                        "text": (
+                            f"The customer just tried to run '{name}' and the "
+                            "environment replied that it 'has not been given'. "
+                            f"Call give_discoverable_user_tool(discoverable_tool_name="
+                            f"'{name}', arguments='<JSON params>') IMMEDIATELY — "
+                            "telling the user you sent it does nothing unless "
+                            "you actually make this tool call."
+                        ),
+                        "turns": 0,
+                    })
+            m = self._NOT_UNLOCKED_ERROR_RE.search(text)
+            if m:
+                name = m.group(1)
+                if name not in state.prompted_tools:
+                    state.prompted_tools.add(name)
+                    state.protocol_hints.append({
+                        "tool": name,
+                        "text": (
+                            f"The environment says '{name}' 'has not been "
+                            f"unlocked'. Call unlock_discoverable_agent_tool("
+                            f"agent_tool_name='{name}') first, then "
+                            "call_discoverable_agent_tool with the documented "
+                            "arguments."
+                        ),
+                        "turns": 0,
+                    })
+
+    @staticmethod
+    def _hint_satisfied(hint_tool: str, messages: list[dict]) -> bool:
+        """True once a give_/unlock_ call naming the tool is in the history."""
+        for msg in messages:
+            if msg.get("role") != "assistant":
+                continue
+            for tc in msg.get("tool_calls") or []:
+                name = tc.get("function", {}).get("name", "")
+                args = tc.get("function", {}).get("arguments", "") or ""
+                if (name == "give_discoverable_user_tool" or
+                        name == "unlock_discoverable_agent_tool") and hint_tool in args:
+                    return True
+        return False
 
     @staticmethod
     def _summarize_kb_search(content: str) -> str:
@@ -901,6 +981,7 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         self._remember_task(message, state)
         state.messages.extend(self._openai_messages_from_tau2(message, state.messages))
         self._record_order_payment_methods(message, state)
+        self._queue_error_directives(message, state)
 
         # If the environment just returned a KB_search result, force the
         # next turn to synthesize an answer instead of calling another tool.
@@ -964,10 +1045,20 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         )
         behavior_guidance = self._behavior_guidance
         if state.protocol_hints:
-            behavior_guidance = behavior_guidance + "\n\n" + "\n".join(
-                state.protocol_hints
-            )
-            state.protocol_hints = []
+            # Persistent until the mapped call actually happens (or cap).
+            still_pending: list[dict] = []
+            texts: list[str] = []
+            for hint in state.protocol_hints:
+                if self._hint_satisfied(hint["tool"], state.messages):
+                    continue
+                if hint["turns"] >= 6:
+                    continue
+                hint["turns"] += 1
+                texts.append(hint["text"])
+                still_pending.append(hint)
+            state.protocol_hints = still_pending
+            if texts:
+                behavior_guidance = behavior_guidance + "\n\n" + "\n".join(texts)
         if state.force_final:
             behavior_guidance = (
                 behavior_guidance
