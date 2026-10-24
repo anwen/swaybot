@@ -46,10 +46,22 @@ harness 改进逐步提高得分率，然后放大到完整评测？
 大量出现；但 glm-5.3-flash + bm25 在程序文档检索上仍是硬瓶颈，6 道程序型开发题未能翻正。
 全量 97 题含 71 道未开发过的任务——最终判据看全量。
 
-## 完整评测（进行中/结果）
+## 完整评测（v2 全量：因 API 余额耗尽中断）
 
-- banking_knowledge 97/97，双车道，bm25 检索，temperature 0，无学习指导注入（纯 harness 成绩）
-- 结果文件：`results-full.jsonl`；transcripts：`transcripts/full-lane{1,2}/`
+- banking_knowledge 97/97 双车道启动（commit 4f70880 配置，bm25，temperature 0，无学习指导注入）
+- **API 余额在 task_028 处耗尽**（bigmodel "余额不足或无可用资源包"）：028-101 共 72 题全部
+  以 RateLimitError 记 0 分，非 agent 失败。原始 97 题均值 0.031 无意义。
+- **干净段成绩（task_001-027，24 题）：0.125**，通过 001/006/010
+- **同题严格对照**（与 base 臂完全相同的 20 题）：base 0.100 → v2 **0.150**（task_010 首次通过；
+  该题 base 臂因 1214 陷入三重验证死循环）
+- transcripts：`transcripts/full-lane{1,2}/`（error 字段标注余额污染，可过滤）
+
+## 待充值后恢复
+
+1. 补跑 028-101（v2 口径）或直接以 v4（ee5d869）重跑全量 97——v4 新增协议编译器（KB 协议语言
+   →点名工具调用指令，38/44 内部工具文档触发），预期主要作用于程序型任务
+2. 恢复命令：`cd experiments/tau3-improve-20261024 && python run_full.py`（重跑会清空 lane 结果重记）
+3. airline/retail 抽样：`python run_dev.py --domain airline --retrieval none --label airline-sample --limit 20`
 
 ## 局限与后续
 

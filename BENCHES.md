@@ -20,6 +20,8 @@
 | 2026-08-15~18 | banking / airline / telecom | 定向回归 | prompt 防过早交卷、RepeatCallGuard、非收敛 guard、calculate 引导、prose 工具标签恢复、KB 综合修复逐项验证（commit 说明见 git log 8-15~8-18） | `tau3_results/logs/reg2~reg5_*.log`、`v*_task*.log` |
 | 2026-10-22 | banking_knowledge | task_001 **1.0**（两次复跑一致） | 冒烟回归：新网关（open.bigmodel.cn，glm-5.3-flash，8 月分数为旧网关 glm-5.1-fp8，**不可直接对比**）；验证拒绝引导文案、env_info、RecordingModel rollout（每回合一行、无凭据落盘）均无副作用。task_001 即历史上"反问后零检索交卷"的典型案例，现已通过 | `tau3_results/rollout/model-io-*.jsonl` |
 | 2026-10-22 | retail | task 5 **0.0**（修复后正常跑完） | 首跑报 `get_environment() got unexpected keyword 'retrieval_variant'`——tau2 2026-10 签名变化（retrieval_config 仅 banking_knowledge 构造器接受）。已在 tau3bench CLI 按域签名探测转发，修复后跑通；0.0 为新模型单点数据，全量见下一行 | `tau3_results/rollout/` |
+| 2026-10-24 | banking_knowledge（bm25） | dev-20 = **0.100**（旧适配器，修复前） | 失败归因：18/20 题命中 bigmodel error 1214（上下文裁剪产生孤儿 tool 消息/连续 assistant），9 题陷入重验证死循环；隐藏工具协议（78/97 题所需）指导为零 | `experiments/tau3-improve-20261024/transcripts/base/` |
+| 2026-10-24 | banking_knowledge（bm25，941755f+4f70880） | 同 20 题 **0.150**；干净段 001-027（24 题）**0.125** | 结构修复（裁剪预算 8k→60k、边界安全、程序文档整篇保留）+ 协议/验证指导：1214 清零、验证恰好一次、010 首过。全量 97 题在 task_028 处 **API 余额耗尽**中断（028-101 以 RateLimitError 记 0，非 agent 失败），待充值补跑 | `experiments/tau3-improve-20261024/`（REPORT.md + transcripts/full-lane*） |
 | — | **全量（修复后）** | **未跑** | retail 适配器已修复可跑；网关/模型已换（open.bigmodel.cn / glm-5.3-flash，与 8 月不可直接对比），分数重开基线 | — |
 
 ## AgentDojo（utility / security）
