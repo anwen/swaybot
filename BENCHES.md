@@ -26,6 +26,7 @@
 | 2026-10-25 | banking_knowledge 97/97 全量（11bcf9c = v5） | **0.083**（8 过：+002/032，v4 全保） | 持续指令+错误触发生效：give 链路首次走通（018：give→用户提交争议）；剩余瓶颈=检索质量+多卡对账（模型边界）。轨迹：base 0.100(dev-20)→v2 0.150(dev-20)→v4 0.062(全量)→v5 0.083(全量) | `experiments/tau3-improve-20261024/`（transcripts/full-lane*-v5bak，REPORT.md） |
 | 2026-10-25 | airline 抽样 n=20（11bcf9c，套餐端点） | **0.800**（16/20） | 同一修复栈跨域泛化：1214 裁剪修复对长对话事务域收益最大（前 10 题全过）；失败 4 题（18/21/23/24）待归因 | `experiments/tau3-improve-20261024/transcripts/airline-sample/` |
 | 2026-10-25 | retail 抽样 n=20（11bcf9c，套餐端点） | **0.550**（11/20） | 首题段（1-97 内）9/11 过；失败集中在 100+ 段（100-113，8/9 败）——高分号任务疑似更难/多步，待逐题归因 | `experiments/tau3-improve-20261024/transcripts/retail-sample/` |
+| 2026-10-25 | banking 35 失败子集 + airline 4（v6 d44ce2a） | **0/39 翻转（负结果，已回滚 eceab9f）** | 声明守卫/长 hint/断路器均按设计触发但零转化：banking 协议调用反降（检索轨迹被指导文本扰动，多数时刻 hint 不在队）；airline 断路器生效后循环位移到姊妹工具。结论：glm-5.3-flash 上 harness 强制边际收益归零，剩余瓶颈=模型能力 | `experiments/tau3-improve-20261024/transcripts/v6-*`，REPORT.md v6 节 |
 | — | **全量（修复后）** | **未跑** | retail 适配器已修复可跑；网关/模型已换（open.bigmodel.cn / glm-5.3-flash，与 8 月不可直接对比），分数重开基线 | — |
 
 ## AgentDojo（utility / security）
