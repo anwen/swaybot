@@ -79,6 +79,7 @@ Costs and arithmetic:
 - Call the `calculate` tool for any arithmetic over tool data (sums, differences, products). Never state a computed figure you did not calculate with the tool.
 
 Knowledge tasks (banking_knowledge):
+- The knowledge base is retrieved with BM25 KEYWORD search, not semantic search. Query with distinctive keywords and exact product/topic names ("Gold Rewards Card annual fee", "close account procedure"), not full natural-language questions ("what card is best for everyday purchases?"). BM25 matches literal terms — if a query returns irrelevant documents, use different exact terms from the target document's likely title or wording rather than rephrasing the question.
 - Some banking_knowledge tasks are pure knowledge questions (answer from KB_search); others are transactional (verify identity, then apply_for_credit_card / submit_referral / change_user_email) or procedure-based (see "Internal procedures" below). Read the user's request: if they want you to TAKE AN ACTION on their account, use the transactional tools or the documented procedure, not just KB_search.
 - The `shell` sandbox browses raw knowledge documents via filesystem commands. It is for inspecting a document you cannot get via KB_search — NOT a general-purpose tool, and NOT the way to answer the user. Prefer KB_search_bm25 (ranked retrieval) over `shell`. If you find yourself running `ls`/`cat`/`grep` more than once or twice, stop and use KB_search_bm25 or a transactional tool instead.
 - Limit yourself to at most 2-3 KB_search calls for pure knowledge questions. Synthesize the findings and call final_answer. Procedure tasks legitimately need more searches (one or two per procedure document).
@@ -122,7 +123,10 @@ _MAX_CONTEXT_MESSAGES: int = 60
 # 4 credit cards) legitimately need several KB_search calls, so the cap must be
 # high enough not to truncate a valid comparison while still preventing runaway
 # search. Force-final only kicks in at the cap, NOT after every KB result.
-_MAX_KB_SEARCH_CALLS: int = 8
+# Official tau-Knowledge paper (arXiv:2603.04370): best models average 9-20
+# KB searches per task and tasks require 18.6 documents on average, so the
+# previous cap of 8 forced premature submission.
+_MAX_KB_SEARCH_CALLS: int = 14
 # Cap shell-sandbox browsing in banking_knowledge (the "alltools" variant).
 _MAX_SHELL_CALLS: int = 5
 
@@ -774,17 +778,19 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         """
         entries = re.split(r"\n(?=\d+\.\s)", content.strip())
         kept: list[str] = []
-        _SNIPPET_LINES = 3
-        _KEY_TERM_RE = re.compile(
-            r"(?i)cash\s*back|annual\s*fee|rewards?\s*rate|foreign\s*transaction"
-            r"|rho[\s\-]*bank\s*\+|subscription\s*required|apy"
-        )
-        # Procedure documents describe internal/discoverable tools the agent
-        # must unlock/call (or hand to the user) step by step. Truncating them
-        # to 3 snippet lines hides the tool name and argument list — the exact
-        # lines the task depends on (observed: the agent re-searched the same
-        # doc 4 times and never saw `get_referral_link(user_id, card_name)`).
-        # Keep such documents whole (capped) instead of summarizing.
+        # Full-document retention, per the official tau-Knowledge setup
+        # (arXiv:2603.04370): retrieval returns whole documents — they average
+        # only 278.7 tokens, so 10 results ≈ 2.8k tokens and the 128k window
+        # is not the constraint. The previous 3-line snippet truncation
+        # discarded content the benchmark expects agents to read (avg 18.6
+        # documents needed per task). Context overflow is handled by
+        # _trim_messages_for_context, which evicts the oldest messages —
+        # roughly the paper's "evict oldest retrieval outputs" policy.
+        _DOC_CHAR_CAP = 1200
+        # Procedure documents get a higher cap: they describe internal/
+        # discoverable tools the agent must unlock/call (or hand to the user)
+        # step by step, and their numbered steps + argument lists sit deep in
+        # the body.
         _PROCEDURE_HINT_RE = re.compile(
             r"(?i)unlock_discoverable|call_discoverable|give_discoverable"
             r"|[a-z][a-z0-9]*(?:_[a-z0-9]+)*_\d{4}"
@@ -802,31 +808,8 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
                 r"Content:\s*(.*?)(?=\n\s*\d+\.\s|\Z)", entry, re.DOTALL
             )
             body = content_match.group(1) if content_match else ""
-            if _PROCEDURE_HINT_RE.search(body):
-                snippet = body.strip()[:_PROCEDURE_DOC_CAP]
-            else:
-                lines = [
-                    line.strip()
-                    for line in body.splitlines()
-                    if line.strip()
-                ]
-                # Keep the first _SNIPPET_LINES for context, plus EVERY line
-                # carrying a comparison-critical term or a discoverable-tool
-                # protocol mention (the tool name the task may hinge on),
-                # de-duplicated, in order.
-                selected: list[str] = []
-                seen: set[str] = set()
-                for line in lines:
-                    if (
-                        len(selected) < _SNIPPET_LINES
-                        or _KEY_TERM_RE.search(line)
-                        or _USER_SIDE_TOOL_RE.search(line)
-                        or _AGENT_SIDE_TOOL_RE.search(line)
-                    ):
-                        if line not in seen:
-                            seen.add(line)
-                            selected.append(line)
-                snippet = "\n".join(selected) if selected else ""
+            cap = _PROCEDURE_DOC_CAP if _PROCEDURE_HINT_RE.search(body) else _DOC_CHAR_CAP
+            snippet = body.strip()[:cap]
             kept.append(f"{title}\n{snippet}" if snippet else title)
         note = ""
         total = len(entries)
