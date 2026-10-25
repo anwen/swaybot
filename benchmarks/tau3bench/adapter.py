@@ -125,21 +125,6 @@ _MAX_CONTEXT_MESSAGES: int = 60
 _MAX_KB_SEARCH_CALLS: int = 8
 # Cap shell-sandbox browsing in banking_knowledge (the "alltools" variant).
 _MAX_SHELL_CALLS: int = 5
-# Protocol-hint lifetime: the pre-action dialogue phase can legitimately span
-# 20+ turns, so hints persist for most of the run (removed once satisfied).
-_HINT_MAX_TURNS: int = 40
-# Per-tool overuse breaker thresholds (see generate_next_message).
-_TOOL_WARN_CALLS: int = 8
-_TOOL_REMOVE_CALLS: int = 12
-# Completion-claim verbs in an assistant text message. When pending protocol
-# hints exist and the model narrates an action as done without having called
-# the mapped tool, the claim guard intercepts the message.
-_CLAIM_RE = re.compile(
-    r"(?i)\b(?:i(?:'ve| have)?\s+(?:opened|closed|submitted|updated|processed|"
-    r"applied|scheduled|filed|initiated|completed|sent|transferred|canceled|cancelled)"
-    r"|(?:has|have)\s+been\s+(?:opened|closed|submitted|processed|completed)"
-    r"|^done\b|all\s+(?:set|done)\b)"
-)
 
 # tau2's banking_knowledge "alltools" retrieval variant exposes the knowledge
 # tools under variant-specific names: ``KB_search_bm25`` / ``KB_search_dense``
@@ -1060,18 +1045,13 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         )
         behavior_guidance = self._behavior_guidance
         if state.protocol_hints:
-            # Persistent until the mapped call actually happens (or the
-            # lifetime cap). The dialogue phase BEFORE the action moment can
-            # legitimately span 20+ turns (verification, product discussion,
-            # user consent), so a short cap expires the hint before the
-            # action is due (observed: task_066 queued at turn ~5, action
-            # moment at turn ~33).
+            # Persistent until the mapped call actually happens (or cap).
             still_pending: list[dict] = []
             texts: list[str] = []
             for hint in state.protocol_hints:
                 if self._hint_satisfied(hint["tool"], state.messages):
                     continue
-                if hint["turns"] >= _HINT_MAX_TURNS:
+                if hint["turns"] >= 6:
                     continue
                 hint["turns"] += 1
                 texts.append(hint["text"])
@@ -1079,35 +1059,6 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             state.protocol_hints = still_pending
             if texts:
                 behavior_guidance = behavior_guidance + "\n\n" + "\n".join(texts)
-        # Per-tool overuse breaker: a weak model can loop one read-only tool
-        # (19x search_direct_flight, 10x calculate) until max_steps. Nudge at
-        # _TOOL_WARN_CALLS, hard-remove the tool at _TOOL_REMOVE_CALLS.
-        tool_counts: dict[str, int] = {}
-        for msg in state.messages:
-            if msg.get("role") != "assistant":
-                continue
-            for tc in msg.get("tool_calls") or []:
-                name = tc.get("function", {}).get("name", "")
-                if name:
-                    tool_counts[name] = tool_counts.get(name, 0) + 1
-        overused = [n for n, c in tool_counts.items() if c >= _TOOL_REMOVE_CALLS]
-        if overused:
-            behavior_guidance = (
-                behavior_guidance
-                + f"\n\nYou have called {', '.join(sorted(overused))} far too many "
-                "times without progress. That tool is now DISABLED. Synthesize "
-                "what you already have: either execute the appropriate action "
-                "tool or give the user your findings/recommendation."
-            )
-        elif any(c >= _TOOL_WARN_CALLS for c in tool_counts.values()):
-            worst = max(tool_counts, key=tool_counts.get)
-            behavior_guidance = (
-                behavior_guidance
-                + f"\n\nYou have called {worst} {tool_counts[worst]} times now. "
-                "Stop repeating variations of the same query. Work with the "
-                "results you already have: execute the appropriate action or "
-                "answer the user."
-            )
         if state.force_final:
             behavior_guidance = (
                 behavior_guidance
@@ -1162,18 +1113,6 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         if state.force_final:
             available_tools_for_brain = ["final_answer", "done"]
             tool_descriptions_for_brain = [FINAL_ANSWER_SCHEMA, DONE_SCHEMA]
-        elif overused:
-            # Hard-disable overused loop tools (the guidance already says so);
-            # keep every other tool — including the action tools the model
-            # should switch to — available.
-            available_tools_for_brain = [
-                n for n in available_tools_for_brain if n not in overused
-            ]
-            tool_descriptions_for_brain = [
-                s
-                for s in tool_descriptions_for_brain
-                if s.get("name") not in overused
-            ]
 
         perception: dict[str, Any] = {
             "task": self._task,
@@ -1189,48 +1128,6 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
             perception["behavior_guidance"] = behavior_guidance
 
         action = self._brain.think(perception, available_tools_for_brain)
-        tool_name = action.get("name", "")
-
-        # ------------------------------------------------------------------
-        # Claim guard: the model narrates an action as completed ("I've opened
-        # your account", "Done.") while the mapped discoverable-tool call is
-        # still pending. Intercept the claim, force one bounded re-think with
-        # an explicit "NOT done — call it now" directive. Without this, the
-        # user simulator accepts the narration, the writes never happen, and
-        # the run drifts to max_steps (35/89 banking failures, e.g. 066).
-        # ------------------------------------------------------------------
-        if state.protocol_hints and tool_name in ("", "echo", "final_answer", "done"):
-            claim_text = (
-                action.get("args", {}).get("answer", "")
-                if isinstance(action.get("args"), dict)
-                else ""
-            ) or action.get("text", "")
-            if isinstance(claim_text, str) and _CLAIM_RE.search(claim_text):
-                pending = [
-                    h["tool"]
-                    for h in state.protocol_hints
-                    if not self._hint_satisfied(h["tool"], state.messages)
-                ]
-                if pending:
-                    guard_guidance = (
-                        behavior_guidance
-                        + "\n\nCRITICAL: You were about to tell the user that an "
-                        "action is complete, but it is NOT — no corresponding tool "
-                        f"call exists in this conversation. Not yet executed: "
-                        f"{', '.join(pending)}. Do NOT narrate completion. Make the "
-                        "actual tool call(s) now (unlock/call/give as documented). "
-                        "If you cannot, tell the user honestly that it is still "
-                        "pending."
-                    )
-                    guard_perception = dict(perception)
-                    guard_perception["behavior_guidance"] = guard_guidance
-                    guarded = self._brain.think(
-                        guard_perception, available_tools_for_brain
-                    )
-                    g_name = guarded.get("name", "")
-                    if g_name and g_name not in ("", "echo", "final_answer", "done"):
-                        action = guarded
-                        tool_name = g_name
 
         # ------------------------------------------------------------------
         # Enforce finalization after KB_search results.
@@ -1240,6 +1137,7 @@ class SwayBotHalfDuplexAgent(HalfDuplexAgent):
         # tool call or as JSON text).  Rather than loop until max_steps,
         # override the action and answer from the KB result we already have.
         # ------------------------------------------------------------------
+        tool_name = action.get("name", "")
         # When the KB budget is exhausted, the model often keeps emitting
         # retrieval intent — either as a native tool call the model shouldn't
         # be making anymore, or as prose carrying tool-call syntax. Two prose
