@@ -30,6 +30,7 @@
 | 2026-10-25 | banking_knowledge 97/97 全量（v7 948e25a + glm-5.3-flash） | **0.165**（16 过） | **论文对齐三连（搜索上限 8→14、全文返回、BM25 关键词指导）使分数翻倍**（v5=0.083/8 过）；历史钉子户首过：015（推荐信对抗）、005（bypass code）、003/007（信用卡推荐）。同模型 harness 对齐 > 一切适配器机制 | `experiments/tau3-improve-20261024/transcripts/full-lane*-v7f-bak` |
 | 2026-10-25 | banking_knowledge 97/97 全量（v7 + glm-5.3 非 flash） | **0.165**（16 过，与 flash 同分） | 模型强度在本 scaffold 上零净增益：通过集仅 10 题重叠、各独家 6 题（flash 赢推荐/检索类，strong 赢转接/争议程序类），pass@2 oracle=22 题 0.227——失败高度互补，指向 scaffold 上限（max_steps=50 + 单轮结构）而非模型上限 | `experiments/tau3-improve-20261024/transcripts/full-lane*-v7s-bak` |
 | 2026-10-26 | banking 59 个 max_steps 失败题（v7 + max_steps 100） | **3/59 翻转**，全量折算 **19 过 = 0.196** | 归因修正：失败非查询循环（679/680 意图唯一）而是长 golden 链（8-20 动作）+对话穿插被 50 步截断（tau2 默认 200，50 为旧省钱值）。100 步下 037/050/051 完整走完（66-74 消息）。正式口径此后 SWAYBOT_MAX_STEPS=100 | `experiments/tau3-improve-20261024/transcripts/v9-*`，REPORT.md v9 节 |
+| 2026-10-27 | airline n=20 / retail n=20（v7 栈 + 100 步，干净重跑） | airline **0.800**（16 过）、retail **0.450**（9 过） | 与 v5+50 步对照：airline 同分（失败集部分轮换 23/24↔12/14）；retail -2 题为运行间方差（用户模拟器路径分岔→选型分歧，110 题 22 消息内完成但选错项）。v7 对齐增益不适用于无 KB 域，跨域持平符合预期 | `experiments/tau3-improve-20261024/transcripts/v100-*` |
 | — | **全量（修复后）** | **未跑** | retail 适配器已修复可跑；网关/模型已换（open.bigmodel.cn / glm-5.3-flash，与 8 月不可直接对比），分数重开基线 | — |
 
 ## AgentDojo（utility / security）
