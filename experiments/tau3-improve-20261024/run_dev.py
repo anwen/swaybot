@@ -65,7 +65,7 @@ def _setup(domain: str, retrieval: str | None):
             user="user_simulator",
             llm_agent=model,
             llm_user=f"openai/{model}",
-            max_steps=50,
+            max_steps=int(os.environ.get("SWAYBOT_MAX_STEPS", "50")),
             num_trials=1,
             seed=0,
             **kwargs,
