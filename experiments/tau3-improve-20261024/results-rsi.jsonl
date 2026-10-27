@@ -1,0 +1,16 @@
+{"gen": 1, "arm": "control", "task": "[mms_issue]airplane_mode_on|break_app_sms_permission|data_mode_off|unseat_sim_card[PERSONA:Easy]", "reward": 1.0, "persona": "Easy"}
+{"gen": 1, "arm": "control", "task": "[mms_issue]airplane_mode_on|break_apn_mms_setting|break_app_storage_permission|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_off[PERSONA:Hard]", "reward": 1.0, "persona": "Hard"}
+{"gen": 1, "arm": "control", "task": "[mms_issue]airplane_mode_on|bad_wifi_calling|break_app_sms_permission|data_mode_off|unseat_sim_card|user_abroad_roaming_disabled_off[PERSONA:None]", "reward": 1.0, "persona": "None"}
+{"gen": 1, "arm": "control", "task": "[mobile_data_issue]data_saver_mode_on|user_abroad_roaming_disabled_on[PERSONA:Easy]", "reward": 1.0, "persona": "Easy"}
+{"gen": 1, "arm": "control", "task": "[mobile_data_issue]bad_vpn|data_mode_off|data_saver_mode_on[PERSONA:Hard]", "reward": 1.0, "persona": "Hard"}
+{"gen": 1, "arm": "control", "task": "[mobile_data_issue]bad_vpn|user_abroad_roaming_disabled_off[PERSONA:None]", "reward": 1.0, "persona": "None"}
+{"gen": 1, "arm": "test", "task": "[mms_issue]bad_network_preference|bad_wifi_calling|data_mode_off|unseat_sim_card|user_abroad_roaming_disabled_on[PERSONA:Easy]", "reward": 1.0, "persona": "Easy"}
+{"gen": 1, "arm": "test", "task": "[mms_issue]bad_network_preference|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_off[PERSONA:Hard]", "reward": 1.0, "persona": "Hard"}
+{"gen": 1, "arm": "test", "task": "[mms_issue]bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_sms_permission|data_usage_exceeded[PERSONA:None]", "reward": 1.0, "persona": "None"}
+{"gen": 1, "arm": "test", "task": "[mobile_data_issue]data_saver_mode_on|user_abroad_roaming_enabled_off[PERSONA:Easy]", "reward": 1.0, "persona": "Easy"}
+{"gen": 1, "arm": "test", "task": "[mobile_data_issue]airplane_mode_on|data_mode_off|user_abroad_roaming_enabled_off[PERSONA:Hard]", "reward": 1.0, "persona": "Hard"}
+{"gen": 1, "arm": "test", "task": "[mobile_data_issue]airplane_mode_on|data_mode_off|data_saver_mode_on|data_usage_exceeded|user_abroad_roaming_disabled_on[PERSONA:None]", "reward": 1.0, "persona": "None"}
+{"gen": 1, "arm": "test", "task": "[service_issue]airplane_mode_on|contract_end_suspension[PERSONA:Easy]", "reward": 1.0, "persona": "Easy"}
+{"gen": 1, "arm": "test", "task": "[service_issue]contract_end_suspension|lock_sim_card_pin[PERSONA:Hard]", "reward": 1.0, "persona": "Hard"}
+{"gen": 1, "arm": "test", "task": "[service_issue]break_apn_settings[PERSONA:None]", "reward": 1.0, "persona": "None"}
+{"gen": 1, "arm": "test", "task": "[mms_issue]bad_wifi_calling|break_apn_mms_setting|break_app_both_permissions|data_mode_off|unseat_sim_card|user_abroad_roaming_enabled_off[PERSONA:Easy]", "reward": 1.0, "persona": "Easy"}
