@@ -354,6 +354,7 @@ class OpenAIModel:
         max_retries: int = 3,
         backoff: float = 1.0,
         timeout: float = 60.0,
+        thinking: bool | None = None,
     ):
         if OpenAI is None:
             raise ImportError(
@@ -369,6 +370,15 @@ class OpenAIModel:
         self.max_retries = max_retries
         self.backoff = backoff
         self.timeout = timeout
+        # Explicit reasoning-budget switch for providers that gate thinking
+        # behind a request parameter (bigmodel GLM: `thinking.type`). None =
+        # provider default; True/False force it. Without it GLM endpoints run
+        # at near-zero reasoning tokens (~17), which silently benchmarks the
+        # no-thought tier of the model.
+        if thinking is None:
+            env = os.environ.get("SWAYBOT_THINKING", "").strip().lower()
+            thinking = env in ("1", "true", "yes", "enabled")
+        self.thinking = bool(thinking)
 
         # Some OpenAI-compatible deployments do not support native function
         # calling.  Let users (or benchmark configs) force text-mode generation.
@@ -495,6 +505,8 @@ class OpenAIModel:
         if openai_tools:
             kwargs["tools"] = openai_tools
             kwargs["tool_choice"] = "auto"
+        if self.thinking:
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
         if stream_callback:
             kwargs["stream"] = True
         return kwargs
