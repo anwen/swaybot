@@ -32,6 +32,7 @@
 | 2026-10-26 | banking 59 个 max_steps 失败题（v7 + max_steps 100） | **3/59 翻转**，全量折算 **19 过 = 0.196** | 归因修正：失败非查询循环（679/680 意图唯一）而是长 golden 链（8-20 动作）+对话穿插被 50 步截断（tau2 默认 200，50 为旧省钱值）。100 步下 037/050/051 完整走完（66-74 消息）。正式口径此后 SWAYBOT_MAX_STEPS=100 | `experiments/tau3-improve-20261024/transcripts/v9-*`，REPORT.md v9 节 |
 | 2026-10-27 | airline n=20 / retail n=20（v7 栈 + 100 步，干净重跑） | airline **0.800**（16 过）、retail **0.450**（9 过） | 与 v5+50 步对照：airline 同分（失败集部分轮换 23/24↔12/14）；retail -2 题为运行间方差（用户模拟器路径分岔→选型分歧，110 题 22 消息内完成但选错项）。v7 对齐增益不适用于无 KB 域，跨域持平符合预期 | `experiments/tau3-improve-20261024/transcripts/v100-*` |
 | 2026-10-27 | 知识文件迁移（held-out 20 题，v7+100 步） | **0/20（零翻转，负结果）**；回归 4/4 无破坏 | 16 题失败 transcript→MemoryStore→30 条规则注入：unlock 行为略升（13→17）但 give 仍 0/20。对照 10-23 首次迁移 +0.2：知识价值随 v2-v7 把教训蒸馏进静态指导（基线 0.10→0.165）而被吸收；剩余失败是执行能力（参数组装）非知识缺口。运行时注入保留用于新领域冷启动 | `experiments/tau3-improve-20261024/`（fresh-guidance.md、transcripts/kb-*、REPORT.md 知识蒸馏节） |
+| 2026-10-28 | thinking 开关 A/B（20 题，c46cc1a） | **0/20（零翻转，负结果）** | 此前所有评测实为"近零思考"档（~17 reasoning tokens）；显式开启后同任务同 100 步耗时 2.1 倍（推理确在烧）仍零翻转。三杠杆（知识/步数/推理）全部试完：glm-5.3 族失败=工具编排参数精度，栈饱和 ~0.196。官方表定位：已超 Gemini-3-Flash-high、Claude-4.5-Sonnet-high，逼近 GPT-5.2-high（24.5） | `experiments/tau3-improve-20261024/transcripts/think*`，REPORT.md v10 节 |
 | — | **全量（修复后）** | **未跑** | retail 适配器已修复可跑；网关/模型已换（open.bigmodel.cn / glm-5.3-flash，与 8 月不可直接对比），分数重开基线 | — |
 
 ## AgentDojo（utility / security）
