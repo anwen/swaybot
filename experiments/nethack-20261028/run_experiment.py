@@ -26,7 +26,9 @@ RUN_DIR = Path(__file__).parent
 sys.path.insert(0, str(RUN_DIR.parents[1]))
 
 from benchmarks.nethack.adapter import (
+    COMMAND_WORDS,
     MOVE_NAMES,
+    build_action_map,
     make_env,
     parse_action,
     render_observation,
@@ -37,6 +39,7 @@ from _env import load_env
 
 def _episode(env_id: str, brain, guidance: str, max_steps: int) -> dict:
     env = make_env(env_id)
+    action_map = build_action_map(env)
     obs, _ = env.reset()
     transcript: list[str] = []
     total_reward = 0.0
@@ -45,15 +48,24 @@ def _episode(env_id: str, brain, guidance: str, max_steps: int) -> dict:
     step = 0
     while step < max_steps and not (done or truncated):
         r = render_observation(obs)
+        goal = (
+            "Walk onto the food (%), pick it up (action 'pickup'), then eat it "
+            "(action 'eat') to win. "
+            if "Eat" in env_id else
+            "Reach the staircase (>) to descend and win. "
+        )
+        actions_hint = ", ".join(MOVE_NAMES) + (
+            ", eat, pickup" if "Eat" in env_id else ""
+        )
         prompt = (
-            "You are playing NetHack. Reach the staircase (>) to descend and win. "
-            "The map is ASCII: '@' is you, '.' floor, '#' wall, '+' door. "
-            "You see the map every step.\n"
+            f"You are playing NetHack. {goal}"
+            "The map is ASCII: '@' is you, '.' floor, '#' wall, '+' door, "
+            "'%' food. You see the map every step.\n"
             f"Current map:\n{r['map']}\n"
             f"Last message: {r['message']}\nHP: {r['hp']} | position: ({r['x']},{r['y']})\n"
-            f"Actions: {', '.join(MOVE_NAMES)}.\n"
-            "Choose ONE action. Reply with exactly one direction word "
-            "(e.g. 'east'). Do not explain."
+            f"Actions: {actions_hint}.\n"
+            "Choose ONE action. Reply with exactly one action word "
+            "(e.g. 'east' or 'eat'). Do not explain."
         )
         if guidance:
             prompt += (
@@ -71,7 +83,7 @@ def _episode(env_id: str, brain, guidance: str, max_steps: int) -> dict:
         answer = ""
         if action.get("name") == "final_answer":
             answer = str(action.get("args", {}).get("answer", ""))
-        act = parse_action(answer, env.action_space.n)
+        act = parse_action(answer, action_map)
         if act is None:
             act = env.action_space.sample()
         obs, reward, done, truncated, _ = env.step(act)

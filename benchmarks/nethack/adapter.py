@@ -15,19 +15,32 @@ from pathlib import Path
 import minihack  # noqa: F401  (registers envs)
 import gymnasium as gym
 
-# NLE movement actions (ASCII): k=j? no - see ACTIONS: 0='k'(107) north,
-# 1='j'(106) south, 2='l'(108) east, 3='h'(104) west, 4='y'(121) NW,
-# 5='u'(117) NE, 6='b'(98) SW, 7='n'(110) SE.
-MOVE_NAMES = ["north", "south", "east", "west", "northwest", "northeast",
-              "southwest", "southeast"]
+# NLE CompassDirection order (unwrapped.actions): N,E,S,W,NE,SE,SW,NW
+# (earlier draft had the diagonal order wrong - NW was mapped to NE).
+MOVE_NAMES = ["north", "east", "south", "west", "northeast", "southeast",
+              "southwest", "northwest"]
 
+# direction word -> NLE character
 DIRECTION_WORDS = {
     "north": "k", "south": "j", "east": "l", "west": "h",
     "northwest": "y", "northeast": "u", "southwest": "b", "southeast": "n",
-    "up": ">", "down": "<", "wait": ".", "eat": "e", "pickup": ",",
-    "zap": "z", "read": "r", "open": "o", "close": "c",
-    "kick": "^D", "search": "s",
 }
+
+# non-movement command words -> NLE character
+COMMAND_WORDS = {
+    "up": "<", "down": ">", "wait": ".", "eat": "e", "pickup": ",",
+    "zap": "z", "read": "r", "open": "o", "close": "c", "search": "s",
+}
+
+
+def build_action_map(env) -> dict[str, int]:
+    """Map NLE character -> action index for THIS env's action subset."""
+    mapping: dict[str, int] = {}
+    for idx, act in enumerate(env.unwrapped.actions):
+        val = act.value
+        if isinstance(val, int) and 32 <= val < 127:
+            mapping[chr(val)] = idx
+    return mapping
 
 
 def render_observation(obs) -> dict:
@@ -50,21 +63,18 @@ def render_observation(obs) -> dict:
     }
 
 
-def parse_action(answer: str, n_actions: int) -> int | None:
+def parse_action(answer: str, action_map: dict[str, int]) -> int | None:
     """Extract an action index from the brain's answer.
 
-    The brain answers with a single direction word (or action name);
-    unknown words map to None (the driver treats them as a wait step).
+    Accepts direction words and command words (eat/pickup/search/open...).
+    Unknown words map to None (the driver treats them as a wait step).
     """
     text = (answer or "").strip().lower()
-    for word in ("northwest", "northeast", "southwest", "southeast",
-                 "north", "south", "east", "west", "up", "down",
-                 "wait", "eat", "pickup", "search", "open", "close", "zap", "read"):
+    words = {**DIRECTION_WORDS, **COMMAND_WORDS}
+    # longest-first so "northeast" wins over "east"
+    for word in sorted(words, key=len, reverse=True):
         if word in text:
-            idx = MOVE_NAMES.index(word) if word in MOVE_NAMES else None
-            if idx is not None and idx < n_actions:
-                return idx
-            return None
+            return action_map.get(words[word])
     return None
 
 

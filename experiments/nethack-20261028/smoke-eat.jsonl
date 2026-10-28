@@ -1,0 +1,3 @@
+{"task": "MiniHack-Eat-v0", "arm": "learn", "ep": 0, "success": false, "steps": 40}
+{"task": "MiniHack-Eat-v0", "arm": "test_base", "ep": 0, "success": false, "steps": 40}
+{"task": "MiniHack-Eat-v0", "arm": "test_mem", "ep": 0, "success": false, "steps": 40}

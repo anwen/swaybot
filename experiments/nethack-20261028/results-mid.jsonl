@@ -1,0 +1,8 @@
+{"task": "MiniHack-Eat-v0", "arm": "learn", "ep": 0, "success": false, "steps": 100}
+{"task": "MiniHack-Eat-v0", "arm": "learn", "ep": 1, "success": false, "steps": 100}
+{"task": "MiniHack-Eat-v0", "arm": "learn", "ep": 2, "success": false, "steps": 100}
+{"task": "MiniHack-Eat-v0", "arm": "learn", "ep": 3, "success": false, "steps": 100}
+{"task": "MiniHack-Eat-v0", "arm": "test_base", "ep": 0, "success": false, "steps": 100}
+{"task": "MiniHack-Eat-v0", "arm": "test_base", "ep": 1, "success": false, "steps": 100}
+{"task": "MiniHack-Eat-v0", "arm": "test_base", "ep": 2, "success": false, "steps": 100}
+{"task": "MiniHack-Eat-v0", "arm": "test_base", "ep": 3, "success": false, "steps": 100}

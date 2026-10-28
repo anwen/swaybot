@@ -302,5 +302,613 @@
     "refuted_count": 0,
     "last_verified_at": "",
     "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:10:07.236745+00:00",
+    "content": "When prompted 'There is an apple here; eat it? [ynq] (n)', answer 'y' — random actions left the prompt at the default (n) for 3 straight steps (8-10) and the goal eat never happened, so the episode only accrued -0.01 step penalties until TIMEOUT.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:10:07.239965+00:00",
+    "content": "After picking up food ('f - an apple.', step 26), eat it immediately with 'e' + item letter instead of resuming random actions; the apple sat uneaten in inventory while steps were wasted on无效 commands, ending in TIMEOUT at step 40.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:23:26.160522+00:00",
+    "content": "Random actions can trigger modal sub-prompts that trap the agent and burn turns: stuck at 'What do you want to tip? [*]' (steps 40-43) and 'What do you want to write with?' (steps 79-98, ~20 wasted steps). Cancel prompts immediately with Escape ('Never mind', steps 44/99) instead of flailing at them.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:23:26.163693+00:00",
+    "content": "Repeated 'It's solid stone' messages (steps 58, 64-68, 73, 75, 77) show movement wasted bumping into walls; read the map glyphs and step only through open floor, moving directly onto items like the apple seen at step 70 ('You see here an apple') since the Eat task reward comes from reaching and eating food.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:29:49.567849+00:00",
+    "content": "Answer yes/no confirmation prompts immediately (press 'y' or 'n'): steps 58-79 wasted ~20 turns stuck on 'Are you sure you want to pray? [yn] (n)' because actions never answered the prompt, a major cause of the 100-step TIMEOUT.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:29:49.571164+00:00",
+    "content": "Cancel dangling menu prompts with Esc instead of repeating actions: steps 40-52 burned 13 turns looping on 'What do you want to invoke? [*]' with no input, and step 97-98 showed 'ready' prompts also stall progress until 'Never mind.'",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:35:48.408096+00:00",
+    "content": "Random actions trapped the agent in item-selection prompts for ~30 of 100 steps (steps 40-66: \"What do you want to invoke? [*]\"; steps 95-99: \"What do you want to tip? [*]\"), burning over a third of the episode at -0.01 per turn; avoid open-ended actions like invoke/tip and stick to movement commands so the episode's 100-step budget is spent approaching the food.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:35:48.412818+00:00",
+    "content": "Movement and confirmations were wasted on invalid inputs: \"It's solid stone.\" on wall moves (steps 69-74), \"What a strange direction!\" on bad directions (steps 72, 77, 83-84), and blindly answering y to the pray prompt caused \"Thou must relearn thy lessons!\" (step 81); use valid compass directions only, navigate around solid stone, and never confirm [yn] prompts randomly.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:41:13.732083+00:00",
+    "content": "Random actions repeatedly opened item-selection submenus that trapped the agent for many steps (stuck in 'What do you want to ready?' from step 50-79, 'wield' 84-88, 'write' 90-91, 'dip' 98-99); avoid menu-triggering commands like ready (r), wield (w), dip, and write unless you can immediately answer/escape the prompt, since each wasted step costs -0.01 and caused the 100-step TIMEOUT.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:41:13.737968+00:00",
+    "content": "Non-movement random actions were almost always wasted: they hit walls ('It's solid stone'), gave invalid commands ('Invalid direction for 'm' prefix', 'You don't know how to turn undead'), or sat idle ('Having fun sitting on the floor?'); prioritize deliberate directional movement toward the goal instead of random commands.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:52:11.214631+00:00",
+    "content": "Avoid or immediately resolve y/n confirmation prompts: steps 76-99 were all consumed by 'Are you sure you want to pray? [yn] (n)', wasting ~25% of the episode's step budget; don't use pray in random play, and when a prompt appears, answer it explicitly ('n' or Escape) instead of pressing arbitrary keys.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:52:11.221632+00:00",
+    "content": "Random non-movement commands almost always fail and waste steps ('It's solid stone' at 64/66/75, 'You don't have anything to eat' at 71-72, 'Your wallet is empty' at 59-60, repeated 'adjust' prompts at 46-55); prefer directional movement toward open floor and the goal over random item/spell/menu commands.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:58:10.162906+00:00",
+    "content": "Y/N confirmation prompts must be answered explicitly (press 'n' or Esc): random actions left the bot stuck repeating 'Are you sure you want to pray? [yn] (n)' for ~25 straight steps (71-95), burning a quarter of the 100-step time budget on one menu.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T10:58:10.169921+00:00",
+    "content": "Avoid or immediately resolve object/direction sub-prompts ('What do you want to adjust?', 'What do you want to rub?', 'In what direction?'): without a valid letter/direction input they only yield 'Never mind.' or 'What a strange direction!' and waste steps, while many random invocations were also invalid for the character ('Cavemen aren't able to use two weapons at once', 'You don't have anything to zap').",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:04:04.318424+00:00",
+    "content": "Random item-related commands repeatedly opened inventory sub-prompts ('What do you want to adjust/wield/ready?') that trapped the agent from step 40 through step 88, burning ~40 turns at -0.01 each; either avoid inventory commands or escape these prompts deliberately (ESC/q) instead of re-randomizing into them.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:04:04.325432+00:00",
+    "content": "The episode timed out at 100 steps with zero positive reward: late steps were wasted on clearly useless actions (paying with 'no shopkeeper here', 'cannot dip gold', 'wipe face' twice, 'strange direction'), so prioritize goal-directed movement over random command thrashing to avoid step-budget exhaustion.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:21:49.756518+00:00",
+    "content": "Random-walking wastes most of the episode: the transcript shows dozens of 'It's a wall.' steps with -0.01 penalties from random moves, so future episodes should use a deliberate policy (e.g., wall-following or moving toward the seen goal) instead of random actions.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:21:49.761396+00:00",
+    "content": "Random kicks are pure waste: kicks without a known target triggered 'In what direction?', 'You kick at empty space', and 'You see no door there'; only kick when a door or target is actually adjacent.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:27:16.024758+00:00",
+    "content": "Random kicks and directional actions waste turns: the transcript shows repeated 'In what direction?' prompts resolved with 'It's a wall.', 'You see no door there.', 'You kick at empty space.', and 'Ouch! That hurts!', each costing a step and a -0.01 penalty — only kick when a specific target (door/monster) is known.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:27:16.032589+00:00",
+    "content": "Undirected random movement led to TIMEOUT at 100 steps: most steps yielded 0.00 reward or -0.01 wall bumps, showing progress requires deliberately tracking walls vs. open floor and moving through corridor tiles toward the goal rather than cycling aimlessly.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:33:05.185237+00:00",
+    "content": "Random actions wasted most of the 100-step budget bumping into walls (~20 steps of 'It's a wall.' each costing -0.01 reward); use observed surroundings/layout to move purposefully toward the goal instead of random movement, or the episode times out without progress.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:33:05.191154+00:00",
+    "content": "Randomly picking targeted actions (e.g., kick) repeatedly triggered 'In what direction?' prompts that resolved to 'What a strange direction!' or 'You see no door there', and once caused 'Ouch! That hurts!' (step 56) — burning turns and taking damage; avoid kick/attack commands unless a target is actually identified.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:38:13.719352+00:00",
+    "content": "Random movement repeatedly bumps into walls (many 'It's a wall' messages, each costing -0.01 reward), wasting roughly a third of the 100 steps; on corridor maps like MiniHack-Corridor-R2, stop repeating an action after a wall bump and switch direction instead.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T11:38:13.721742+00:00",
+    "content": "Direction-requiring actions issued randomly waste steps: they trigger 'In what direction?' followed by invalid results ('What a strange direction! Never mind.', 'You see no door there.'); avoid kick/open-style actions unless a direction is deliberately chosen.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T12:19:37.864488+00:00",
+    "content": "Random kicking wastes the step budget and can cause self-injury: the transcript shows repeated 'It's a wall.', 'You see no door there.', and 'You kick at empty space' results plus 'Dumb move! You strain a muscle', so kicks should only be used deliberately at a known door/obstacle, never as a random action.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T12:19:37.875459+00:00",
+    "content": "Random wandering makes no progress and leads to TIMEOUT: long stretches of reward 0.00 with no movement feedback (steps 46-56, 59-63, 66-72, 84-88) show the agent stuck cycling without approaching the goal, so future episodes should use systematic navigation (e.g., consistent direction or wall-following) instead of random moves to reach the corridor exit within 100 steps.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T12:25:32.360297+00:00",
+    "content": "Random movement wastes the episode: most steps produced zero reward or -0.01 penalties from bumping into walls/solid stone (e.g., steps 43, 53, 59, 63-65, 72, 74, 87, 98). In corridor tasks, move deliberately toward the goal using observed walls as guidance instead of random actions.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T12:25:32.367758+00:00",
+    "content": "Actions that trigger 'In what direction?' prompts (e.g., kick) are wasted when there is no target: they cost extra steps and typically fail ('You see no door there.', 'You kick at empty space.', 'What a strange direction!  Never mind.'). Avoid kick/directed actions unless a door or monster is confirmed adjacent.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T12:31:14.122841+00:00",
+    "content": "Random movement wasted nearly every step bumping into walls ('It's solid stone'), yielding only -0.01/0.00 rewards until the 100-step timeout; use directed movement toward the corridor goal instead of random exploration.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T12:31:14.125295+00:00",
+    "content": "Random actions frequently triggered 'In what direction?' prompts whose random replies produced 'You see no door there' / 'What a strange direction!' and even 'Ouch! That hurts!'; avoid direction-prompting actions unless deliberately targeting a known feature like a door.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T12:36:45.832508+00:00",
+    "content": "Avoid random/undirected actions: most of the 100 steps were wasted bumping into walls (\"It's a wall.\"), kicking empty space, or answering kick-direction prompts (\"In what direction?\", \"What a strange direction! Never mind.\"), yielding zero progress. Choose movement deliberately toward the goal/corridor.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T12:36:45.837688+00:00",
+    "content": "Do not kick walls: kicking produced self-damage (\"Ouch! That hurts!\") and triggered direction prompts that waste extra turns; only kick when a door or breakable target is confirmed adjacent.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
   }
 ]
