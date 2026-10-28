@@ -1,0 +1,306 @@
+[
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:36:27.806202+00:00",
+    "content": "Random action policies fail in Room-5x5: in 30 steps, 8 moves hit walls ('It's solid stone', steps 0-2, 14, 19, 21-22, 24) and every other move yielded 0.00 reward, ending in TIMEOUT with no progress toward the goal.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:36:27.806773+00:00",
+    "content": "The message \"It's solid stone\" is direct evidence of a blocked move into a wall; when it appears, switch direction immediately instead of repeating random actions, since wall-bumps waste both a step and reward budget (-0.01 each).",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:43:59.034664+00:00",
+    "content": "Moving into solid stone is punished with -0.01 reward (seen 8 times: steps 6-7, 19, 28-29, 37-39); avoid bumping walls to save steps.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:43:59.035777+00:00",
+    "content": "Even purely random movement wins in a 5x5 room (WIN at step 40, +1.00), so a small room requires only thorough exploration, not complex strategy.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:50:09.564948+00:00",
+    "content": "Moves that return reward=-0.01 with msg \"It's solid stone.\" are wall bumps (16 of 57 steps here); do not repeat a direction that just hit stone — switch to directions that moved without that message to conserve steps.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:50:09.565848+00:00",
+    "content": "In a small 5x5 room, undirected random walking can still reach the goal (terminal reward=1.00 at step 56), but it is slow due to frequent wall collisions; prefer systematic movement across open floor toward unexplored tiles to reach the +1.00 objective faster.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:57:13.873719+00:00",
+    "content": "Random action selection wastes the episode: roughly 20 of 100 steps were wall bumps ('It's solid stone', reward -0.01) and the run timed out at 100 steps without reaching the goal, so prefer a systematic movement policy (e.g., consistent direction or wall-following) over random moves.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:57:13.874714+00:00",
+    "content": "A -0.01 reward plus the message 'It's solid stone' is direct evidence of a blocked direction; mark that direction as a wall and avoid repeating it, instead continuing toward moves that yield no penalty or show progress.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:58:43.820327+00:00",
+    "content": "In MiniHack-Room-5x5-v0, random movement alone is sufficient to win: this episode reached the +1.00 goal reward at step 20 with no navigation strategy, so on small open rooms a simple random walk reliably finds the goal quickly.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T06:58:43.821266+00:00",
+    "content": "Blocked moves are clearly signaled by reward -0.01 and the message \"It's solid stone\" (4 of 21 steps here); these wall bumps are infrequent and harmless, so no special wall-avoidance logic is needed in small room tasks.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T08:03:17.376276+00:00",
+    "content": "Random movement wasted the episode: nearly every step returned \"It's solid stone.\", \"It's a wall.\", or \"Ouch! That hurts!\" (bumping into walls) with zero progress; plan moves by reading the map instead of choosing actions randomly.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T08:03:17.378825+00:00",
+    "content": "Kick actions were pure waste: they consumed turns on \"In what direction?\" prompts and yielded \"You kick at empty space\" or \"Ouch! That hurts!\" against stone — skip kicking and use movement actions to reach the exit before the step budget runs out.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T08:17:29.569449+00:00",
+    "content": "Random/wasted actions dominate the episode and burn the step budget: repeated 'You don't have anything to eat', 'It's solid stone', 'You kick at empty space', and many no-op steps (reward 0.00, empty message) show the agent spent nearly all 150 steps on invalid or non-productive commands instead of navigating toward the goal.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T08:17:29.570893+00:00",
+    "content": "Don't kick or open in directions without a target: kicks into 'solid stone'/'empty space' and 'You see no door there' responses prove the agent acted without checking the map; only move/act in directions that are confirmed traversable floor, and reserve eat/kick/open for when the item or target is actually present.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T08:28:24.741119+00:00",
+    "content": "Random movement is highly inefficient in maze levels: the transcript shows ~60% of steps wasted bumping into walls ('It's a wall.' / 'It's solid stone.'), causing a 150-step timeout before reaching the goal; prefer moving deliberately along open floor/corridor tiles instead of acting randomly.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-28T08:28:24.742763+00:00",
+    "content": "Randomly triggered targeted/inventory actions waste turns: attempts produced 'In what direction?', 'You see no door there.', 'What a strange direction!', and 'You don't have anything to eat', all consuming steps with zero progress; only use direction-dependent actions (open, eat) when a valid target or item is known to exist.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  }
+]
