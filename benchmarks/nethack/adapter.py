@@ -30,6 +30,7 @@ DIRECTION_WORDS = {
 COMMAND_WORDS = {
     "up": "<", "down": ">", "wait": ".", "eat": "e", "pickup": ",",
     "zap": "z", "read": "r", "open": "o", "close": "c", "search": "s",
+    "yes": "y",
 }
 
 

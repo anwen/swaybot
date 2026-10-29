@@ -50,7 +50,8 @@ def _episode(env_id: str, brain, guidance: str, max_steps: int) -> dict:
         r = render_observation(obs)
         goal = (
             "Walk onto the food (%), pick it up (action 'pickup'), then eat it "
-            "(action 'eat') to win. "
+            "(action 'eat') to win. If the game asks for confirmation (e.g. "
+            "'eat it? [ynq]'), answer 'yes'. "
             if "Eat" in env_id else
             "Reach the staircase (>) to descend and win. "
         )

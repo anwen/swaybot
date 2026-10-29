@@ -6,3 +6,13 @@
 {"arm": "external", "ep": 1, "success": false, "steps": 100}
 {"arm": "external", "ep": 2, "success": false, "steps": 100}
 {"arm": "external", "ep": 3, "success": false, "steps": 100}
+{"arm": "baseline", "ep": 0, "success": false, "steps": 100}
+{"arm": "baseline", "ep": 1, "success": false, "steps": 100}
+{"arm": "baseline", "ep": 0, "success": false, "steps": 100}
+{"arm": "baseline", "ep": 1, "success": false, "steps": 100}
+{"arm": "baseline", "ep": 2, "success": false, "steps": 100}
+{"arm": "baseline", "ep": 3, "success": false, "steps": 100}
+{"arm": "external", "ep": 0, "success": false, "steps": 100}
+{"arm": "external", "ep": 1, "success": false, "steps": 100}
+{"arm": "external", "ep": 2, "success": false, "steps": 100}
+{"arm": "external", "ep": 3, "success": false, "steps": 100}
