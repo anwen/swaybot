@@ -1,0 +1,2 @@
+{"task": "MiniHack-Corridor-R2-v0", "arm": "learn", "ep": 0, "success": true, "steps": 4}
+{"task": "MiniHack-Corridor-R2-v0", "arm": "test_base", "ep": 0, "success": true, "steps": 5}

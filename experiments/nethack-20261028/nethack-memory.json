@@ -910,5 +910,119 @@
     "refuted_count": 0,
     "last_verified_at": "",
     "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-29T18:02:44.933172+00:00",
+    "content": "Consecutive northeast moves closed out the win (steps 2-3 went northeast -> northeast -> reward=1.00), so pushing diagonally along the corridor toward the goal is an effective, fast strategy in Corridor-R2.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-29T18:02:44.938494+00:00",
+    "content": "Reaching the goal in only 4 steps (WIN) shows early directional commitment pays off: north then random kept progress with zero penalty, and no detours or hazards were triggered, so prioritizing direct goal-ward movement minimizes risk in this corridor map.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-29T18:05:23.037654+00:00",
+    "content": "In MiniHack-Corridor-R2-v0, a single move east immediately reached the goal (reward 1.00, WIN in 1 step), so when a corridor level starts, the exit may be directly adjacent to the starting position.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-29T18:05:23.041625+00:00",
+    "content": "Check simple adjacent-cell moves (east first here) before planning longer paths; an immediate reward of 1.00 confirms the goal tile was one step away in this map layout.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-29T20:33:10.735365+00:00",
+    "content": "Oscillating between opposite moves (south→north, east→west, southeast→northwest repeated at steps 0-17) just retraces the same tiles, burns the 60-step budget, and led to a timeout with zero progress; commit to one consistent direction toward the corridor goal instead of undoing moves.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
+  },
+  {
+    "kind": "theory",
+    "scope": "long_term",
+    "source": "minihack",
+    "tags": [
+      "nethack"
+    ],
+    "created_at": "2026-10-29T20:33:10.741358+00:00",
+    "content": "Random actions are wasted turns: they repeatedly triggered penalties (steps 45, 50, 57: 'In what direction?', 'What a strange direction!') and cost -0.01 each with no map progress; use only deliberate movement commands every step.",
+    "evidence": "",
+    "credibility": 0.6,
+    "surprise": 0.0,
+    "relation": "",
+    "applicability": "",
+    "supported_count": 0,
+    "refuted_count": 0,
+    "last_verified_at": "",
+    "step_kind": "memory"
   }
 ]
