@@ -64,18 +64,28 @@ def render_observation(obs) -> dict:
     }
 
 
-def parse_action(answer: str, action_map: dict[str, int]) -> int | None:
+def parse_action(answer: str, action_map: dict[str, int], last_message: str = "") -> int | None:
     """Extract an action index from the brain's answer.
 
-    Accepts direction words and command words (eat/pickup/search/open...).
+    Accepts direction words, command words, and single-letter responses to
+    in-game prompts (e.g. 'f' for the apple, 'y' for yes at a [ynq] prompt).
     Unknown words map to None (the driver treats them as a wait step).
     """
     text = (answer or "").strip().lower()
+    # Single-letter response to an in-game prompt: prefer the letter's action
+    # over direction-word matching when the game is asking a question.
+    if len(text) == 1 and text in action_map and any(
+        k in last_message for k in ("[ynq]", "what do you want", "eat it?", "eat?")
+    ):
+        return action_map[text]
     words = {**DIRECTION_WORDS, **COMMAND_WORDS}
     # longest-first so "northeast" wins over "east"
     for word in sorted(words, key=len, reverse=True):
         if word in text:
             return action_map.get(words[word])
+    # Fallback: bare single letter with no prompt context (e.g. 'f', 'y')
+    if len(text) == 1 and text in action_map:
+        return action_map[text]
     return None
 
 

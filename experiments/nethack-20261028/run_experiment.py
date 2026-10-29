@@ -66,7 +66,8 @@ def _episode(env_id: str, brain, guidance: str, max_steps: int) -> dict:
             f"Last message: {r['message']}\nHP: {r['hp']} | position: ({r['x']},{r['y']})\n"
             f"Actions: {actions_hint}.\n"
             "Choose ONE action. Reply with exactly one action word "
-            "(e.g. 'east' or 'eat'). Do not explain."
+            "(e.g. 'east' or 'eat'), or a single letter if the game is "
+            "asking you to choose an item (e.g. 'f' or 'y'). Do not explain."
         )
         if guidance:
             prompt += (
@@ -84,7 +85,7 @@ def _episode(env_id: str, brain, guidance: str, max_steps: int) -> dict:
         answer = ""
         if action.get("name") == "final_answer":
             answer = str(action.get("args", {}).get("answer", ""))
-        act = parse_action(answer, action_map)
+        act = parse_action(answer, action_map, last_message=r["message"])
         if act is None:
             act = env.action_space.sample()
         obs, reward, done, truncated, _ = env.step(act)
@@ -166,7 +167,7 @@ def main() -> None:
     for task in args.tasks:
         # LEARN arm: with accumulation + injection
         for ep in range(args.episodes):
-            res = _episode(task, LLMBrain(temperature=0.0, max_tokens=64),
+            res = _episode(task, LLMBrain(temperature=0.0, max_tokens=1024),
                            guidance_text(), args.max_steps)
             print(f"[{task} learn ep{ep}] success={res['success']} steps={res['steps']}", flush=True)
             for rule in _extract_lesson(res):
@@ -177,14 +178,14 @@ def main() -> None:
                                      "success": res["success"], "steps": res["steps"]}) + "\n")
         # TEST arm: baseline (no guidance)
         for ep in range(args.episodes):
-            res = _episode(task, LLMBrain(temperature=0.0, max_tokens=64), "", args.max_steps)
+            res = _episode(task, LLMBrain(temperature=0.0, max_tokens=1024), "", args.max_steps)
             print(f"[{task} test-base ep{ep}] success={res['success']} steps={res['steps']}", flush=True)
             with results_path.open("a") as fh:
                 fh.write(json.dumps({"task": task, "arm": "test_base", "ep": ep,
                                      "success": res["success"], "steps": res["steps"]}) + "\n")
         # TEST arm: memory (full guidance)
         for ep in range(args.episodes):
-            res = _episode(task, LLMBrain(temperature=0.0, max_tokens=64),
+            res = _episode(task, LLMBrain(temperature=0.0, max_tokens=1024),
                            guidance_text(), args.max_steps)
             print(f"[{task} test-mem ep{ep}] success={res['success']} steps={res['steps']}", flush=True)
             with results_path.open("a") as fh:

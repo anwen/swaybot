@@ -27,7 +27,7 @@ def main() -> None:
     results = []
     for arm, guidance in (("baseline", ""), ("external", external)):
         for ep in range(4):
-            res = _episode("MiniHack-Eat-v0", LLMBrain(temperature=0.0, max_tokens=64),
+            res = _episode("MiniHack-Eat-v0", LLMBrain(temperature=0.0, max_tokens=1024),
                            guidance, 100)
             print(f"[{arm} ep{ep}] success={res['success']} steps={res['steps']}", flush=True)
             results.append({"arm": arm, "ep": ep, "success": res["success"], "steps": res["steps"]})

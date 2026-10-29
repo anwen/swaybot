@@ -16,3 +16,13 @@
 {"arm": "external", "ep": 1, "success": false, "steps": 100}
 {"arm": "external", "ep": 2, "success": false, "steps": 100}
 {"arm": "external", "ep": 3, "success": false, "steps": 100}
+{"arm": "baseline", "ep": 0, "success": false, "steps": 100}
+{"arm": "baseline", "ep": 0, "success": true, "steps": 9}
+{"arm": "baseline", "ep": 1, "success": true, "steps": 9}
+{"arm": "baseline", "ep": 2, "success": true, "steps": 5}
+{"arm": "baseline", "ep": 3, "success": true, "steps": 5}
+{"arm": "external", "ep": 0, "success": true, "steps": 6}
+{"arm": "external", "ep": 1, "success": true, "steps": 5}
+{"arm": "external", "ep": 2, "success": true, "steps": 7}
+{"arm": "external", "ep": 3, "success": true, "steps": 6}
+{"arm": "baseline", "ep": 1, "success": false, "steps": 100}
