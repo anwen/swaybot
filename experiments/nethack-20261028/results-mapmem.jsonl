@@ -1,0 +1,2 @@
+{"arm": "rule", "ep": 0, "success": false, "steps": 60, "reward": -0.09, "known": 33}
+{"arm": "rule", "ep": 1, "success": false, "steps": 60, "reward": -0.16, "known": 33}
