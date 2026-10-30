@@ -1,0 +1,2 @@
+{"arm": "none", "ep": 0, "success": false, "steps": 60, "reward": -0.11999999999999998, "visited_cells": 36}
+{"arm": "none", "ep": 1, "success": false, "steps": 60, "reward": -0.18000000000000002, "visited_cells": 35}
