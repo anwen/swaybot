@@ -1,0 +1,11 @@
+{"family": "ClosedDoor", "task": "MiniHack-ClosedDoor-v0", "success": false, "steps": 60, "reward": -0.5200000000000002}
+{"family": "HideNSeek", "task": "MiniHack-HideNSeek-v0", "success": true, "steps": 50, "reward": 0.7799999999999999}
+{"family": "Zap", "task": "MiniHack-Zap-Fixed-v0", "success": false, "steps": 60, "reward": -0.12999999999999998}
+{"family": "Wield", "task": "MiniHack-Wield-Fixed-v0", "success": false, "steps": 60, "reward": -0.060000000000000005}
+{"family": "Wear", "task": "MiniHack-Wear-Fixed-v0", "success": false, "steps": 60, "reward": -0.13999999999999999}
+{"family": "PutOn", "task": "MiniHack-PutOn-Fixed-v0", "success": false, "steps": 60, "reward": -0.3000000000000001}
+{"family": "Read", "task": "MiniHack-Read-Fixed-v0", "success": false, "steps": 60, "reward": -0.07}
+{"family": "Sink", "task": "MiniHack-Sink-Fixed-v0", "success": false, "steps": 60, "reward": -0.07}
+{"family": "River", "task": "MiniHack-River-Narrow-v0", "success": false, "steps": 60, "reward": -0.03}
+{"family": "CorridorBattle", "task": "MiniHack-CorridorBattle-v0", "success": false, "steps": 60, "reward": -0.3300000000000001}
+{"family": "MazeWalk", "task": "MiniHack-MazeWalk-9x9-v0", "success": false, "steps": 60, "reward": -0.16}

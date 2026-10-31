@@ -165,3 +165,21 @@ MazeExplore 上的增益**未证实也未证伪**。
 | Corridor-R2 | 修复后冒烟 2/2 | ✅ 同因修复 |
 | MazeExplore | none 2 局未通关（36/60 格探索） | ⚠️ 规模 vs 预算瓶颈，notes 臂成本受阻 |
 | 跨局地图 | 证伪（地图每局随机） | ❌ |
+
+## 机制族普查（2026-10-30，20 族可行性矩阵）
+
+每族选最简单代表，1 局 60 步基线（修复后 harness）。结果：
+
+| 判定 | 族 | 说明 |
+|---|---|---|
+| **PASS（4）** | HideNSeek（50步）、Room-Trap-5x5（2步）、MazeWalk-Mapped-9x9（5步）、+此前 Room/Eat/Corridor | 机制简单或楼梯/目标近的变体 |
+| **FAIL（13）** | ClosedDoor、Zap、Wield、Wear、PutOn、Read、Sink、River、CorridorBattle、MazeWalk-9x9、KeyRoom、WoD-Easy（7步死）、Quest-Easy（43步） | 物品操作链/战斗/危险地形/长迷宫 |
+| **不可用（3+）** | MultiRoom、LavaCrossing、SimpleCrossing、Boxoban | minigrid 版本兼容 / 需下载地图 |
+
+**普查结论**：glm-5.3-flash 的 MiniHack 能力窗口 = **单目标、步数少、无物品链**
+的导航任务（PASS 的 4 族全部是 2-50 步可达目标）。任何需要物品使用链（钥匙/穿戴/
+持械/阅读）、战斗、危险地形规避或多阶段组合的机制都超出窗口——与 tau3 的"参数
+组装精度"瓶颈和 MazeExplore 的"空间推理"瓶颈互相印证：**执行深度是统一约束**。
+
+方法学注记：普查 1 局/族是下界估计（PASS 判定稳健，FAIL 可能因单局运气）；但
+13/17 的失败面与已有归因一致，足以定性。
