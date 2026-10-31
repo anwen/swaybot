@@ -67,23 +67,46 @@ def render_observation(obs) -> dict:
 def parse_action(answer: str, action_map: dict[str, int], last_message: str = "") -> int | None:
     """Extract an action index from the brain's answer.
 
-    Accepts direction words, command words, and single-letter responses to
-    in-game prompts (e.g. 'f' for the apple, 'y' for yes at a [ynq] prompt).
-    Unknown words map to None (the driver treats them as a wait step).
+    Prompt-state aware: NetHack prompts change what a letter means.
+      - "[ynq]" prompts -> y/n/q
+      - "What do you want to X? [a-f or ?*]" -> inventory slot letter
+      - "In what direction?" -> a direction word (NOT a slot letter)
+    Falls back to direction/command words; unknown -> None (caller waits).
     """
     text = (answer or "").strip().lower()
-    # Single-letter response to an in-game prompt: prefer the letter's action
-    # over direction-word matching when the game is asking a question.
-    if len(text) == 1 and text in action_map and any(
-        k in last_message for k in ("[ynq]", "what do you want", "eat it?", "eat?")
-    ):
-        return action_map[text]
+    msg = (last_message or "").lower()
+
+    # 1. Direction prompt: only direction words are valid.
+    if "in what direction" in msg:
+        for word in sorted(DIRECTION_WORDS, key=len, reverse=True):
+            if word in text:
+                return action_map.get(DIRECTION_WORDS[word])
+        return None
+
+    # 2. Item-selection prompts: a bare slot letter (a-z) picks the item.
+    if "what do you want" in msg or "eat it?" in msg:
+        if len(text) == 1 and text in action_map:
+            return action_map[text]
+        # also accept "<letter> - <item>" style or embedded letter
+        for ch in text:
+            if ch.isalpha() and ch in action_map:
+                return action_map[ch]
+        return None
+
+    # 3. Yes/no prompt: map yes/no words and letters.
+    if "[ynq]" in msg:
+        if text.startswith("y") or "yes" in text:
+            return action_map.get("y")
+        if text.startswith("n"):
+            return action_map.get("n")
+        return None
+
+    # 4. Normal state: command/direction words; a bare single letter is
+    #    accepted only if it is a known command char (not a risky misfire).
     words = {**DIRECTION_WORDS, **COMMAND_WORDS}
-    # longest-first so "northeast" wins over "east"
     for word in sorted(words, key=len, reverse=True):
         if word in text:
             return action_map.get(words[word])
-    # Fallback: bare single letter with no prompt context (e.g. 'f', 'y')
     if len(text) == 1 and text in action_map:
         return action_map[text]
     return None

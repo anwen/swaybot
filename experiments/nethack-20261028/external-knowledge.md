@@ -25,3 +25,22 @@
   direction.
 - Do not take off equipment, use #shell, jump, or perform unrelated
   actions - they waste your limited steps. Focus on the goal.
+
+## Wielding / equipping items (MiniHack-Wield and similar)
+
+- Walk onto the weapon/item symbol (')' is a weapon), then press ',' (pickup).
+  The message will show the item's inventory slot, e.g. "f - a dagger".
+- Press 'w' (wield). The game asks "What do you want to wield? [- abf or ?*]".
+  The letters in brackets are INVENTORY SLOTS: a/b/c... are your starting
+  items, later letters (f, g...) are items you picked up this episode.
+- Reply with the SLOT LETTER of the weapon you want to wield (e.g. 'f' for
+  the just-picked dagger). "You are already wielding that!" means that slot
+  is your current weapon - pick a different slot letter.
+- Wielding the correct weapon wins the episode.
+
+## General item-prompt rule (applies to wear, puton, read, zap, eat...)
+
+- When the game asks "What do you want to X? [letters or ?*]", the letters
+  are INVENTORY SLOTS. Reply with the slot letter of the item you want.
+- Pick up an item first (',' on its square) - the message tells you its new
+  slot letter. Then use the command and reply with that slot letter.
